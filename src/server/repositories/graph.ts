@@ -43,6 +43,36 @@ export async function getChildren(db: D1Database, issueId: string): Promise<{ id
   return res.results;
 }
 
+export interface SubIssueRow {
+  id: string;
+  number: number;
+  title: string;
+  status: string;
+  parent_id: string | null;
+}
+
+/**
+ * Load the full descendant subtree of `rootId` (all levels, one recursive
+ * query) via idx_issues_parent. Rows are globally ordered by number, which is
+ * sequential per workspace, so assembling by parent yields deterministic
+ * sibling ordering.
+ */
+export async function listSubtree(db: D1Database, rootId: string): Promise<SubIssueRow[]> {
+  const res = await db
+    .prepare(
+      `WITH RECURSIVE subtree(id, number, title, status, parent_id) AS (
+         SELECT id, number, title, status, parent_id FROM issues WHERE parent_id = ?
+         UNION ALL
+         SELECT i.id, i.number, i.title, i.status, i.parent_id
+         FROM issues i JOIN subtree s ON i.parent_id = s.id
+       )
+       SELECT id, number, title, status, parent_id FROM subtree ORDER BY number ASC`,
+    )
+    .bind(rootId)
+    .all<SubIssueRow>();
+  return res.results;
+}
+
 // ---------------------------------------------------------------------------
 // Relationships
 // ---------------------------------------------------------------------------

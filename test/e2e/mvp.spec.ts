@@ -53,10 +53,11 @@ test.describe.serial("MVP acceptance", () => {
   test("add a child, link a relationship, and comment", async ({ page, request }) => {
     await page.goto(`/issues/${issueNumber}`);
 
-    // Child issue via the panel.
-    await page.getByLabel("Child issue title").fill("Write deployment guide");
-    await page.getByRole("button", { name: "Add child" }).click();
-    await expect(page.locator(".issue-row", { hasText: "Write deployment guide" })).toBeVisible();
+    // Child issue via the sub-issues panel's inline create flow.
+    await page.getByRole("button", { name: "Create sub-issue" }).click();
+    await page.getByLabel("Sub-issue title").fill("Write deployment guide");
+    await page.locator(".sub-issues-create-form").getByRole("button", { name: "Create" }).click();
+    await expect(page.locator(".sub-issue-row", { hasText: "Write deployment guide" })).toBeVisible();
 
     // The child's number is the next allocation.
     const list = await apiJson(request, "GET", `/api/issues?limit=5`);
@@ -73,6 +74,92 @@ test.describe.serial("MVP acceptance", () => {
     await page.locator("textarea[placeholder^='Markdown comment']").fill("Comment with #1");
     await page.getByRole("button", { name: "Comment" }).click();
     await expect(page.locator(".comment", { hasText: "Comment with" })).toBeVisible();
+  });
+
+  test("render nested sub-issues", async ({ page, request }) => {
+    // Self-contained fixture: root → child → (grandchild, closed sibling),
+    // plus a closed second direct child of the root.
+    const rootRes = await apiJson(request, "POST", "/api/issues", {
+      title: "Sub-issue demo root",
+      type: "task",
+    });
+    expect(rootRes.status).toBe(201);
+    const root = rootRes.json as { id: string; number: number };
+    const childRes = await apiJson(request, "POST", "/api/issues", {
+      title: "Write deployment guide",
+      type: "task",
+      parent_id: root.id,
+    });
+    expect(childRes.status).toBe(201);
+    const child = childRes.json as { id: string; number: number };
+
+    const grandchild = await apiJson(request, "POST", "/api/issues", {
+      title: "Validate the deployment steps",
+      type: "task",
+      parent_id: child.id,
+    });
+    expect(grandchild.status).toBe(201);
+    const sibling = await apiJson(request, "POST", "/api/issues", {
+      title: "Retired setup experiment",
+      type: "task",
+      parent_id: child.id,
+    });
+    expect(sibling.status).toBe(201);
+    expect((await apiJson(request, "POST", `/api/issues/${(sibling.json as { number: number }).number}/close`)).status).toBe(200);
+    const extra = await apiJson(request, "POST", "/api/issues", {
+      title: "Archived setup notes",
+      type: "task",
+      parent_id: root.id,
+    });
+    expect(extra.status).toBe(201);
+    expect((await apiJson(request, "POST", `/api/issues/${(extra.json as { number: number }).number}/close`)).status).toBe(200);
+
+    await page.goto(`/issues/${root.number}`);
+
+    // Header progress: 2 direct children, 1 closed → 1/2.
+    const headerProgress = page.locator(".sub-issues-header .sub-issues-progress");
+    await expect(headerProgress).toHaveText("1/2");
+
+    // Rows are nested <li>s, so scope assertions to unique title spans (a
+    // title is only contained by its own row and ancestor rows) and to the
+    // row div that owns each title (nearest .issue-row ancestor).
+    const rowDiv = (title: string) =>
+      page
+        .locator(".sub-issue-row .issue-title", { hasText: title })
+        .locator("xpath=ancestor::div[contains(@class,'issue-row')][1]");
+    const childTitle = page.locator(".sub-issue-row .issue-title", { hasText: "Write deployment guide" });
+    const grandchildTitle = page.locator(".sub-issue-row .issue-title", { hasText: "Validate the deployment steps" });
+    const siblingTitle = page.locator(".sub-issue-row .issue-title", { hasText: "Retired setup experiment" });
+
+    await expect(childTitle).toBeVisible();
+    // The child row shows its own progress (1 closed of 2 direct children).
+    await expect(rowDiv("Write deployment guide").locator(".sub-issues-progress")).toHaveText("1/2");
+    await expect(grandchildTitle).toBeVisible();
+    await expect(siblingTitle).toBeVisible();
+
+    // Semantic icons: open grandchild vs closed sibling and closed extra child.
+    await expect(rowDiv("Validate the deployment steps").locator(".sub-issue-icon-open")).toHaveCount(1);
+    await expect(rowDiv("Retired setup experiment").locator(".sub-issue-icon-closed")).toHaveCount(1);
+    await expect(rowDiv("Archived setup notes").locator(".sub-issue-icon-closed")).toHaveCount(1);
+
+    // Branch collapse unmounts the nested rows; expanding restores them.
+    await rowDiv("Write deployment guide").locator(".sub-issue-toggle").click();
+    await expect(grandchildTitle).toHaveCount(0);
+    await expect(siblingTitle).toHaveCount(0);
+    await rowDiv("Write deployment guide").locator(".sub-issue-toggle").click();
+    await expect(grandchildTitle).toBeVisible();
+
+    // Child navigation opens the child's own detail page.
+    await page.locator(".sub-issue-link", { hasText: "Write deployment guide" }).click();
+    await expect(page).toHaveURL(new RegExp(`/issues/${child.number}$`));
+    await expect(page.getByRole("heading", { name: "Write deployment guide" })).toBeVisible();
+
+    // The panel renders in the dark theme too.
+    await page.evaluate(() => localStorage.setItem("nodebook-theme", "dark"));
+    await page.reload();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    await expect(grandchildTitle).toBeVisible();
+    await page.evaluate(() => localStorage.removeItem("nodebook-theme"));
   });
 
   test("create a reminder, deliver it, and see it in the inbox", async ({ page, request }) => {

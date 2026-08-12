@@ -355,6 +355,21 @@ export interface WikiNodeDto {
   children: WikiNodeDto[];
 }
 
+/** Minimal per-issue payload for the sub-issue tree (no body/labels). */
+export interface SubIssueSummaryDto {
+  id: string;
+  number: number;
+  title: string;
+  status: IssueStatus;
+  parent_id: string | null;
+}
+
+/** Recursive node in the sub-issue tree (descendants of one issue). */
+export interface SubIssueNodeDto {
+  issue: SubIssueSummaryDto;
+  children: SubIssueNodeDto[];
+}
+
 export interface SearchResultDto {
   entity_type: string;
   entity_id: string;

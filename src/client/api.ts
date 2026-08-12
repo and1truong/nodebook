@@ -13,6 +13,7 @@ import type {
   RelationshipDto,
   ReminderDto,
   SearchResultDto,
+  SubIssueNodeDto,
   WikiNodeDto,
 } from "../shared/contracts/issues";
 
@@ -76,6 +77,7 @@ export const api = {
 
   // Graph
   children: (ref: string) => request<IssueDto[]>(`/api/graph/${ref}/children`),
+  subIssues: (ref: string) => request<SubIssueNodeDto[]>(`/api/graph/${ref}/sub-issues`),
   backlinks: (ref: string) => request<BacklinkDto[]>(`/api/graph/${ref}/backlinks`),
   relationships: (ref: string) => request<RelationshipDto[]>(`/api/graph/${ref}/relationships`),
   related: (ref: string) => request<RelationshipDto[]>(`/api/graph/${ref}/related`),

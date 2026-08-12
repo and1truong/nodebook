@@ -5,10 +5,12 @@ import type { IssueRecord, ReferenceRecord, RelationshipRecord } from "../../dom
 import type {
   BacklinkDto,
   RelationshipDto,
+  SubIssueNodeDto,
   WikiNodeDto,
 } from "../../shared/contracts/issues";
 import type { RelationshipType } from "../../shared/limits";
 import { RELATIONSHIP_TYPES } from "../../shared/limits";
+import type { IssueStatus } from "../../shared/limits";
 import { recordAudit } from "./audit-service";
 import {
   deleteRelationship,
@@ -20,6 +22,7 @@ import {
   listBacklinks,
   listRelatedIssues,
   listRelationships,
+  listSubtree,
 } from "../repositories/graph";
 import { getIssueById, getIssueByRef, getIssueByNumber, getIssueLabels, getNumbersByIds, listIssues } from "../repositories/issues";
 import { toIssueDto, toIssueDtos } from "./dto";
@@ -79,6 +82,38 @@ export async function getChildrenDtos(ctx: Ctx, issueId: string): Promise<Awaite
     if (full) issues.push(full);
   }
   return toIssueDtos(ctx, issues);
+}
+
+/**
+ * Sub-issue tree: all descendants of `rootId` assembled recursively.
+ * Completion progress is derived client-side from direct children per node.
+ */
+export async function getSubIssueTree(ctx: Ctx, rootId: string): Promise<SubIssueNodeDto[]> {
+  const rows = await listSubtree(ctx.env.DB, rootId);
+  const nodes = new Map<string, SubIssueNodeDto>();
+  const roots: SubIssueNodeDto[] = [];
+  for (const row of rows) {
+    const node: SubIssueNodeDto = {
+      issue: {
+        id: row.id,
+        number: row.number,
+        title: row.title,
+        status: row.status as IssueStatus,
+        parent_id: row.parent_id,
+      },
+      children: [],
+    };
+    nodes.set(row.id, node);
+    if (row.parent_id === rootId) roots.push(node);
+  }
+  for (const row of rows) {
+    if (row.parent_id !== null && row.parent_id !== rootId) {
+      nodes.get(row.parent_id)?.children.push(nodes.get(row.id)!);
+    }
+  }
+  // Rows arrive ordered by number (sequential per workspace), so both the
+  // root list and every sibling group are deterministically ordered.
+  return roots;
 }
 
 // ---------------------------------------------------------------------------

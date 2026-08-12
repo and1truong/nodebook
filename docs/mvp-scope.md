@@ -7,7 +7,7 @@ The MVP covers PRD features M1–M11 for a single-owner workspace. This document
 | # | Feature | Implementation | Verification |
 | --- | --- | --- | --- |
 | M1 | Issues, comments, labels, Markdown | `issue-service`, `comment-service`, issue/comment routes, Markdown renderer (sanitized via DOMPurify, `#123` and `attachment://` linkification) | `test/integration/issues.test.ts`, `test/unit/refs.test.ts`, e2e create/edit/comment |
-| M2 | Hierarchy, typed relationships, references | `graph-service`, `issue_references` with late resolution | `test/integration/graph.test.ts` (cycles, self-parent, duplicates, inverse dupes, late-resolving backlinks, code-block exclusion) |
+| M2 | Hierarchy, typed relationships, references | `graph-service`, `issue_references` with late resolution | `test/integration/graph.test.ts` (cycles, self-parent, duplicates, inverse dupes, late-resolving backlinks, code-block exclusion, sub-issue tree ordering/status/exclusion) |
 | M3 | Wiki projection | wiki tree, breadcrumbs, backlinks, related panels, `issue_stats` view | `test/integration/graph.test.ts` (wiki), e2e wiki tree |
 | M4 | Full-text search | FTS5 `search_docs`, incremental index, idempotent rebuild, filters, `search_knowledge` ordering | `test/integration/search.test.ts` (ranking, filters, punctuation/empty boundaries, comment/label indexing, rebuild consistency) |
 | M5 | Planning views | Inbox/Today/Upcoming/Overdue in owner timezone | `test/integration/planning.test.ts` (boundaries, ordering, timezone) |
@@ -34,7 +34,7 @@ The MVP covers PRD features M1–M11 for a single-owner workspace. This document
 - **Inbox includes child issues by design.** The PRD defines Inbox as "open items without start, due, or scheduled values" — a capture list, not a root-only view. Tree position is not a filter; subtasks of projects appear until they are planned. If a roots-only Inbox is ever desired it is a one-line filter change in `planning-service.getInbox`.
 - **Dateless recurring tasks roll forward into planning.** Completing a recurring task with no start/due/scheduled dates sets `scheduled_date` to the next occurrence, so the task surfaces in Today/Upcoming on its cycle day instead of staying in Inbox forever. `start_date` advances to the next occurrence too (never the completion instant), so `start > due` cannot render even under very late completion.
 - **Attachment GC is tombstone-based.** `gc_tombstones` (migration 0007) is written before a blob delete; a concurrent upload of identical content that lands its row around the deletion detects the tombstone, re-puts the blob, and clears it. The documented claim — a referenced blob is never permanently lost to D1/R2 partial ordering — holds; tombstone rows are cleaned up after 2× the grace period.
-- **Known performance characteristics (MVP-acceptable, revisit before multi-user):** the wiki tree endpoint (`buildWikiNode`) and `getChildrenDtos` issue one `getIssueById` per child, and `searchIssues` runs one label query per result row. All are bounded by workspace size and were consciously traded against batch-query complexity; the wiki tree will degrade first as the graph grows.
+- **Known performance characteristics (MVP-acceptable, revisit before multi-user):** the wiki tree endpoint (`buildWikiNode`) and `getChildrenDtos` issue one `getIssueById` per child, and `searchIssues` runs one label query per result row. All are bounded by workspace size and were consciously traded against batch-query complexity; the wiki tree will degrade first as the graph grows. The sub-issue panel is the exception: it loads a complete subtree in a single indexed `WITH RECURSIVE` query (`idx_issues_parent`), so deep hierarchies render without request waterfalls (payload grows with subtree size only).
 - **CI is enforced.** `.github/workflows/ci.yml` runs `npm ci` (frozen lockfile), lint, typecheck, unit tests, build, workerd integration tests, Playwright E2E, and `wrangler deploy --dry-run` on every PR and push to `main`. The review-time "no CI" gap is closed.
 
 ## PRD success criteria → checks
@@ -51,7 +51,7 @@ The MVP covers PRD features M1–M11 for a single-owner workspace. This document
 | Attachments are private, deduplicated, range-servable, and GC-safe | `test/integration/attachments.test.ts` |
 | MCP scopes and revocation are enforced per request | `test/integration/auth.test.ts`, `test/integration/mcp.test.ts` |
 | Web/API is protected by Cloudflare Access and owner-only | `src/server/auth/access-auth.ts` + `test/unit/access-auth.test.ts` (JWT verification), `test/integration/auth.test.ts` |
-| Browser acceptance flow spans creation → linking → planning → reminder delivery → attachment → search → MCP mutation → audit history | `test/e2e/mvp.spec.ts` (8 serial tests) |
+| Browser acceptance flow spans creation → linking → planning → reminder delivery → attachment → search → MCP mutation → audit history | `test/e2e/mvp.spec.ts` (8 serial tests + nested sub-issue tree scenario) |
 
 ## Manual staging smoke test (post-deploy)
 

@@ -175,6 +175,57 @@ describe("references", () => {
   });
 });
 
+describe("sub-issues tree", () => {
+  it("returns 404 for a missing root", async () => {
+    const res = await api("/api/graph/999999/sub-issues");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns an empty array for roots without children", async () => {
+    const root = await createIssue({ title: "leaf" });
+    const res = await api(`/api/graph/${root.number}/sub-issues`);
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([]);
+  });
+
+  it("builds a nested tree with statuses, sibling ordering, and exclusion", async () => {
+    const root = await createIssue({ title: "sub root" });
+    const childA = await createIssue({ title: "sub a" });
+    const childB = await createIssue({ title: "sub b" });
+    const grandchild = await createIssue({ title: "grandchild" });
+    const unrelated = await createIssue({ title: "unrelated" });
+
+    await post(`/api/graph/${childA.number}/parent`, { parent_id: root.id });
+    await post(`/api/graph/${childB.number}/parent`, { parent_id: root.id });
+    await post(`/api/graph/${grandchild.number}/parent`, { parent_id: childB.id });
+    await post(`/api/issues/${childA.number}/close`, {});
+
+    const res = await api(`/api/graph/${root.number}/sub-issues`);
+    expect(res.status).toBe(200);
+    const tree = res.body as {
+      issue: { id: string; number: number; title: string; status: string; parent_id: string | null };
+      children: { issue: { number: number; title: string; status: string }; children: unknown[] }[];
+    }[];
+
+    // Direct children only, ordered by number, with status data.
+    expect(tree).toHaveLength(2);
+    expect(tree[0]!.issue.number).toBe(childA.number);
+    expect(tree[0]!.issue.status).toBe("closed");
+    expect(tree[0]!.issue.parent_id).toBe(root.id);
+    expect(tree[0]!.children).toHaveLength(0);
+    expect(tree[1]!.issue.number).toBe(childB.number);
+    expect(tree[1]!.issue.status).toBe("open");
+
+    // Grandchildren are nested beneath their direct parent.
+    expect(tree[1]!.children).toHaveLength(1);
+    expect(tree[1]!.children[0]!.issue.number).toBe(grandchild.number);
+    expect(tree[1]!.children[0]!.issue.title).toBe("grandchild");
+
+    // Unrelated issues never appear.
+    expect(tree.some((n) => n.issue.number === unrelated.number)).toBe(false);
+  });
+});
+
 describe("wiki projection", () => {
   it("builds the tree and breadcrumbs", async () => {
     const root = await createIssue({ title: "wiki root", type: "wiki" });

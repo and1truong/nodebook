@@ -15,9 +15,9 @@ import { RelationshipsPanel } from "../components/RelationshipsPanel";
 import { BacklinksPanel } from "../components/BacklinksPanel";
 import { ReminderEditor } from "../components/ReminderEditor";
 import { AttachmentSection } from "../components/AttachmentUploader";
+import { SubIssuesPanel } from "../components/SubIssuesPanel";
 import { TypeBadge, StatusBadge, PriorityBadge, LabelChip, Loading, ErrorState, EmptyState } from "../components/ui";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Link, useRouter } from "../router";
 
@@ -37,7 +37,6 @@ export function IssueDetailPage({
   const [comments, setComments] = useState<CommentDto[] | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [crumbs, setCrumbs] = useState<{ id: string; number: number; title: string }[]>([]);
-  const [children, setChildren] = useState<IssueDto[] | null>(null);
 
   const load = useCallback(() => {
     if (!issueRef) return;
@@ -47,7 +46,6 @@ export function IssueDetailPage({
       .then((i) => {
         setIssue(i);
         void api.comments(i.number.toString()).then(setComments).catch(() => setComments([]));
-        void api.children(i.number.toString()).then(setChildren).catch(() => setChildren([]));
         if (wiki) {
           void api.breadcrumbs(i.number.toString()).then(setCrumbs).catch(() => setCrumbs([]));
         }
@@ -188,6 +186,8 @@ export function IssueDetailPage({
             <p className="dim">No body yet. Edit to add Markdown.</p>
           )}
 
+          <SubIssuesPanel issueRef={issue.number.toString()} rootId={issue.id} />
+
           <section className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-2.5 text-sm font-semibold">Attachments</h3>
             <AttachmentSection
@@ -208,48 +208,6 @@ export function IssueDetailPage({
               <BacklinksPanel issueRef={issue.number.toString()} />
             </section>
           </div>
-
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-2.5 text-sm font-semibold">
-              Children <span className="dim">({issue.child_count})</span>
-            </h3>
-            {children === null ? (
-              <Loading label="Loading children…" />
-            ) : children.length === 0 ? (
-              <EmptyState>No children. Add one below.</EmptyState>
-            ) : (
-              <ul className="divide-y divide-border">
-                {children.map((c) => (
-                  <li key={c.id} className="issue-row flex items-center px-1.5 py-1.5 hover:bg-accent/50">
-                    <Link
-                      to={`/issues/${c.number}`}
-                      className="issue-row-main flex min-w-0 flex-1 items-center gap-2 text-foreground hover:no-underline"
-                    >
-                      <span className="issue-number font-mono text-xs text-muted-foreground">#{c.number}</span>
-                      <span className="issue-title truncate">{c.title}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <form
-              className="mt-2 flex gap-1.5"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.currentTarget;
-                const title = (form.elements.namedItem("child-title") as HTMLInputElement).value.trim();
-                if (!title) return;
-                await api.createIssue({ title, type: "task", parent_id: issue.id });
-                (form.elements.namedItem("child-title") as HTMLInputElement).value = "";
-                load();
-              }}
-            >
-              <Input name="child-title" placeholder="Child issue title" aria-label="Child issue title" />
-              <Button type="submit" size="sm">
-                Add child
-              </Button>
-            </form>
-          </section>
 
           <section className="rounded-lg border border-border bg-card p-4">
             <h3 className="mb-2.5 text-sm font-semibold">Comments</h3>
