@@ -30,9 +30,10 @@ export function App() {
     const { ref } = matchPath("/issues/:ref", path)!;
     content = <IssueDetailPage mode="view" issueRef={ref} />;
   } else if (path === "/wiki") content = <WikiPage />;
+  else if (path === "/wiki/new") content = <IssueDetailPage mode="create" createType="wiki" />;
   else if (matchPath("/wiki/:ref", path)) {
     const { ref } = matchPath("/wiki/:ref", path)!;
-    content = <IssueDetailPage mode="view" issueRef={ref} wiki />;
+    content = <WikiPage selectedRef={ref} />;
   } else if (path === "/search") content = <SearchPage />;
   else if (path === "/settings/tokens") content = <TokenSettingsPage />;
   else content = <NotFoundPage />;

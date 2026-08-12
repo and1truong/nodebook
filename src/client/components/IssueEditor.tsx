@@ -12,6 +12,8 @@ import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Markdown } from "./Markdown";
+import { DatePicker } from "./DatePicker";
+import { DateTimePicker } from "./DateTimePicker";
 import { cn } from "@/lib/utils";
 
 export interface IssueFormValues {
@@ -167,11 +169,13 @@ export function IssueEditor({
   onSubmit,
   onCancel,
   submitLabel = "Save",
+  variant = "standalone",
 }: {
   initial: IssueFormValues;
   onSubmit: (values: IssueFormValues) => Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
+  variant?: "standalone" | "inline";
 }) {
   const [values, setValues] = useState<IssueFormValues>(initial);
   const [saving, setSaving] = useState(false);
@@ -231,7 +235,13 @@ export function IssueEditor({
   };
 
   return (
-    <form className="issue-editor mt-3 flex flex-col gap-4 rounded-xl border border-border bg-card p-5 shadow-sm" onSubmit={submit}>
+    <form
+      className={cn(
+        "issue-editor flex flex-col gap-4 rounded-lg border border-border bg-card p-5",
+        variant === "standalone" ? "mt-3 shadow-sm" : "issue-editor-inline",
+      )}
+      onSubmit={submit}
+    >
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_240px]">
         {/* Main column: title + body. */}
         <div className="flex min-w-0 flex-col gap-4">
@@ -281,6 +291,7 @@ export function IssueEditor({
                 value={values.body}
                 onChange={(e) => set("body", e.target.value)}
                 rows={10}
+                className="min-h-[14rem]"
                 placeholder="Markdown — reference other issues with #123"
               />
             ) : (
@@ -432,31 +443,31 @@ function PlanningFields({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-3">
         <Field label="Start date" htmlFor="start-date">
-          <Input
+          <DatePicker
             id="start-date"
-            type="date"
-            className="w-40"
             value={values.start_date}
             min={today}
-            onChange={(e) => set("start_date", e.target.value)}
+            today={today}
+            onChange={(v) => set("start_date", v)}
+            ariaLabel="Start date"
           />
         </Field>
         <Field label="Due date" htmlFor="due-date">
-          <Input
+          <DatePicker
             id="due-date"
-            type="date"
-            className="w-40"
             value={values.due_date}
-            onChange={(e) => set("due_date", e.target.value)}
+            today={today}
+            onChange={(v) => set("due_date", v)}
+            ariaLabel="Due date"
           />
         </Field>
         <Field label="Scheduled" htmlFor="scheduled-date">
-          <Input
+          <DateTimePicker
             id="scheduled-date"
-            type="datetime-local"
-            className="w-56"
             value={values.scheduled_date}
-            onChange={(e) => set("scheduled_date", e.target.value)}
+            today={today}
+            onChange={(v) => set("scheduled_date", v)}
+            ariaLabel="Scheduled"
           />
         </Field>
       </div>

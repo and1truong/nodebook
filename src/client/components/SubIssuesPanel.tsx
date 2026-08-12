@@ -24,6 +24,11 @@ import {
 } from "./ui/dropdown-menu";
 import { cn } from "@/lib/utils";
 
+export type SubIssuesLoadState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; count: number; completed: number };
+
 type ActionMode = "idle" | "create" | "link";
 
 /** Shared lazy-branch state threaded through the recursive node renderer. */
@@ -36,10 +41,17 @@ interface BranchHandlers {
   onRetry: (id: string, number: number) => void;
 }
 
-export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId: string }) {
+export function SubIssuesPanel({
+  issueRef,
+  rootId,
+  onLoadStateChange,
+}: {
+  issueRef: string;
+  rootId: string;
+  onLoadStateChange?: (state: SubIssuesLoadState) => void;
+}) {
   const [tree, setTree] = useState<SubIssueSummaryDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [open, setOpen] = useState(true);
   const [mode, setMode] = useState<ActionMode>("idle");
   const [title, setTitle] = useState("");
   const [createError, setCreateError] = useState<string | null>(null);
@@ -116,15 +128,24 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
   const load = useCallback(() => {
     const seq = ++loadSeq.current;
     setError(null);
+    onLoadStateChange?.({ status: "loading" });
     api
       .subIssues(issueRef)
       .then((tree) => {
-        if (loadSeq.current === seq) setTree(tree);
+        if (loadSeq.current !== seq) return;
+        setTree(tree);
+        onLoadStateChange?.({
+          status: "ready",
+          count: tree.length,
+          completed: tree.filter((node) => node.status === "closed").length,
+        });
       })
       .catch((err) => {
-        if (loadSeq.current === seq) setError(err);
+        if (loadSeq.current !== seq) return;
+        setError(err);
+        onLoadStateChange?.({ status: "error" });
       });
-  }, [issueRef]);
+  }, [issueRef, onLoadStateChange]);
 
   useEffect(() => {
     // Navigating to another issue resets all cached branches and expansion
@@ -132,6 +153,7 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
     // The load's sequence stamp invalidates any in-flight request from the
     // previous issue.
     cacheRef.current = new Map();
+    setTree(null);
     setChildrenCache(new Map());
     setExpanded(new Set());
     setBranchErrors(new Map());
@@ -141,10 +163,6 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
 
   const roots = tree ?? [];
   const hasError = !!error;
-  const total = roots.length;
-  const closed = roots.filter((n) => n.status === "closed").length;
-  const complete = total > 0 && closed === total;
-
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const trimmed = title.trim();
@@ -175,133 +193,107 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
   };
 
   return (
-    <section className="sub-issues rounded-lg border border-border bg-card">
-      <button
-        type="button"
-        className="sub-issues-header flex w-full cursor-pointer items-center gap-2 rounded-t-lg border-b border-border px-4 py-2.5 text-left hover:bg-accent/40"
-        onClick={() => setOpen((o) => !o)}
-        aria-expanded={open}
-        aria-label={open ? "Collapse sub-issues" : "Expand sub-issues"}
-      >
-        <span className="text-sm font-semibold">Sub-issues</span>
-        {total > 0 && (
-          <span
-            className={cn(
-              "sub-issues-progress inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium",
-              complete ? "border-success/40 text-success" : "border-border text-muted-foreground",
-            )}
-          >
-            {complete && <CheckCircle2 className="size-3" aria-hidden="true" />}
-            {closed}/{total}
-          </span>
+    <section className="sub-issues">
+      <div className="sub-issues-body p-1.5">
+        {tree === null && !hasError && <Loading label="Loading sub-issues…" />}
+        {hasError && (
+          <div className="flex items-center justify-between gap-2 px-2 py-3">
+            <p className="text-sm text-destructive">Could not load sub-issues.</p>
+            <Button variant="outline" size="sm" onClick={load}>
+              Retry
+            </Button>
+          </div>
         )}
-        <span className="ml-auto text-muted-foreground" aria-hidden="true">
-          {open ? "▾" : "▸"}
-        </span>
-      </button>
-
-      {open && (
-        <div className="sub-issues-body p-1.5">
-          {tree === null && !hasError && <Loading label="Loading sub-issues…" />}
-          {hasError && (
-            <div className="flex items-center justify-between gap-2 px-2 py-3">
-              <p className="text-sm text-destructive">Could not load sub-issues.</p>
-              <Button variant="outline" size="sm" onClick={load}>
-                Retry
+        {tree !== null && !hasError && roots.length === 0 && (
+          <p className="sub-issues-empty px-2 py-3 text-sm text-muted-foreground">
+            No sub-issues yet. Create one below or add an existing issue.
+          </p>
+        )}
+        {tree !== null && !hasError && roots.length > 0 && (
+          <ul className="sub-issues-tree flex flex-col" aria-label="Sub-issues">
+            {roots.map((node) => (
+              <SubIssueNode key={node.id} node={node} depth={0} handlers={handlers} />
+            ))}
+          </ul>
+        )}
+        <div className="sub-issues-create border-t border-border p-2">
+          {mode === "create" ? (
+            <form className="sub-issues-create-form flex flex-col gap-1.5" onSubmit={submit}>
+              <Input
+                autoFocus
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Sub-issue title"
+                aria-label="Sub-issue title"
+                maxLength={500}
+                disabled={submitting}
+              />
+              {createError && <p className="error-inline">{createError}</p>}
+              <div className="flex gap-1.5">
+                <Button type="submit" size="sm" disabled={!title.trim() || submitting}>
+                  Create
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={submitting}
+                  onClick={() => {
+                    setMode("idle");
+                    setTitle("");
+                    setCreateError(null);
+                  }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </form>
+          ) : mode === "link" ? (
+            <ExistingIssuePicker
+              issueRef={issueRef}
+              rootId={rootId}
+              onLinked={() => {
+                setMode("idle");
+                load();
+              }}
+              onCancel={() => setMode("idle")}
+            />
+          ) : (
+            <div className="sub-issues-action flex">
+              <Button
+                variant="outline"
+                size="sm"
+                className="flex-1 rounded-r-none"
+                onClick={() => setMode("create")}
+              >
+                Create sub-issue
               </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-l-none border-l-0 px-2.5"
+                    aria-label="Sub-issue actions"
+                  >
+                    <ChevronDown className="size-4" aria-hidden="true" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="sub-issues-action-menu min-w-[13rem]">
+                  <DropdownMenuItem onSelect={() => setMode("create")}>
+                    <Plus aria-hidden="true" />
+                    Create sub-issue
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onSelect={() => setMode("link")}>
+                    <Link2 aria-hidden="true" />
+                    Add existing issue
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           )}
-          {tree !== null && !hasError && roots.length === 0 && (
-            <p className="sub-issues-empty px-2 py-3 text-sm text-muted-foreground">
-              No sub-issues yet. Create one below or add an existing issue.
-            </p>
-          )}
-          {tree !== null && !hasError && roots.length > 0 && (
-            <ul className="sub-issues-tree flex flex-col" aria-label="Sub-issues">
-              {roots.map((node) => (
-                <SubIssueNode key={node.id} node={node} depth={0} handlers={handlers} />
-              ))}
-            </ul>
-          )}
-          <div className="sub-issues-create border-t border-border p-2">
-            {mode === "create" ? (
-              <form className="sub-issues-create-form flex flex-col gap-1.5" onSubmit={submit}>
-                <Input
-                  autoFocus
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="Sub-issue title"
-                  aria-label="Sub-issue title"
-                  maxLength={500}
-                  disabled={submitting}
-                />
-                {createError && <p className="error-inline">{createError}</p>}
-                <div className="flex gap-1.5">
-                  <Button type="submit" size="sm" disabled={!title.trim() || submitting}>
-                    Create
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={submitting}
-                    onClick={() => {
-                      setMode("idle");
-                      setTitle("");
-                      setCreateError(null);
-                    }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </form>
-            ) : mode === "link" ? (
-              <ExistingIssuePicker
-                issueRef={issueRef}
-                rootId={rootId}
-                onLinked={() => {
-                  setMode("idle");
-                  load();
-                }}
-                onCancel={() => setMode("idle")}
-              />
-            ) : (
-              <div className="sub-issues-action flex">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1 rounded-r-none"
-                  onClick={() => setMode("create")}
-                >
-                  Create sub-issue
-                </Button>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-l-none border-l-0 px-2.5"
-                      aria-label="Sub-issue actions"
-                    >
-                      <ChevronDown className="size-4" aria-hidden="true" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="sub-issues-action-menu min-w-[13rem]">
-                    <DropdownMenuItem onSelect={() => setMode("create")}>
-                      <Plus aria-hidden="true" />
-                      Create sub-issue
-                    </DropdownMenuItem>
-                    <DropdownMenuItem onSelect={() => setMode("link")}>
-                      <Link2 aria-hidden="true" />
-                      Add existing issue
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            )}
-          </div>
         </div>
-      )}
+      </div>
     </section>
   );
 }

@@ -1,25 +1,37 @@
 /** Reminder editor: absolute, before-due, recurring; snooze/dismiss controls. */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, formatInstant } from "../api";
 import type { IssueDto, ReminderDto } from "../../shared/contracts/issues";
+import { todayCivil } from "../../shared/time";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { DateTimePicker } from "./DateTimePicker";
 import { Loading, ErrorState, EmptyState } from "./ui";
 import { cn } from "@/lib/utils";
 
 const nativeSelectClass =
   "h-9 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
+export type ReminderLoadState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; count: number };
+
 export function ReminderEditor({
   issueRef,
   issue,
   embedded = false,
+  wide = false,
+  onLoadStateChange,
 }: {
   issueRef: string;
   issue: IssueDto;
-  /** Compact sidebar presentation: no outer card/heading, stacked controls. */
+  /** Embedded presentation suppresses the outer card and heading. */
   embedded?: boolean;
+  /** Keep embedded controls horizontal when there is enough room, such as in a tab. */
+  wide?: boolean;
+  onLoadStateChange?: (state: ReminderLoadState) => void;
 }) {
   const [items, setItems] = useState<ReminderDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -29,16 +41,23 @@ export function ReminderEditor({
   const [recurrence, setRecurrence] = useState("FREQ=DAILY;INTERVAL=1");
   const [creating, setCreating] = useState(false);
 
-  const load = () => {
+  const load = useCallback(() => {
     setItems(null);
     setError(null);
+    onLoadStateChange?.({ status: "loading" });
     api
       .reminders(issueRef)
-      .then(setItems)
-      .catch(setError);
-  };
+      .then((nextItems) => {
+        setItems(nextItems);
+        onLoadStateChange?.({ status: "ready", count: nextItems.length });
+      })
+      .catch((nextError) => {
+        setError(nextError);
+        onLoadStateChange?.({ status: "error" });
+      });
+  }, [issueRef, onLoadStateChange]);
 
-  useEffect(load, [issueRef]);
+  useEffect(load, [load]);
 
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -75,33 +94,33 @@ export function ReminderEditor({
   return (
     <section className={cn("flex flex-col gap-3", !embedded && "rounded-lg border border-border bg-card p-4")}>
       {!embedded && <h3 className="text-sm font-semibold">Reminders</h3>}
-      <form className={cn("reminder-form flex gap-2", embedded ? "flex-col" : "flex-wrap items-center")} onSubmit={create}>
+      <form className={cn("reminder-form flex gap-2", embedded && !wide ? "flex-col" : "flex-wrap items-center")} onSubmit={create}>
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as typeof kind)}
           aria-label="Reminder kind"
-          className={cn(nativeSelectClass, embedded && "w-full")}
+          className={cn(nativeSelectClass, embedded && !wide && "w-full")}
         >
           <option value="absolute">At a specific time</option>
           <option value="before_due">Before due date</option>
           <option value="recurring">Recurring</option>
         </select>
         {kind === "absolute" && (
-          <Input
-            type="datetime-local"
-            className={embedded ? "w-full" : "w-fit"}
+          <DateTimePicker
             value={triggerAt}
-            onChange={(e) => setTriggerAt(e.target.value)}
-            aria-label="Trigger time"
+            today={todayCivil(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}
+            onChange={setTriggerAt}
+            ariaLabel="Trigger"
+            className={embedded && !wide ? "w-full" : undefined}
           />
         )}
         {kind === "before_due" && (
-          <label className={cn("flex gap-1.5 text-sm", embedded ? "flex-col items-start" : "flex-wrap items-center")}>
+          <label className={cn("flex gap-1.5 text-sm", embedded && !wide ? "flex-col items-start" : "flex-wrap items-center")}>
             <Input
               type="number"
               min={1}
               max={43200}
-              className={embedded ? "w-full" : "w-24"}
+              className={embedded && !wide ? "w-full" : "w-24"}
               value={offset}
               onChange={(e) => setOffset(Number(e.target.value))}
             />
@@ -116,7 +135,7 @@ export function ReminderEditor({
             value={recurrence}
             onChange={(e) => setRecurrence(e.target.value)}
             aria-label="Recurrence"
-            className={cn(nativeSelectClass, embedded && "w-full")}
+            className={cn(nativeSelectClass, embedded && !wide && "w-full")}
           >
             <option value="FREQ=DAILY;INTERVAL=1">Daily</option>
             <option value="FREQ=WEEKLY;INTERVAL=1">Weekly</option>

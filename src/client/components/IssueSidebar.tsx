@@ -1,16 +1,12 @@
 /**
- * Right-hand issue sidebar: compact property rows plus the secondary tools
- * (attachments, reminders, relationships, backlinks). Sections are separated
- * by borders instead of nested cards so the narrow rail stays lightweight.
+ * Right-hand issue sidebar: compact properties and relationships.
+ * Attachments, backlinks, and reminders live in the main issue content tabs.
  */
 import type { ReactNode } from "react";
 import { formatInstant } from "../api";
 import type { IssueDto } from "../../shared/contracts/issues";
 import { Link } from "../router";
-import { AttachmentSection } from "./AttachmentUploader";
-import { ReminderEditor } from "./ReminderEditor";
 import { RelationshipsPanel } from "./RelationshipsPanel";
-import { BacklinksPanel } from "./BacklinksPanel";
 import { TypeBadge, PriorityBadge, LabelChip } from "./ui";
 
 function SidebarSection({ title, children }: { title: string; children: ReactNode }) {
@@ -91,24 +87,8 @@ export function IssueSidebar({ issue }: { issue: IssueDto }) {
         </PropertyRow>
       </SidebarSection>
 
-      <SidebarSection title="Attachments">
-        <AttachmentSection
-          ownerType="issue"
-          ownerId={issue.id}
-          uploadUrl={`/api/attachments/issue/${issue.number}`}
-        />
-      </SidebarSection>
-
-      <SidebarSection title="Reminders">
-        <ReminderEditor issueRef={issue.number.toString()} issue={issue} embedded />
-      </SidebarSection>
-
       <SidebarSection title="Relationships">
         <RelationshipsPanel issueRef={issue.number.toString()} issueId={issue.id} embedded />
-      </SidebarSection>
-
-      <SidebarSection title="Backlinks">
-        <BacklinksPanel issueRef={issue.number.toString()} />
       </SidebarSection>
     </aside>
   );
