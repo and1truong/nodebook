@@ -126,6 +126,10 @@ export function IssueDetailPage({
             {issue.title} <span className="font-normal text-muted-foreground">#{issue.number}</span>
           </h1>
           <div className="flex flex-wrap justify-end gap-2">
+            <Button size="sm" variant="outline" onClick={() => setEditing((value) => !value)}>
+              <Pencil aria-hidden="true" />
+              {editing ? "Cancel edit" : "Edit"}
+            </Button>
             {issue.status === "open" ? (
               <>
                 <Button
@@ -185,12 +189,6 @@ export function IssueDetailPage({
               Parent #{issue.parent_number}
             </Link>
           )}
-        </div>
-        <div className="issue-actions mt-3 flex flex-wrap gap-2">
-          <Button size="sm" variant="outline" onClick={() => setEditing((value) => !value)}>
-            <Pencil aria-hidden="true" />
-            {editing ? "Cancel edit" : "Edit"}
-          </Button>
         </div>
       </div>
 
