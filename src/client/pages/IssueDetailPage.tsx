@@ -14,6 +14,7 @@ import {
 } from "../components/IssueEditor";
 import { HistoryPanel } from "../components/HistoryPanel";
 import { IssueSidebar } from "../components/IssueSidebar";
+import { IssueLinkPreview } from "../components/IssueLinkPreview";
 import { SubIssuesPanel } from "../components/SubIssuesPanel";
 import { StatusBadge, Loading, ErrorState, EmptyState } from "../components/ui";
 import { Button } from "../components/ui/button";
@@ -205,7 +206,9 @@ export function IssueDetailPage({
             </section>
           </div>
 
-          <IssueSidebar issue={issue} />
+          <IssueLinkPreview>
+            <IssueSidebar issue={issue} />
+          </IssueLinkPreview>
         </div>
       )}
     </article>

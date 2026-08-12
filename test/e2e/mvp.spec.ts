@@ -78,6 +78,41 @@ test.describe.serial("MVP acceptance", () => {
     await expect(page.locator(".comment", { hasText: "Comment with" })).toBeVisible();
   });
 
+  test("preview a referenced issue on hover", async ({ page, request }) => {
+    const targetRes = await apiJson(request, "POST", "/api/issues", {
+      title: "Hover card target",
+      body: "A concise target summary for the issue preview.",
+      type: "decision",
+      labels: ["preview"],
+    });
+    const target = targetRes.json as unknown as { id: string; number: number };
+    const sourceRes = await apiJson(request, "POST", "/api/issues", {
+      title: "Hover card source",
+      body: `Review #${target.number} before continuing.`,
+      type: "task",
+      parent_id: target.id,
+    });
+    const source = sourceRes.json as unknown as { number: number };
+
+    await page.goto(`/issues/${source.number}`);
+    await page.locator(`.issue-body a[href='/issues/${target.number}']`).hover();
+
+    const card = page.locator(".issue-hover-card");
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("Hover card target");
+    await expect(card).toContainText(`#${target.number}`);
+    await expect(card).toContainText("open");
+    await expect(card).toContainText("A concise target summary");
+    await expect(card.locator(".chip", { hasText: "preview" })).toBeVisible();
+
+    // Sidebar links, including the Parent property, use the same preview.
+    await page.mouse.move(0, 0);
+    await expect(card).toBeHidden();
+    await page.locator(`.issue-sidebar a[href='/issues/${target.number}']`).hover();
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("Hover card target");
+  });
+
   test("render nested sub-issues lazily", async ({ page, request }) => {
     // Self-contained fixture: root → child → (grandchild, closed sibling),
     // plus a closed second direct child of the root.

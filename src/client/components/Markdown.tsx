@@ -3,6 +3,7 @@ import { useMemo } from "react";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import { linkifyIssueReferences, linkifyAttachmentLinks } from "../../shared/refs";
+import { IssueLinkPreview } from "./IssueLinkPreview";
 
 marked.setOptions({ gfm: true, breaks: true });
 
@@ -13,5 +14,5 @@ export function Markdown({ source, className }: { source: string; className?: st
     return DOMPurify.sanitize(parsed, { ADD_ATTR: ["target"] });
   }, [source]);
 
-  return <div className={`markdown ${className ?? ""}`} dangerouslySetInnerHTML={{ __html: html }} />;
+  return <IssueLinkPreview className={`markdown ${className ?? ""}`} dangerouslySetInnerHTML={{ __html: html }} />;
 }
