@@ -1,5 +1,6 @@
 /** Issue detail: edit, comments, history, attachments, reminders, graph panels. */
 import { useCallback, useEffect, useState } from "react";
+import { X } from "lucide-react";
 import { api, formatInstant } from "../api";
 import type { CommentDto, IssueDto } from "../../shared/contracts/issues";
 import { Markdown } from "../components/Markdown";
@@ -133,6 +134,7 @@ export function IssueDetailPage({
                   load();
                 }}
               >
+                <X aria-hidden="true" />
                 Close
               </Button>
             </>
