@@ -168,11 +168,13 @@ export function IssueEditor({
   onSubmit,
   onCancel,
   submitLabel = "Save",
+  variant = "standalone",
 }: {
   initial: IssueFormValues;
   onSubmit: (values: IssueFormValues) => Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
+  variant?: "standalone" | "inline";
 }) {
   const [values, setValues] = useState<IssueFormValues>(initial);
   const [saving, setSaving] = useState(false);
@@ -232,7 +234,13 @@ export function IssueEditor({
   };
 
   return (
-    <form className="issue-editor mt-3 flex flex-col gap-4 rounded-xl border border-border bg-card p-5 shadow-sm" onSubmit={submit}>
+    <form
+      className={cn(
+        "issue-editor flex flex-col gap-4 rounded-lg border border-border bg-card p-5",
+        variant === "standalone" ? "mt-3 shadow-sm" : "issue-editor-inline",
+      )}
+      onSubmit={submit}
+    >
       <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_240px]">
         {/* Main column: title + body. */}
         <div className="flex min-w-0 flex-col gap-4">

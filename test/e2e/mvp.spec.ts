@@ -502,8 +502,8 @@ test.describe.serial("MVP acceptance", () => {
     await page.goto(`/issues/${mcpIssue.number}`);
     await expect(page.getByRole("heading", { name: "Created by MCP agent" })).toBeVisible();
 
-    // …with an mcp-attributed audit trail.
-    await expect(page.locator(".history-item").first()).toContainText("mcp");
+    // …with creator attribution sourced from the MCP audit event.
+    await expect(page.locator(".issue-summary")).toContainText("mcp");
 
     // Revocation takes effect immediately.
     const tokens = (await apiJson(request, "GET", "/api/tokens")).json as unknown as { id: string; name: string }[];
