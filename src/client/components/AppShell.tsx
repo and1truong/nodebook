@@ -104,14 +104,14 @@ export function AppShell({
   return (
     <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 border-b border-border bg-card">
-        <div className="grid grid-cols-[190px_1fr] items-center">
-          <Link to="/inbox" className="flex h-[52px] items-center px-2.5 text-[15px] font-bold text-foreground hover:no-underline">
-            <span className="text-primary">◈</span> NodeBook
+        <div className="flex items-center md:grid md:grid-cols-[190px_1fr]">
+          <Link to="/inbox" className="flex h-[52px] flex-none items-center gap-1 px-3 text-[15px] font-bold text-foreground hover:no-underline md:px-2.5">
+            <span className="text-primary">◈</span><span className="hidden md:inline">NodeBook</span>
           </Link>
-          <div className="flex h-[52px] items-center gap-4 px-4">
-        <form className="flex max-w-[560px] flex-1 gap-1.5" onSubmit={submitQuick}>
+          <div className="flex h-[52px] min-w-0 flex-1 items-center gap-2 px-2 md:gap-4 md:px-4">
+        <form className="flex min-w-0 max-w-[560px] flex-1 gap-1.5" onSubmit={submitQuick}>
           <Select value={quickType} onValueChange={setQuickType}>
-            <SelectTrigger className="h-8 w-[110px] shrink-0" aria-label="Issue type">
+            <SelectTrigger className="hidden h-8 w-[110px] shrink-0 sm:flex" aria-label="Issue type">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -134,7 +134,11 @@ export function AppShell({
             Add
           </Button>
         </form>
-        {error && <span className="error-inline">{error}</span>}
+        {error && (
+          <span className="error-inline fixed left-3 right-3 top-14 z-50 rounded-md border border-destructive/30 bg-card p-2 shadow-md lg:static lg:border-0 lg:bg-transparent lg:p-0 lg:shadow-none">
+            {error}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-1.5">
           <NotificationInbox />
           <ThemeControl />
@@ -142,9 +146,9 @@ export function AppShell({
           </div>
         </div>
       </header>
-      <div className="grid flex-1 grid-cols-[190px_1fr]">
+      <div className="grid min-w-0 flex-1 grid-cols-1 md:grid-cols-[190px_1fr]">
         <nav
-          className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto border-r border-border bg-card p-2"
+          className="sticky top-[52px] z-40 flex h-11 overflow-x-auto border-b border-border bg-card p-1 md:block md:h-[calc(100vh-52px)] md:overflow-y-auto md:border-b-0 md:border-r md:p-2"
           aria-label="Primary"
         >
           {navItems.map((item) => (
@@ -152,19 +156,21 @@ export function AppShell({
               key={item.to}
               to={item.to}
               aria-current={path.startsWith(item.to) ? "page" : undefined}
+              aria-label={item.label}
+              title={item.label}
               className={cn(
-                "flex items-center gap-2 rounded-md px-2.5 py-2 text-foreground hover:bg-accent hover:no-underline",
+                "flex flex-1 items-center justify-center gap-2 rounded-md px-2.5 py-2 text-foreground hover:bg-accent hover:no-underline md:justify-start",
                 path.startsWith(item.to) && "bg-accent font-semibold text-primary",
               )}
             >
               <span className="w-[18px] text-center">{item.icon}</span>
-              {item.label}
+              <span className="hidden md:inline">{item.label}</span>
             </Link>
           ))}
         </nav>
         <main
           className={cn(
-            "w-full px-7 pb-20 pt-6",
+            "w-full min-w-0 px-4 pb-8 pt-5 md:px-7 md:pb-20 md:pt-6",
             // Issue/wiki detail routes get a wider shell for the two-column
             // layout; lists and settings stay at the classic narrow width.
             !matchPath("/issues/new", path) &&
@@ -180,7 +186,7 @@ export function AppShell({
           consuming document space or duplicating the page-level controls. */}
       <footer
         aria-label="Application status"
-        className="fixed inset-x-0 bottom-0 z-40 grid h-7 grid-cols-[190px_1fr] border-t border-border bg-card/95 text-[11px] text-muted-foreground shadow-lg backdrop-blur"
+        className="fixed inset-x-0 bottom-0 z-40 hidden h-7 grid-cols-[190px_1fr] border-t border-border bg-card/95 text-[11px] text-muted-foreground shadow-lg backdrop-blur md:grid"
       >
         <div className="flex items-center gap-1.5 border-r border-border px-2.5 font-semibold tracking-wide">
           <span className="text-primary">◈</span>

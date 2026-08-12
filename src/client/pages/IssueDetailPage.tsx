@@ -25,10 +25,12 @@ export function IssueDetailPage({
   mode,
   issueRef,
   wiki = false,
+  createType,
 }: {
   mode: "view" | "create";
   issueRef?: string;
   wiki?: boolean;
+  createType?: IssueFormValues["type"];
 }) {
   const { navigate } = useRouter();
   const [issue, setIssue] = useState<IssueDto | null>(null);
@@ -59,10 +61,13 @@ export function IssueDetailPage({
   useEffect(load, [load]);
 
   if (mode === "create") {
+    const creatingWikiPage = createType === "wiki";
     return (
       <CreateIssueForm
-        onCreated={(issue) => navigate(`/issues/${issue.number}`)}
-        onCancel={() => navigate("/issues")}
+        initialType={createType}
+        title={creatingWikiPage ? "New wiki page" : "New issue"}
+        onCreated={(issue) => navigate(creatingWikiPage ? `/wiki/${issue.number}` : `/issues/${issue.number}`)}
+        onCancel={() => navigate(creatingWikiPage ? "/wiki" : "/issues")}
       />
     );
   }
@@ -406,11 +411,21 @@ function buildTimeline(comments: CommentDto[], history: AuditEventDto[]): Timeli
   ].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 }
 
-function CreateIssueForm({ onCreated, onCancel }: { onCreated: (issue: IssueDto) => void; onCancel: () => void }) {
-  const [initial] = useState(emptyFormValues);
+function CreateIssueForm({
+  onCreated,
+  onCancel,
+  initialType,
+  title,
+}: {
+  onCreated: (issue: IssueDto) => void;
+  onCancel: () => void;
+  initialType?: IssueFormValues["type"];
+  title: string;
+}) {
+  const [initial] = useState(() => ({ ...emptyFormValues(), type: initialType ?? "task" }));
   return (
     <div>
-      <h1 className="mb-3 text-2xl font-semibold tracking-tight">New issue</h1>
+      <h1 className="mb-3 text-2xl font-semibold tracking-tight">{title}</h1>
       <IssueEditor
         initial={initial}
         submitLabel="Create"

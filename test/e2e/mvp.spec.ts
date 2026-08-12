@@ -519,8 +519,21 @@ test.describe.serial("MVP acceptance", () => {
     expect(after.status()).toBe(401);
   });
 
-  test("wiki tree shows the hierarchy", async ({ page }) => {
+  test("wiki provides a browsable home and focused reading view", async ({ page }) => {
     await page.goto("/wiki");
-    await expect(page.locator(".tree-link", { hasText: "Set up the NodeBook workspace" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Browse by topic" })).toBeVisible();
+
+    const rootPage = page.locator(".tree-link", { hasText: "Set up the NodeBook workspace" });
+    await expect(rootPage).toBeVisible();
+    await rootPage.click();
+
+    await expect(page).toHaveURL(`/wiki/${issueNumber}`);
+    await expect(page.getByRole("heading", { name: "Set up the NodeBook workspace", exact: true })).toBeVisible();
+    await expect(page.getByText("Bootstrap the wiki.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Edit & manage" })).toHaveAttribute("href", `/issues/${issueNumber}`);
+
+    await page.getByRole("link", { name: "New page" }).click();
+    await expect(page.getByRole("heading", { name: "New wiki page" })).toBeVisible();
+    await expect(page.getByLabel("Type", { exact: true })).toContainText("wiki");
   });
 });
