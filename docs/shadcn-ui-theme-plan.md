@@ -1,5 +1,7 @@
 # Plan: Adopt shadcn/ui and add dark/light/system theme support
 
+> **Superseded (palette).** This plan's blue/GitHub token values (`--primary: #2f81f7` / `#4da3ff`, `--accent: #ddf4ff`, …) were later replaced by a palette derived from TabTerm's warm parchment/brown/gold theme — see `docs/architecture.md` (Client UI → Theme tokens). The infrastructure described here (shadcn components, Tailwind v4 theming, `ThemeProvider` with light/dark/system, pre-paint bootstrap) is unchanged and in production; only the colour values and the type/semantic palette mapping differ. Treat the hex values below as historical.
+
 ## Outcome
 When complete, NodeBook's client UI is built on shadcn/ui components (Tailwind CSS v4, CSS-variable theming, `@/` path alias) instead of the hand-rolled `styles.css` sheet, and users can switch between **light**, **dark**, and **system** themes via a topbar control, with localStorage persistence, no flash-of-wrong-theme on load, and live following of OS preference in system mode. All existing quality gates (lint, typecheck, unit, build, integration, e2e, deploy dry-run) stay green.
 

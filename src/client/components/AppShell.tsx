@@ -154,7 +154,7 @@ export function AppShell({
       </header>
       <div className="grid grid-cols-[190px_1fr]">
         <nav
-          className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto border-r border-border p-2"
+          className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto border-r border-border bg-card p-2"
           aria-label="Primary"
         >
           {navItems.map((item) => (
