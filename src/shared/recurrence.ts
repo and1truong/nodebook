@@ -20,7 +20,8 @@ export interface RecurrenceRule {
 }
 
 const WEEKDAYS = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"] as const;
-const DAY_INDEX: Record<string, number> = { MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6, SU: 0 };
+// Offset from a Monday week start: MO=0 … SU=6 (chronological).
+const DAY_INDEX: Record<string, number> = { MO: 0, TU: 1, WE: 2, TH: 3, FR: 4, SA: 5, SU: 6 };
 const WEEKDAY_BY_INDEX = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
 
 export function isWeekday(value: string): value is (typeof WEEKDAYS)[number] {
@@ -171,14 +172,16 @@ function advance(rule: RecurrenceRule, timezone: string, current: Date, anchorCi
       return instantFromCivil(timezone, next);
     }
     case "WEEKLY": {
-      const byDay = rule.byDay.length > 0 ? rule.byDay : [weekdayName(anchorCivil)];
+      const byDay = [...(rule.byDay.length > 0 ? rule.byDay : [weekdayName(anchorCivil)])].sort(
+        (a, b) => DAY_INDEX[a]! - DAY_INDEX[b]!,
+      );
       const anchorWeekStart = mondayOf(anchorCivil);
       // Candidate weeks start at the anchor week; step by interval weeks.
       let weekOffset = 0;
       for (;;) {
         const weekStart = addDaysCivil(anchorWeekStart, (weekOffset * rule.interval) * 7);
         for (const day of byDay) {
-          const dayOffset = DAY_INDEX[day]! - 1; // DAY_INDEX: MO=1..SU=0; mondayOf index 1
+          const dayOffset = DAY_INDEX[day]!;
           const candidate = instantFromCivil(timezone, {
             ...anchorCivil,
             year: weekStart.year,

@@ -153,6 +153,10 @@ export const tools = [
     inputSchema: createIssueSchema,
     scope: "write:issue",
     handler: withScope("write:issue", async (ctx: ToolContext, args) => {
+      // Setting a parent mutates the graph: require the graph scope as well.
+      if (args.parent_id !== undefined && args.parent_id !== null) {
+        assertScope(ctx.identity.scopes, "write:graph");
+      }
       return issueService.createIssue(toCtx(ctx), {
         type: args.type ?? "task",
         title: args.title,
@@ -177,6 +181,10 @@ export const tools = [
       const c = toCtx(ctx);
       const issue = await graphService.getIssueByRefOrThrow(c, requireIssueId(args.issue_id));
       const { issue_id: _id, ...rest } = args;
+      // Changing the parent mutates the graph: require the graph scope as well.
+      if ("parent_id" in rest && rest.parent_id !== undefined) {
+        assertScope(ctx.identity.scopes, "write:graph");
+      }
       return issueService.updateIssue(c, issue.id, {
         type: rest.type,
         title: rest.title,

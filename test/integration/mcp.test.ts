@@ -175,6 +175,34 @@ describe("MCP tools", () => {
     expect(create.after?.labels).toEqual(["parity"]);
   });
 
+  it("requires write:graph when create_issue/update_issue set parent_id", async () => {
+    const parent = await createIssue({ title: "scope parent" });
+    const { token, sessionId } = await setupToken(["write:issue"]);
+
+    const create = await callTool(token, sessionId, "create_issue", {
+      title: "scope child",
+      parent_id: parent.id,
+    });
+    expect(create.error).toBeTruthy();
+    expect(create.error!.code).toBe(-32003);
+
+    const child = await createIssue({ title: "scope child" });
+    const update = await callTool(token, sessionId, "update_issue", {
+      issue_id: child.id,
+      parent_id: parent.id,
+    });
+    expect(update.error).toBeTruthy();
+    expect(update.error!.code).toBe(-32003);
+
+    // With write:graph granted, the same calls succeed.
+    const { token: full, sessionId: fullSession } = await setupToken(["write:issue", "write:graph"]);
+    const ok = await callTool(full, fullSession, "create_issue", {
+      title: "scope child ok",
+      parent_id: parent.id,
+    });
+    expect(ok.error).toBeUndefined();
+  });
+
   it("requires per-tool scopes (missing scope rejected)", async () => {
     const { token, sessionId } = await setupToken(["read:issue"]);
     const res = await callTool(token, sessionId, "add_comment", {

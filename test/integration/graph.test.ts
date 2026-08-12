@@ -26,6 +26,26 @@ describe("hierarchy", () => {
     expect(unparent.status).toBe(200);
   });
 
+  it("enforces graph invariants on PATCH parent_id (no direct column write)", async () => {
+    const a = await createIssue({ title: "cycle a" });
+    const b = await createIssue({ title: "cycle b" });
+    await post(`/api/graph/${b.number}/parent`, { parent_id: a.id });
+
+    // PATCHing b as a's parent would create a two-node cycle: rejected.
+    const cycle = await patch(`/api/issues/${a.number}`, { parent_id: b.id });
+    expect(cycle.status).toBe(409);
+
+    // Self-parent via PATCH is rejected too.
+    const self = await patch(`/api/issues/${a.number}`, { parent_id: a.id });
+    expect(self.status).toBe(400);
+
+    // Valid reparenting through PATCH still works.
+    const c = await createIssue({ title: "cycle c" });
+    const ok = await patch(`/api/issues/${b.number}`, { parent_id: c.id });
+    expect(ok.status).toBe(200);
+    expect((ok.body as { parent_number: number | null }).parent_number).toBe(c.number);
+  });
+
   it("lists children with counts", async () => {
     const root = await createIssue({ title: "root2" });
     const a = await createIssue({ title: "child a" });

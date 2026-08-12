@@ -14,6 +14,7 @@ import { recordAudit, listAuditForEntity } from "./audit-service";
 import { refreshIssueReferences, resolveReferencesForNewIssue } from "./reference-service";
 import { indexIssue, deleteIndexEntry } from "./search-service";
 import { toIssueDto, toIssueDtos } from "./dto";
+import { setParent } from "./graph-service";
 import * as issueRepo from "../repositories/issues";
 import * as graphRepo from "../repositories/graph";
 import { recalculateBeforeDueRemindersForIssue } from "./reminder-service";
@@ -205,9 +206,6 @@ export async function updateIssue(ctx: Ctx, ref: string, input: IssueUpdateInput
   if (input.recurrence_rule !== undefined) {
     fields.recurrence_rule = validateRecurrence(input.recurrence_rule, input.timezone ?? issue.timezone);
   }
-  if (input.parent_id !== undefined) {
-    fields.parent_id = input.parent_id;
-  }
 
   const now = nowIso();
   if (Object.keys(fields).length > 0) {
@@ -220,6 +218,12 @@ export async function updateIssue(ctx: Ctx, ref: string, input: IssueUpdateInput
 
   if (input.body !== undefined) {
     await refreshIssueReferences(ctx, issue.id, input.body, issue.number);
+  }
+
+  // Parent changes go through graph validation (self-parent, existence, cycles)
+  // rather than a direct column write.
+  if (input.parent_id !== undefined) {
+    await setParent(ctx, issue.id, input.parent_id);
   }
 
   const updated = await issueRepo.getIssueById(ctx.env.DB, issue.id);

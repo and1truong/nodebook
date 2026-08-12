@@ -95,6 +95,30 @@ describe("nextOccurrence", () => {
     expect(next.toISOString()).toBe("2025-03-05T10:00:00.000Z"); // Wednesday
   });
 
+  it("includes Sunday when BYDAY spans the weekend (MO,SU)", () => {
+    const rule = parseRecurrenceRule("FREQ=WEEKLY;INTERVAL=1;BYDAY=MO,SU");
+    const anchor = civil("UTC", "2025-03-03T10:00:00.000Z"); // Monday
+    // Completing Monday's occurrence → Sunday of the same week, not next Monday.
+    const sunday = nextOccurrence(rule, "UTC", anchor, anchor)!;
+    expect(sunday.toISOString()).toBe("2025-03-09T10:00:00.000Z");
+    // Completing Sunday's occurrence → next Monday.
+    const monday = nextOccurrence(rule, "UTC", sunday, anchor)!;
+    expect(monday.toISOString()).toBe("2025-03-10T10:00:00.000Z");
+    // And BYDAY=SU,MO (reversed rule text) behaves identically.
+    const reversed = parseRecurrenceRule("FREQ=WEEKLY;INTERVAL=1;BYDAY=SU,MO");
+    const sunday2 = nextOccurrence(reversed, "UTC", anchor, anchor)!;
+    expect(sunday2.toISOString()).toBe("2025-03-09T10:00:00.000Z");
+  });
+
+  it("handles BYDAY=SA,SU across a week boundary", () => {
+    const rule = parseRecurrenceRule("FREQ=WEEKLY;INTERVAL=1;BYDAY=SA,SU");
+    const anchor = civil("UTC", "2025-03-03T10:00:00.000Z"); // Monday
+    const saturday = nextOccurrence(rule, "UTC", anchor, anchor)!;
+    expect(saturday.toISOString()).toBe("2025-03-08T10:00:00.000Z");
+    const sunday = nextOccurrence(rule, "UTC", saturday, anchor)!;
+    expect(sunday.toISOString()).toBe("2025-03-09T10:00:00.000Z");
+  });
+
   it("advances monthly clamping to month length", () => {
     const rule = parseRecurrenceRule("FREQ=MONTHLY;INTERVAL=1");
     const anchor = civil("UTC", "2025-01-31T09:00:00.000Z");

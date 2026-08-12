@@ -1,5 +1,6 @@
 /** Full-text search: indexing, ranking, filters, rebuild consistency. */
 import { describe, expect, it } from "vitest";
+import { SELF } from "cloudflare:test";
 import { api, createIssue, post, testEnv } from "./helpers";
 import { systemCtx } from "../../src/server/ctx";
 import { rebuildSearchIndex } from "../../src/server/services/search-service";
@@ -33,6 +34,24 @@ describe("search", () => {
     const byComment = await search("frabjous");
     const results = byComment.results as { matched_field: string }[];
     expect(results.some((r) => r.matched_field === "comment")).toBe(true);
+  });
+
+  it("indexes comment attachments under their owning issue", async () => {
+    const issue = await createIssue({ title: "comment attachment host" });
+    const comment = await post(`/api/issues/${issue.number}/comments`, { body: "please attach here" });
+    const commentId = (comment.body as { id: string }).id;
+
+    const form = new FormData();
+    form.append("file", new File(["payload"], "quagga-report.xlsx", { type: "application/vnd.ms-excel" }));
+    const upload = await SELF.fetch(`https://nodebook.test/api/attachments/comment/${commentId}`, {
+      method: "POST",
+      body: form,
+    });
+    expect(upload.status).toBe(201);
+
+    const found = await search("quagga-report");
+    const results = found.results as { matched_field: string; issue_number: number }[];
+    expect(results.some((r) => r.matched_field === "attachment" && r.issue_number === issue.number)).toBe(true);
   });
 
   it("handles punctuation, operators, and empty queries safely", async () => {

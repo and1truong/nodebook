@@ -19,6 +19,21 @@ export function planningQuery(ctx: Ctx, tzParam: string | null | undefined): Pla
 }
 
 /**
+ * All open issues regardless of workspace size. The planning predicates are
+ * applied after the full set is loaded so a limit can never hide an overdue
+ * or due-today item (see review: query matches before applying a limit).
+ */
+async function listAllOpenIssues(ctx: Ctx): Promise<IssueRecord[]> {
+  const all: IssueRecord[] = [];
+  for (let offset = 0; ; offset += 500) {
+    const batch = await issueRepo.listIssues(ctx.env.DB, { status: "open", limit: 500, offset });
+    all.push(...batch);
+    if (batch.length < 500) break;
+  }
+  return all;
+}
+
+/**
  * Inbox: open items without start, due, or scheduled values.
  */
 export async function getInbox(ctx: Ctx): Promise<PlanningItemDto[]> {
@@ -40,7 +55,7 @@ export async function getInbox(ctx: Ctx): Promise<PlanningItemDto[]> {
 export async function getToday(ctx: Ctx, tzParam?: string | null): Promise<PlanningItemDto[]> {
   const { timezone, now } = planningQuery(ctx, tzParam);
   const today = todayCivil(now, timezone);
-  const issues = await issueRepo.listIssues(ctx.env.DB, { status: "open", limit: 300 });
+  const issues = await listAllOpenIssues(ctx);
 
   const todayItems: IssueRecord[] = [];
   const overdueItems: IssueRecord[] = [];
@@ -70,7 +85,7 @@ export async function getToday(ctx: Ctx, tzParam?: string | null): Promise<Plann
 export async function getUpcoming(ctx: Ctx, tzParam?: string | null): Promise<PlanningItemDto[]> {
   const { timezone, now } = planningQuery(ctx, tzParam);
   const today = todayCivil(now, timezone);
-  const issues = await issueRepo.listIssues(ctx.env.DB, { status: "open", limit: 300 });
+  const issues = await listAllOpenIssues(ctx);
   const upcoming = issues
     .filter((i) => {
       if (i.due_date && i.due_date > today) return true;
@@ -95,7 +110,7 @@ export async function getUpcoming(ctx: Ctx, tzParam?: string | null): Promise<Pl
 export async function getOverdue(ctx: Ctx, tzParam?: string | null): Promise<PlanningItemDto[]> {
   const { timezone, now } = planningQuery(ctx, tzParam);
   const today = todayCivil(now, timezone);
-  const issues = await issueRepo.listIssues(ctx.env.DB, { status: "open", limit: 300 });
+  const issues = await listAllOpenIssues(ctx);
   const overdue = issues
     .filter((i) => i.due_date !== null && i.due_date < today)
     .sort((a, b) => (a.due_date! < b.due_date! ? -1 : 1));

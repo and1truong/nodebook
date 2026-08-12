@@ -31,11 +31,11 @@ interface Jwks {
 const JWKS_TTL_MS = 60 * 60 * 1000;
 const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 
-export async function authenticateAccess(env: Env, request: Request): Promise<AccessIdentity> {
+export async function authenticateAccess(env: Env, request: Request, fetchImpl?: typeof fetch): Promise<AccessIdentity> {
   if (env.ACCESS_TEAM && env.ACCESS_AUD) {
     const header = request.headers.get("Cf-Access-Jwt-Assertion");
     if (!header) throw new AuthError("Missing Cloudflare Access JWT");
-    const payload = await verifyAccessJwt(header, { team: env.ACCESS_TEAM, aud: env.ACCESS_AUD });
+    const payload = await verifyAccessJwt(header, { team: env.ACCESS_TEAM, aud: env.ACCESS_AUD, fetchImpl });
     const email =
       typeof payload.email === "string" && payload.email
         ? payload.email
@@ -43,7 +43,10 @@ export async function authenticateAccess(env: Env, request: Request): Promise<Ac
           ? payload.common_name
           : "";
     if (!email) throw new AuthError("Access JWT carries no identity");
-    if (env.OWNER_EMAIL && email !== env.OWNER_EMAIL) {
+    // Fail closed: a missing owner email must never widen access to any
+    // identity the Access application happens to admit.
+    if (!env.OWNER_EMAIL) throw new AuthError("OWNER_EMAIL is not configured");
+    if (email !== env.OWNER_EMAIL) {
       throw new ForbiddenError("Identity is not the workspace owner");
     }
     return { email, type: "human" };

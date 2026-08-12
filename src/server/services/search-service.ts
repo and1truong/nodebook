@@ -41,11 +41,26 @@ export async function indexComment(ctx: Ctx, comment: CommentRecord, issue: Issu
 }
 
 export async function indexAttachment(ctx: Ctx, attachment: AttachmentRecord): Promise<void> {
+  // Comment attachments are indexed under their owning issue so the search
+  // join (search_docs.issue_id → issues) and the wiki/planning contexts can
+  // surface them.
+  let issueId = attachment.owner_type === "issue" ? attachment.owner_id : "";
+  let issueType = "task";
+  if (attachment.owner_type === "comment") {
+    const comment = await ctx.env.DB.prepare("SELECT issue_id FROM comments WHERE id = ?")
+      .bind(attachment.owner_id)
+      .first<{ issue_id: string }>();
+    issueId = comment?.issue_id ?? "";
+  }
+  if (issueId) {
+    const issue = await getIssueById(ctx.env.DB, issueId);
+    if (issue) issueType = issue.type;
+  }
   await searchRepo.upsertSearchDoc(ctx.env.DB, {
     entityType: "attachment",
     entityId: `attachment:${attachment.id}`,
-    issueId: attachment.owner_type === "issue" ? attachment.owner_id : "",
-    issueType: "task",
+    issueId,
+    issueType,
     title: `Attachment ${attachment.filename}`,
     content: "",
     labels: "",

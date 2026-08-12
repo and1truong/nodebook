@@ -1,27 +1,46 @@
-/** Tiny path router (history API + popstate). */
-import { useEffect, useState, useCallback } from "react";
+/** Tiny shared path router: module-level state + subscribers so every Link
+ * and page observes the same navigation (history API + popstate). */
+import { useCallback, useEffect, useState } from "react";
 
 export interface RouterState {
   path: string;
   navigate: (to: string) => void;
 }
 
-export function useRouter(): RouterState {
-  const [path, setPath] = useState(() => window.location.pathname + window.location.search);
+// Module-level router state shared by every consumer (App, Link, pages).
+let currentPath = typeof window !== "undefined" ? window.location.pathname + window.location.search : "/";
+const listeners = new Set<() => void>();
 
-  const navigate = useCallback((to: string) => {
-    window.history.pushState(null, "", to);
-    setPath(window.location.pathname + window.location.search);
-    window.scrollTo(0, 0);
-  }, []);
+function emit() {
+  for (const listener of listeners) listener();
+}
+
+/** Navigate programmatically; updates every subscriber (pushState fires no popstate). */
+export function navigate(to: string) {
+  window.history.pushState(null, "", to);
+  currentPath = window.location.pathname + window.location.search;
+  emit();
+  window.scrollTo(0, 0);
+}
+
+export function useRouter(): RouterState {
+  const [path, setPath] = useState(currentPath);
 
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname + window.location.search);
+    const onChange = () => setPath(currentPath);
+    const onPop = () => {
+      currentPath = window.location.pathname + window.location.search;
+      setPath(currentPath);
+    };
+    listeners.add(onChange);
     window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
+    return () => {
+      listeners.delete(onChange);
+      window.removeEventListener("popstate", onPop);
+    };
   }, []);
 
-  return { path, navigate };
+  return { path, navigate: useCallback(navigate, []) };
 }
 
 /** Match /issues/:id style patterns. Returns params or null. */
@@ -51,7 +70,6 @@ export function Link({
   title?: string;
   onClick?: () => void;
 }) {
-  const { navigate } = useRouter();
   return (
     <a
       href={to}

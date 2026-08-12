@@ -167,6 +167,9 @@ export async function updateReminder(ctx: Ctx, reminderId: string, input: Remind
     const t = new Date(input.trigger_at).toISOString();
     fields.trigger_at = t;
     fields.status = "active";
+    // Rescheduling supersedes the previously materialized occurrence: cancel
+    // pending deliveries so only the new trigger can fire.
+    await planningRepo.cancelPendingOccurrences(ctx.env.DB, reminderId);
     await planningRepo.insertReminderOccurrence(ctx.env.DB, {
       id: crypto.randomUUID(),
       reminderId,

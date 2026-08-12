@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { verifyAccessJwt, base64urlToString } from "../../src/server/auth/access-auth";
+import { verifyAccessJwt, base64urlToString, authenticateAccess } from "../../src/server/auth/access-auth";
 import { AuthError } from "../../src/domain/errors";
 
 /**
@@ -179,5 +179,31 @@ describe("base64urlToString", () => {
   it("decodes base64url", () => {
     expect(base64urlToString("aGVsbG8")).toBe("hello");
     expect(base64urlToString("aGVsbG8td29ybGQ")).toBe("hello-world");
+  });
+});
+
+describe("authenticateAccess fail-closed behavior", () => {
+  it("rejects every identity when Access is configured but OWNER_EMAIL is unset", async () => {
+    const { pair, kid, fetchImpl } = await makeJwks();
+    const team = uniqueTeam();
+    const now = Math.floor(Date.now() / 1000);
+    const token = await signJwt(pair, { kid, alg: "RS256" }, {
+      aud: AUD,
+      exp: now + 3600,
+      iss: `https://${team}`,
+      email: "anyone@example.com",
+    });
+    const env = {
+      ACCESS_TEAM: team,
+      ACCESS_AUD: AUD,
+      OWNER_EMAIL: "",
+      AUTH_DEV_EMAIL: "",
+    } as unknown as Parameters<typeof authenticateAccess>[0];
+    const request = new Request("https://nodebook.test/api/me", {
+      headers: { "Cf-Access-Jwt-Assertion": token },
+    });
+    // Fail closed even though the JWT itself is valid and would pass the
+    // Access application check.
+    await expect(authenticateAccess(env, request, fetchImpl)).rejects.toThrow("OWNER_EMAIL is not configured");
   });
 });

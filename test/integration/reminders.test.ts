@@ -136,6 +136,45 @@ describe("reminders", () => {
     expect(list[0]!.status).toBe("dismissed");
   });
 
+  it("rescheduling cancels the previously materialized occurrence", async () => {
+    const issue = await createIssue({ title: "reschedule me 2" });
+    const original = new Date(Date.now() + 30 * 60_000);
+    const replacement = new Date(Date.now() + 90 * 60_000);
+    const created = await post(`/api/reminders/issue/${issue.number}`, {
+      kind: "absolute",
+      trigger_at: original.toISOString(),
+    });
+    const reminder = created.body as { id: string };
+
+    // Reschedule to a later time.
+    const rescheduled = await patch(`/api/reminders/${reminder.id}`, {
+      trigger_at: replacement.toISOString(),
+    });
+    expect((rescheduled.body as { trigger_at: string }).trigger_at).toBe(replacement.toISOString());
+
+    // Only the new occurrence is deliverable; the old one was cancelled.
+    const env = testEnv();
+    const rows = await env.DB.prepare(
+      "SELECT occurrence_at, status FROM reminder_occurrences WHERE reminder_id = ? ORDER BY occurrence_at",
+    )
+      .bind(reminder.id)
+      .all<{ occurrence_at: string; status: string }>();
+    expect(rows.results).toHaveLength(2);
+    const byTime = new Map(rows.results.map((r) => [r.occurrence_at, r.status]));
+    expect(byTime.get(original.toISOString())).toBe("cancelled");
+    expect(byTime.get(replacement.toISOString())).toBe("due");
+
+    // Processing after the ORIGINAL time delivers nothing…
+    await process(new Date(original.getTime() + 60_000));
+    const early = await api("/api/notifications");
+    expect((early.body as unknown[]).length).toBe(0);
+
+    // …and after the replacement time it delivers exactly once.
+    await process(new Date(replacement.getTime() + 60_000));
+    const late = await api("/api/notifications");
+    expect((late.body as unknown[]).length).toBe(1);
+  });
+
   it("snoozes and dismisses reminders", async () => {
     const issue = await createIssue({ title: "snooze me" });
     await post(`/api/reminders/issue/${issue.number}`, {
