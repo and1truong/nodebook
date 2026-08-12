@@ -103,10 +103,12 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-50 flex h-[52px] items-center gap-4 border-b border-border bg-card px-4">
-        <Link to="/inbox" className="flex-none text-[15px] font-bold text-foreground hover:no-underline">
-          <span className="text-primary">◈</span> NodeBook
-        </Link>
+      <header className="sticky top-0 z-50 border-b border-border bg-card">
+        <div className="grid grid-cols-[190px_1fr] items-center">
+          <Link to="/inbox" className="flex h-[52px] items-center px-2.5 text-[15px] font-bold text-foreground hover:no-underline">
+            <span className="text-primary">◈</span> NodeBook
+          </Link>
+          <div className="flex h-[52px] items-center gap-4 px-4">
         <form className="flex max-w-[560px] flex-1 gap-1.5" onSubmit={submitQuick}>
           <Select value={quickType} onValueChange={setQuickType}>
             <SelectTrigger className="h-8 w-[110px] shrink-0" aria-label="Issue type">
@@ -135,21 +137,9 @@ export function AppShell({
         {error && <span className="error-inline">{error}</span>}
         <div className="ml-auto flex items-center gap-1.5">
           <NotificationInbox />
-          <Link
-            to="/settings/tokens"
-            title="MCP tokens"
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "icon" }),
-              "hover:no-underline",
-              path.startsWith("/settings") && "bg-accent text-accent-foreground",
-            )}
-          >
-            <Settings className="size-4" />
-          </Link>
           <ThemeControl />
-          <span className="identity ml-1 max-w-[200px] truncate text-xs text-muted-foreground" title="Signed-in identity">
-            {email || "…"}
-          </span>
+        </div>
+          </div>
         </div>
       </header>
       <div className="grid flex-1 grid-cols-[190px_1fr]">
@@ -200,9 +190,21 @@ export function AppShell({
           <span className="font-semibold text-foreground">WORKSPACE</span>
           <span className="opacity-50">•</span>
           <span className="truncate">Issue-native wiki and planning</span>
-          <div className="ml-auto flex shrink-0 items-center gap-2.5">
-            <Link to="/settings/tokens" className="text-muted-foreground hover:text-primary hover:no-underline">
-              MCP tokens
+          <div className="ml-auto flex min-w-0 items-center gap-2.5">
+            <span className="identity max-w-[200px] truncate" title="Signed-in identity">
+              {email || "…"}
+            </span>
+            <span className="opacity-50">•</span>
+            <Link
+              to="/settings/tokens"
+              title="Settings"
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon" }),
+                "size-6 hover:no-underline",
+                path.startsWith("/settings") && "bg-accent text-accent-foreground",
+              )}
+            >
+              <Settings className="size-3.5" />
             </Link>
             <span className="opacity-50">•</span>
             <span>v0.1.0</span>
