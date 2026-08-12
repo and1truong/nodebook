@@ -92,12 +92,18 @@ export function DatePicker({
               id={id}
               value={text}
               onChange={(e) => {
-                setText(e.target.value);
-                const v = parseIso(e.target.value);
-                if (v) onChange(toIso(v.y, v.m, v.d));
+                const nextText = e.target.value;
+                setText(nextText);
+                const v = parseIso(nextText);
+                if (v) {
+                  const iso = toIso(v.y, v.m, v.d);
+                  if (min === undefined || iso >= min) onChange(iso);
+                  else setText(value);
+                }
               }}
               onBlur={() => {
-                if (!parseIso(text)) setText(value);
+                const v = parseIso(text);
+                if (!v || (min !== undefined && toIso(v.y, v.m, v.d) < min)) setText(value);
               }}
               onFocus={() => handleOpenChange(true)}
               onClick={() => handleOpenChange(true)}

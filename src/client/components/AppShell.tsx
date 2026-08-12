@@ -141,6 +141,18 @@ export function AppShell({
         )}
         <div className="ml-auto flex items-center gap-1.5">
           <NotificationInbox />
+          <Link
+            to="/settings/tokens"
+            title="Settings"
+            aria-label="Settings"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "icon" }),
+              "hover:no-underline md:hidden",
+              path.startsWith("/settings") && "bg-accent text-accent-foreground",
+            )}
+          >
+            <Settings className="size-4" />
+          </Link>
           <ThemeControl />
         </div>
           </div>
