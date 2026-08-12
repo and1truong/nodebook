@@ -352,8 +352,9 @@ test.describe.serial("MVP acceptance", () => {
     await page.goto(`/issues/${issueNumber}`);
 
     await page.getByLabel("Reminder kind").selectOption("absolute");
-    const past = new Date(Date.now() - 60_000);
-    await page.getByLabel("Trigger time").fill(past.toISOString().slice(0, 16));
+    const past = new Date(Date.now() - 60_000).toISOString().slice(0, 16);
+    await page.getByLabel("Trigger date", { exact: true }).fill(past.slice(0, 10));
+    await page.getByLabel("Trigger time", { exact: true }).fill(past.slice(11));
     await page.locator(".reminder-form").getByRole("button", { name: "Add" }).click();
     await expect(page.locator(".reminder")).toBeVisible();
 

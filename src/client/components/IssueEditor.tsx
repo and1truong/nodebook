@@ -13,6 +13,7 @@ import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Markdown } from "./Markdown";
 import { DatePicker } from "./DatePicker";
+import { DateTimePicker } from "./DateTimePicker";
 import { cn } from "@/lib/utils";
 
 export interface IssueFormValues {
@@ -461,12 +462,12 @@ function PlanningFields({
           />
         </Field>
         <Field label="Scheduled" htmlFor="scheduled-date">
-          <Input
+          <DateTimePicker
             id="scheduled-date"
-            type="datetime-local"
-            className="w-56"
             value={values.scheduled_date}
-            onChange={(e) => set("scheduled_date", e.target.value)}
+            today={today}
+            onChange={(v) => set("scheduled_date", v)}
+            ariaLabel="Scheduled"
           />
         </Field>
       </div>

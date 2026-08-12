@@ -2,9 +2,11 @@
 import { useEffect, useState } from "react";
 import { api, formatInstant } from "../api";
 import type { IssueDto, ReminderDto } from "../../shared/contracts/issues";
+import { todayCivil } from "../../shared/time";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
+import { DateTimePicker } from "./DateTimePicker";
 import { Loading, ErrorState, EmptyState } from "./ui";
 import { cn } from "@/lib/utils";
 
@@ -87,12 +89,12 @@ export function ReminderEditor({
           <option value="recurring">Recurring</option>
         </select>
         {kind === "absolute" && (
-          <Input
-            type="datetime-local"
-            className={embedded ? "w-full" : "w-fit"}
+          <DateTimePicker
             value={triggerAt}
-            onChange={(e) => setTriggerAt(e.target.value)}
-            aria-label="Trigger time"
+            today={todayCivil(new Date(), Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC")}
+            onChange={setTriggerAt}
+            ariaLabel="Trigger"
+            className={embedded ? "w-full" : undefined}
           />
         )}
         {kind === "before_due" && (
