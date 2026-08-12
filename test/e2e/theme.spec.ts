@@ -54,17 +54,18 @@ test.describe.serial("Theme switching", () => {
     expect(await token("--card")).toBe("#fffcf6");
     expect(await token("--foreground")).toBe("#1a1200");
     expect(await token("--muted-foreground")).toBe("#6b5e47");
-    expect(await token("--primary")).toBe("#8b6f00");
+    expect(await token("--primary")).toBe("#7a5c00");
     expect(await token("--border")).toBe("#e5ddd0");
     expect(await token("--input")).toBe("#c9bfae");
-    expect(await token("--ring")).toBe("#8b6f00");
+    expect(await token("--ring")).toBe("#7a5c00");
     expect(await token("--recess")).toBe("#ece5d8");
     expect(await token("--success")).toBe("#166534");
     expect(await token("--warning")).toBe("#c2410c");
-    expect(await token("--danger")).toBe("#dc2626");
+    expect(await token("--danger")).toBe("#b91c1c");
+    expect(await token("--type-wiki")).toBe("#7a5c00");
     expect(await token("--type-epic")).toBe("#6d28d9");
     expect(await token("--type-bug")).toBe("#c2410c");
-    expect(await token("--type-incident")).toBe("#dc2626");
+    expect(await token("--type-incident")).toBe("#b91c1c");
     expect(await token("--chip-bg")).toBe("#fff1b3");
     // The old blue palette must not come back.
     expect(await token("--primary")).not.toBe("#2f81f7");

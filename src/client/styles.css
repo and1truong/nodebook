@@ -61,9 +61,12 @@
 
 /* Warm parchment/brown/gold palette derived from TabTerm's client theme
    (read-only reference: ~/dirs/tabterm/src/client/index.css). Light: #f5f0e8
-   background, #fffcf6 panels, #8b6f00 gold accent. Dark: #1a1200 background,
+   background, #fffcf6 panels, #7a5c00 gold accent. Dark: #1a1200 background,
    #251a00 panels, #ffd000 gold accent. NodeBook retains its own light/dark/
-   system switching, persistence key, and pre-paint bootstrap. */
+   system switching, persistence key, and pre-paint bootstrap.
+   Light-mode text-facing tokens (gold, red) are darkened one step from
+   TabTerm's values so foreground text stays ≥ 4.5:1 (WCAG AA) on the
+   #f5f0e8 background. */
 
 /* Light theme (default). */
 :root {
@@ -75,7 +78,7 @@
   --card-foreground: #1a1200;
   --popover: #fffcf6;
   --popover-foreground: #1a1200;
-  --primary: #8b6f00;
+  --primary: #7a5c00;
   --primary-foreground: #fffcf6;
   --secondary: #ede6d6;
   --secondary-foreground: #1a1200;
@@ -83,40 +86,41 @@
   --muted-foreground: #6b5e47;
   --accent: #ede6d6;
   --accent-foreground: #1a1200;
-  --destructive: #dc2626;
+  --destructive: #b91c1c;
   --destructive-foreground: #fffcf6;
   --border: #e5ddd0;
   --input: #c9bfae;
-  --ring: #8b6f00;
+  --ring: #7a5c00;
   --recess: #ece5d8;
-  --chart-1: #8b6f00;
+  --chart-1: #7a5c00;
   --chart-2: #166534;
   --chart-3: #c2410c;
   --chart-4: #6d28d9;
-  --chart-5: #dc2626;
+  --chart-5: #b91c1c;
   --sidebar: #fffcf6;
   --sidebar-foreground: #1a1200;
-  --sidebar-primary: #8b6f00;
+  --sidebar-primary: #7a5c00;
   --sidebar-primary-foreground: #fffcf6;
   --sidebar-accent: #ede6d6;
   --sidebar-accent-foreground: #1a1200;
   --sidebar-border: #e5ddd0;
-  --sidebar-ring: #8b6f00;
+  --sidebar-ring: #7a5c00;
   /* Semantic status colors. */
   --success: #166534;
   --warning: #c2410c;
-  --danger: #dc2626;
+  --danger: #b91c1c;
   /* Issue-type palette: gold for knowledge types, purple for epics, orange
-     for bugs, red for incidents; task stays muted via text-muted-foreground. */
-  --type-wiki: #8b6f00;
-  --type-decision: #8b6f00;
-  --type-finding: #8b6f00;
-  --type-learning: #8b6f00;
-  --type-note: #8b6f00;
-  --type-story: #8b6f00;
+     for bugs, red for incidents; task stays muted via text-muted-foreground.
+     Light-mode gold/red are darkened for ≥ 4.5:1 on the parchment ground. */
+  --type-wiki: #7a5c00;
+  --type-decision: #7a5c00;
+  --type-finding: #7a5c00;
+  --type-learning: #7a5c00;
+  --type-note: #7a5c00;
+  --type-story: #7a5c00;
   --type-epic: #6d28d9;
   --type-bug: #c2410c;
-  --type-incident: #dc2626;
+  --type-incident: #b91c1c;
   /* Label chips (TabTerm brand colours). */
   --chip-bg: #fff1b3;
   --chip-fg: #5c4a00;
