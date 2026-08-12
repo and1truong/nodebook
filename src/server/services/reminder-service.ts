@@ -42,7 +42,7 @@ export async function createReminder(ctx: Ctx, issueRef: string, input: Reminder
   switch (input.kind) {
     case "absolute": {
       if (!input.triggerAt) throw new ValidationError("trigger_at is required for absolute reminders");
-      triggerAt = new Date(input.triggerAt).toISOString();
+      triggerAt = toIsoOrThrow(input.triggerAt, "trigger_at");
       break;
     }
     case "before_due": {
@@ -150,7 +150,7 @@ export async function updateReminder(ctx: Ctx, reminderId: string, input: Remind
 
   if (input.status === "snoozed") {
     if (!input.snooze_until) throw new ValidationError("snooze_until is required when snoozing");
-    const until = new Date(input.snooze_until).toISOString();
+    const until = toIsoOrThrow(input.snooze_until, "snooze_until");
     fields.status = "snoozed";
     fields.snooze_until = until;
     await planningRepo.cancelPendingOccurrences(ctx.env.DB, reminderId);
@@ -164,7 +164,7 @@ export async function updateReminder(ctx: Ctx, reminderId: string, input: Remind
     fields.status = input.status;
   }
   if (input.trigger_at) {
-    const t = new Date(input.trigger_at).toISOString();
+    const t = toIsoOrThrow(input.trigger_at, "trigger_at");
     fields.trigger_at = t;
     fields.status = "active";
     // Rescheduling supersedes the previously materialized occurrence: cancel
