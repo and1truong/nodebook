@@ -24,6 +24,26 @@ describe("search", () => {
     expect((titleSearch.results as unknown[]).length).toBeGreaterThanOrEqual(2);
   });
 
+  it("snippets show the text around the match, not the entity type", async () => {
+    await createIssue({ title: "snippet host", body: "the quick brown fox jumps" });
+    await createIssue({ title: "snippet label host", labels: ["neptunium"] });
+
+    // Column 0 (entity_type) is UNINDEXED; the snippet must come from the
+    // indexed column that matched (title/body/labels/attachment_meta).
+    const bodyMatch = await search("fox");
+    const bodyResult = (bodyMatch.results as { issue_title: string; snippet: string }[])[0]!;
+    expect(bodyResult.snippet).toContain("fox");
+    expect(bodyResult.snippet).not.toBe("issue");
+
+    const titleMatch = await search("snippet");
+    const titleResult = (titleMatch.results as { issue_title: string; snippet: string }[])[0]!;
+    expect(titleResult.snippet).toContain("snippet");
+
+    const labelMatch = await search("neptunium");
+    const labelResult = (labelMatch.results as { issue_title: string; snippet: string }[])[0]!;
+    expect(labelResult.snippet).toContain("neptunium");
+  });
+
   it("indexes comments and labels", async () => {
     const issue = await createIssue({ title: "searchable issue", labels: ["neptunium"] });
     await post(`/api/issues/${issue.number}/comments`, { body: "the frabjous comment text" });

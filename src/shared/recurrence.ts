@@ -3,7 +3,7 @@
  * (DAILY|WEEKLY|MONTHLY), INTERVAL, BYDAY (DAILY/WEEKLY only), COUNT, and
  * UNTIL. Pure Web Platform math via Intl timezones (see shared/time.ts).
  */
-import { instantFromCivil, civilFromInstant, civilDateString, isValidTimezone, parseCivilDate } from "./time";
+import { instantFromCivil, civilFromInstant, civilDateString, daysInMonth, isValidTimezone, parseCivilDate } from "./time";
 import { ValidationError } from "../domain/errors";
 
 export type RecurrenceFreq = "DAILY" | "WEEKLY" | "MONTHLY";
@@ -123,10 +123,6 @@ export function isRecurrenceRuleText(text: string | null | undefined): text is s
   } catch {
     return false;
   }
-}
-
-function daysInMonth(year: number, month: number): number {
-  return new Date(Date.UTC(year, month, 0)).getUTCDate();
 }
 
 /**

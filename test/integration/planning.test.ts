@@ -72,6 +72,31 @@ describe("planning views", () => {
     void today;
   });
 
+  it("excludes later-today scheduled work from Upcoming (it belongs to Today)", async () => {
+    // 23:59:59 UTC today: later today by civil date in any case (even when
+    // the instant is already past, Today still matches by civil date and
+    // Upcoming must not include it).
+    const nowUtc = new Date();
+    const laterToday = new Date(
+      Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate(), 23, 59, 59),
+    );
+    // Tomorrow 00:00 UTC is strictly after today's civil date.
+    const tomorrow = new Date(
+      Date.UTC(nowUtc.getUTCFullYear(), nowUtc.getUTCMonth(), nowUtc.getUTCDate() + 1, 0, 0, 0),
+    );
+    const laterTodayIssue = await createIssue({ title: "later today", scheduled_date: laterToday.toISOString() });
+    const tomorrowIssue = await createIssue({ title: "tomorrow", scheduled_date: tomorrow.toISOString() });
+
+    const upcoming = await api("/api/planning/upcoming?tz=UTC");
+    const upcomingNumbers = (upcoming.body as { issue: { number: number } }[]).map((i) => i.issue.number);
+    expect(upcomingNumbers).toContain(tomorrowIssue.number);
+    expect(upcomingNumbers).not.toContain(laterTodayIssue.number);
+
+    const todayRes = await api("/api/planning/today?tz=UTC");
+    const todayNumbers = (todayRes.body as { issue: { number: number } }[]).map((i) => i.issue.number);
+    expect(todayNumbers).toContain(laterTodayIssue.number);
+  });
+
   it("computes Overdue as open work past due", async () => {
     const today = todayCivil();
     const overdue = await createIssue({ title: "overdue only", due_date: addDays(today, -1) });

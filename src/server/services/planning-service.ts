@@ -87,7 +87,9 @@ export async function getUpcoming(ctx: Ctx, tzParam?: string | null): Promise<Pl
   const upcoming = issues
     .filter((i) => {
       if (i.due_date && i.due_date > today) return true;
-      if (i.scheduled_date && new Date(i.scheduled_date).getTime() > now.getTime()) return true;
+      // Compare the scheduled instant's civil date in the owner's timezone, not
+      // the instant itself: a time later today belongs to Today, not Upcoming.
+      if (i.scheduled_date && civilDateOf(new Date(i.scheduled_date), timezone) > today) return true;
       return false;
     })
     .sort((a, b) => {

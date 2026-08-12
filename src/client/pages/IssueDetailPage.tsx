@@ -8,6 +8,7 @@ import {
   emptyFormValues,
   formValuesFromIssue,
   recurrenceToRule,
+  scheduledDateToIso,
   type IssueFormValues,
 } from "../components/IssueEditor";
 import { HistoryPanel } from "../components/HistoryPanel";
@@ -76,7 +77,7 @@ export function IssueDetailPage({
       labels: values.labels,
       start_date: values.start_date || null,
       due_date: values.due_date || null,
-      scheduled_date: values.scheduled_date ? new Date(values.scheduled_date).toISOString() : null,
+      scheduled_date: scheduledDateToIso(values),
       timezone: values.timezone,
       recurrence_rule: recurrenceToRule(values),
       parent_id: values.parent_id || null,
@@ -310,7 +311,7 @@ function CreateIssueForm({ onCreated, onCancel }: { onCreated: (issue: IssueDto)
             labels: values.labels,
             start_date: values.start_date || null,
             due_date: values.due_date || null,
-            scheduled_date: values.scheduled_date ? new Date(values.scheduled_date).toISOString() : null,
+            scheduled_date: scheduledDateToIso(values),
             timezone: values.timezone,
             recurrence_rule: recurrenceToRule(values),
           });

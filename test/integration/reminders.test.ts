@@ -224,4 +224,66 @@ describe("reminders", () => {
     const notifications = await api("/api/notifications");
     expect((notifications.body as unknown[]).length).toBe(1);
   });
+
+  it("closes COUNT-terminated recurring reminders once exhausted", async () => {
+    const issue = await createIssue({ title: "counted reminder" });
+    const created = await post(`/api/reminders/issue/${issue.number}`, {
+      kind: "recurring",
+      recurrence_rule: "FREQ=DAILY;COUNT=2",
+      timezone: "UTC",
+    });
+    const reminderId = (created.body as { id: string }).id;
+
+    // Deliver the first (and, for COUNT=2, only) occurrence.
+    const env = testEnv();
+    const first = await env.DB.prepare(
+      "SELECT occurrence_at FROM reminder_occurrences WHERE reminder_id = ? ORDER BY occurrence_at ASC LIMIT 1",
+    ).bind(reminderId).first<{ occurrence_at: string }>();
+    await process(new Date(new Date(first!.occurrence_at).getTime() + 60_000));
+
+    // The ordinal is derived from delivered occurrences (not restarted at 1),
+    // so COUNT=2 does not schedule another occurrence after every delivery.
+    const reminder = await env.DB.prepare("SELECT status FROM reminders WHERE id = ?").bind(reminderId).first<{ status: string }>();
+    expect(reminder!.status).toBe("completed");
+
+    const occurrences = await env.DB.prepare(
+      "SELECT status FROM reminder_occurrences WHERE reminder_id = ?",
+    ).bind(reminderId).all<{ status: string }>();
+    expect(occurrences.results.map((r) => r.status)).toEqual(["delivered"]);
+    const notifications = await api("/api/notifications");
+    expect((notifications.body as unknown[]).length).toBe(1);
+  });
+
+  it("delivers COUNT occurrences then completes", async () => {
+    const issue = await createIssue({ title: "count three" });
+    const created = await post(`/api/reminders/issue/${issue.number}`, {
+      kind: "recurring",
+      recurrence_rule: "FREQ=DAILY;COUNT=3",
+      timezone: "UTC",
+    });
+    const reminderId = (created.body as { id: string }).id;
+    const env = testEnv();
+
+    const occurrenceAt = async (status: string): Promise<string> => {
+      const row = await env.DB.prepare(
+        "SELECT occurrence_at FROM reminder_occurrences WHERE reminder_id = ? AND status = ? ORDER BY occurrence_at ASC LIMIT 1",
+      ).bind(reminderId, status).first<{ occurrence_at: string }>();
+      return row!.occurrence_at;
+    };
+
+    // Deliver occurrence 1 → occurrence 2 is materialized.
+    await process(new Date(new Date(await occurrenceAt("due")).getTime() + 60_000));
+    expect(await occurrenceAt("due")).toBeTruthy();
+
+    // Deliver occurrence 2 → COUNT=3 is exhausted: no third delivery.
+    await process(new Date(new Date(await occurrenceAt("due")).getTime() + 60_000));
+    const reminder = await env.DB.prepare("SELECT status FROM reminders WHERE id = ?").bind(reminderId).first<{ status: string }>();
+    expect(reminder!.status).toBe("completed");
+    const occurrences = await env.DB.prepare(
+      "SELECT status FROM reminder_occurrences WHERE reminder_id = ?",
+    ).bind(reminderId).all<{ status: string }>();
+    expect(occurrences.results.map((r) => r.status).sort()).toEqual(["delivered", "delivered"]);
+    const notifications = await api("/api/notifications");
+    expect((notifications.body as unknown[]).length).toBe(2);
+  });
 });

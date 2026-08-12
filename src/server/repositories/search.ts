@@ -68,7 +68,7 @@ export async function searchDocs(
   const andSql = andClauses.length > 0 ? ` AND ${andClauses.join(" AND ")}` : "";
   const sql = `
     SELECT sd.entity_type, sd.entity_id, sd.issue_id, sd.issue_type, sd.title, sd.labels,
-           snippet(search_docs, 0, '[', ']', '…', 12) AS snippet,
+           snippet(search_docs, -1, '[', ']', '…', 12) AS snippet,
            bm25(search_docs) AS score
     FROM search_docs sd
     JOIN issues i ON i.id = sd.issue_id

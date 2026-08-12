@@ -162,6 +162,46 @@ describe("attachments", () => {
 
     const tombstones = await env.DB.prepare("SELECT COUNT(*) AS n FROM gc_tombstones").first<{ n: number }>();
     expect(Number(tombstones?.n ?? 0)).toBe(0);
+
+    // Soft-delete the repaired row too: the next GC run must delete the blob
+    // and the row (the tombstone is re-inserted for the handshake).
+    await api(`/api/attachments/${(second.body as { id: string }).id}`, { method: "DELETE" });
+    const secondGc = await runAttachmentGc(ctx, new Date(Date.now() + 49 * 60 * 60 * 1000));
+    expect(secondGc.deletedBlobs).toBe(1);
+    expect(secondGc.deletedRows).toBe(1);
+    expect((await env.FILES.list({ prefix: "blobs/" })).objects.length).toBe(0);
+  });
+
+  it("keeps a tombstoned blob when an upload lands an active row for the same key", async () => {
+    const a = await createIssue({ title: "tombstone race a" });
+    const b = await createIssue({ title: "tombstone race b" });
+    const file = makeFile("race.bin", "application/octet-stream", "raced bytes");
+
+    // Attachment A is soft-deleted (a GC candidate); attachment B holds an
+    // active row for the identical blob. A tombstone is already present, as if
+    // a concurrent GC had started while B's upload was in flight.
+    const ra = await upload(a.number, file);
+    const idA = (ra.body as { id: string }).id;
+    const checksum = (ra.body as { checksum: string }).checksum;
+    await api(`/api/attachments/${idA}`, { method: "DELETE" });
+    const rb = await upload(b.number, file);
+    const idB = (rb.body as { id: string }).id;
+
+    const env = testEnv();
+    await env.DB.prepare("INSERT OR IGNORE INTO gc_tombstones (r2_key, created_at) VALUES (?, ?)")
+      .bind(`blobs/${checksum}`, new Date().toISOString())
+      .run();
+
+    const ctx = systemCtx(env);
+    const result = await runAttachmentGc(ctx, new Date(Date.now() + 25 * 60 * 60 * 1000));
+    // The active row must win: no blob delete, no dangling reference.
+    expect(result.deletedBlobs).toBe(0);
+    expect(result.deletedRows).toBe(0);
+    expect((await env.FILES.list({ prefix: "blobs/" })).objects.length).toBe(1);
+
+    const content = await SELF.fetch(`https://nodebook.test/api/attachments/${idB}/content`);
+    expect(content.status).toBe(200);
+    expect(await content.text()).toBe("raced bytes");
   });
 
   it("never deletes blobs still referenced by active attachments", async () => {
