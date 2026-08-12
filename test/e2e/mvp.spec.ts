@@ -44,6 +44,8 @@ test.describe.serial("MVP acceptance", () => {
     await page.locator('textarea').first().fill("Bootstrap the wiki. Reference #99999 from the future.");
     await page.locator('.label-editor input').fill("setup");
     await page.locator('.label-editor input').press("Enter");
+    // Planning is collapsed when empty; expand it to set a due date.
+    await page.getByRole("button", { name: /Planning/ }).click();
     await page.getByLabel("Due date").fill("2099-01-01");
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Bootstrap the wiki")).toBeVisible();
