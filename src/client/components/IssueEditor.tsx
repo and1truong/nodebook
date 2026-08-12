@@ -280,7 +280,8 @@ export function IssueEditor({
                 id="issue-body"
                 value={values.body}
                 onChange={(e) => set("body", e.target.value)}
-                rows={7}
+                rows={10}
+                className="min-h-[14rem]"
                 placeholder="Markdown — reference other issues with #123"
               />
             ) : (
