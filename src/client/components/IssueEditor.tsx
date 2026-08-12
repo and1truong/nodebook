@@ -12,6 +12,7 @@ import { Textarea } from "./ui/textarea";
 import { Label } from "./ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 import { Markdown } from "./Markdown";
+import { DatePicker } from "./DatePicker";
 import { cn } from "@/lib/utils";
 
 export interface IssueFormValues {
@@ -433,22 +434,22 @@ function PlanningFields({
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-3">
         <Field label="Start date" htmlFor="start-date">
-          <Input
+          <DatePicker
             id="start-date"
-            type="date"
-            className="w-40"
             value={values.start_date}
             min={today}
-            onChange={(e) => set("start_date", e.target.value)}
+            today={today}
+            onChange={(v) => set("start_date", v)}
+            ariaLabel="Start date"
           />
         </Field>
         <Field label="Due date" htmlFor="due-date">
-          <Input
+          <DatePicker
             id="due-date"
-            type="date"
-            className="w-40"
             value={values.due_date}
-            onChange={(e) => set("due_date", e.target.value)}
+            today={today}
+            onChange={(v) => set("due_date", v)}
+            ariaLabel="Due date"
           />
         </Field>
         <Field label="Scheduled" htmlFor="scheduled-date">
