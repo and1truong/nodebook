@@ -58,8 +58,8 @@ export function WikiPage({ selectedRef }: { selectedRef?: string }) {
         </Link>
       </header>
 
-      <div className="grid items-start gap-5 min-[1100px]:grid-cols-[290px_minmax(0,1fr)]">
-        <aside className="overflow-hidden rounded-xl border border-border bg-card shadow-sm min-[1100px]:sticky min-[1100px]:top-[72px]" aria-label="Wiki pages">
+      <div className="grid items-start gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_290px]">
+        <aside className="overflow-hidden rounded-xl border border-border bg-card shadow-sm min-[1100px]:sticky min-[1100px]:top-[72px] min-[1100px]:order-2" aria-label="Wiki pages">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2 font-semibold">
               <FolderTree className="size-4 text-primary" aria-hidden="true" />
@@ -92,7 +92,11 @@ export function WikiPage({ selectedRef }: { selectedRef?: string }) {
               <p className="px-3 py-7 text-center text-sm text-muted-foreground">No pages match “{query.trim()}”.</p>
             )}
             {visibleTree && visibleTree.length > 0 && (
-              <HierarchyTree nodes={visibleTree} selectedId={selectedIssue?.id ?? null} />
+              <HierarchyTree
+                nodes={visibleTree}
+                selectedId={selectedIssue?.id ?? null}
+                expandAll={Boolean(query.trim())}
+              />
             )}
           </nav>
           <Link
@@ -104,7 +108,7 @@ export function WikiPage({ selectedRef }: { selectedRef?: string }) {
           </Link>
         </aside>
 
-        <main className="min-w-0">
+        <section className="min-w-0 min-[1100px]:order-1" aria-label="Wiki content">
           {selectedRef ? (
             <WikiArticle issueRef={selectedRef} tree={tree ?? []} />
           ) : tree ? (
@@ -112,7 +116,7 @@ export function WikiPage({ selectedRef }: { selectedRef?: string }) {
           ) : !error ? (
             <Loading label="Opening your wiki…" />
           ) : null}
-        </main>
+        </section>
       </div>
     </div>
   );

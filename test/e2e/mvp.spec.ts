@@ -524,7 +524,12 @@ test.describe.serial("MVP acceptance", () => {
     await expect(page.getByRole("heading", { name: "Browse by topic" })).toBeVisible();
 
     const rootPage = page.locator(".tree-link", { hasText: "Set up the NodeBook workspace" });
+    const childPage = page.locator(".tree-link", { hasText: "Write deployment guide" });
     await expect(rootPage).toBeVisible();
+    await expect(childPage).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Expand Set up the NodeBook workspace" }).click();
+    await expect(childPage).toBeVisible();
     await rootPage.click();
 
     await expect(page).toHaveURL(`/wiki/${issueNumber}`);

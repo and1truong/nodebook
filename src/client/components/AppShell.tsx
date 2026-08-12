@@ -171,12 +171,13 @@ export function AppShell({
         <main
           className={cn(
             "w-full min-w-0 px-4 pb-8 pt-5 md:px-7 md:pb-20 md:pt-6",
-            // Issue/wiki detail routes get a wider shell for the two-column
-            // layout; lists and settings stay at the classic narrow width.
-            !matchPath("/issues/new", path) &&
-              (matchPath("/issues/:ref", path) !== null || matchPath("/wiki/:ref", path) !== null)
-              ? "max-w-[1280px]"
-              : "max-w-[980px]",
+            // The Wiki workspace owns its internal reading/tree columns, so
+            // let it use all space left by the application navigation.
+            path === "/wiki" || (path !== "/wiki/new" && matchPath("/wiki/:ref", path) !== null)
+              ? "max-w-none"
+              : !matchPath("/issues/new", path) && matchPath("/issues/:ref", path) !== null
+                ? "max-w-[1280px]"
+                : "max-w-[980px]",
           )}
         >
           {children}

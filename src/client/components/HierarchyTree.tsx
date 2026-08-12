@@ -1,26 +1,51 @@
 /** Friendly, accessible hierarchy tree for wiki navigation. */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen } from "lucide-react";
 import { Link } from "../router";
 import type { WikiNodeDto } from "../../shared/contracts/issues";
 import { cn } from "@/lib/utils";
 
-export function HierarchyTree({ nodes, selectedId }: { nodes: WikiNodeDto[]; selectedId?: string | null }) {
+export function HierarchyTree({
+  nodes,
+  selectedId,
+  expandAll = false,
+}: {
+  nodes: WikiNodeDto[];
+  selectedId?: string | null;
+  expandAll?: boolean;
+}) {
   return (
     <ul className="tree flex flex-col gap-0.5" role="tree">
       {nodes.map((node) => (
-        <TreeNode key={node.issue.id} node={node} depth={0} selectedId={selectedId} />
+        <TreeNode key={node.issue.id} node={node} depth={0} selectedId={selectedId} expandAll={expandAll} />
       ))}
     </ul>
   );
 }
 
-function TreeNode({ node, depth, selectedId }: { node: WikiNodeDto; depth: number; selectedId?: string | null }) {
-  const [expanded, setExpanded] = useState(true);
+function TreeNode({
+  node,
+  depth,
+  selectedId,
+  expandAll,
+}: {
+  node: WikiNodeDto;
+  depth: number;
+  selectedId?: string | null;
+  expandAll: boolean;
+}) {
   const issue = node.issue;
   const hasChildren = node.children.length > 0;
   const selected = issue.id === selectedId;
+  const containsSelected = selectedId ? treeContains(node, selectedId) : false;
+  const [expanded, setExpanded] = useState(() => expandAll || containsSelected);
   const FolderIcon = expanded ? FolderOpen : Folder;
+
+  // Search results and the path to the current page must remain visible even
+  // though the default tree shows root pages only.
+  useEffect(() => {
+    if (expandAll || containsSelected) setExpanded(true);
+  }, [expandAll, containsSelected]);
 
   return (
     <li role="treeitem" aria-expanded={hasChildren ? expanded : undefined} aria-selected={selected || undefined}>
@@ -62,10 +87,20 @@ function TreeNode({ node, depth, selectedId }: { node: WikiNodeDto; depth: numbe
       {hasChildren && expanded && (
         <ul className="tree flex flex-col gap-0.5" role="group">
           {node.children.map((child) => (
-            <TreeNode key={child.issue.id} node={child} depth={depth + 1} selectedId={selectedId} />
+            <TreeNode
+              key={child.issue.id}
+              node={child}
+              depth={depth + 1}
+              selectedId={selectedId}
+              expandAll={expandAll}
+            />
           ))}
         </ul>
       )}
     </li>
   );
+}
+
+function treeContains(node: WikiNodeDto, issueId: string): boolean {
+  return node.issue.id === issueId || node.children.some((child) => treeContains(child, issueId));
 }
