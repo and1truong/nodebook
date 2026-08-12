@@ -2,7 +2,13 @@
 import { useEffect, useState } from "react";
 import { api, formatInstant } from "../api";
 import type { IssueDto, ReminderDto } from "../../shared/contracts/issues";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import { Loading, ErrorState, EmptyState } from "./ui";
+
+const nativeSelectClass =
+  "h-9 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 export function ReminderEditor({ issueRef, issue }: { issueRef: string; issue: IssueDto }) {
   const [items, setItems] = useState<ReminderDto[] | null>(null);
@@ -57,69 +63,104 @@ export function ReminderEditor({ issueRef, issue }: { issueRef: string; issue: I
   };
 
   return (
-    <section className="panel">
-      <h3>Reminders</h3>
-      <form className="reminder-form" onSubmit={create}>
-        <select value={kind} onChange={(e) => setKind(e.target.value as typeof kind)} aria-label="Reminder kind">
+    <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+      <h3 className="text-sm font-semibold">Reminders</h3>
+      <form className="reminder-form flex flex-wrap items-center gap-2" onSubmit={create}>
+        <select
+          value={kind}
+          onChange={(e) => setKind(e.target.value as typeof kind)}
+          aria-label="Reminder kind"
+          className={nativeSelectClass}
+        >
           <option value="absolute">At a specific time</option>
           <option value="before_due">Before due date</option>
           <option value="recurring">Recurring</option>
         </select>
         {kind === "absolute" && (
-          <input
+          <Input
             type="datetime-local"
+            className="w-fit"
             value={triggerAt}
             onChange={(e) => setTriggerAt(e.target.value)}
             aria-label="Trigger time"
           />
         )}
         {kind === "before_due" && (
-          <label className="inline">
-            <input type="number" min={1} max={43200} value={offset} onChange={(e) => setOffset(Number(e.target.value))} />
+          <label className="flex items-center gap-1.5 text-sm">
+            <Input
+              type="number"
+              min={1}
+              max={43200}
+              className="w-24"
+              value={offset}
+              onChange={(e) => setOffset(Number(e.target.value))}
+            />
             minutes before due
             {!issue.due_date && <span className="warn"> (issue has no due date yet)</span>}
           </label>
         )}
         {kind === "recurring" && (
-          <select value={recurrence} onChange={(e) => setRecurrence(e.target.value)} aria-label="Recurrence">
+          <select
+            value={recurrence}
+            onChange={(e) => setRecurrence(e.target.value)}
+            aria-label="Recurrence"
+            className={nativeSelectClass}
+          >
             <option value="FREQ=DAILY;INTERVAL=1">Daily</option>
             <option value="FREQ=WEEKLY;INTERVAL=1">Weekly</option>
             <option value="FREQ=MONTHLY;INTERVAL=1">Monthly</option>
           </select>
         )}
-        <button type="submit" className="btn small primary" disabled={creating}>
+        <Button type="submit" size="sm" disabled={creating}>
           {creating ? "Adding…" : "Add"}
-        </button>
+        </Button>
       </form>
       {error ? <ErrorState error={error} /> : null}
       {!error && !items && <Loading label="Loading reminders…" />}
       {items && items.length === 0 && <EmptyState>No reminders.</EmptyState>}
       {items && items.length > 0 && (
-        <ul className="reminder-list">
+        <ul className="flex flex-col">
           {items.map((r) => (
-            <li key={r.id} className={`reminder status-${r.status}`}>
-              <span className="badge rel-type">{r.kind}</span>
+            <li key={r.id} className="reminder flex flex-wrap items-center gap-2 border-b border-border py-1.5 last:border-b-0">
+              <Badge variant="outline" className="border-type-wiki text-type-wiki">
+                {r.kind}
+              </Badge>
               <span>{r.trigger_at ? formatInstant(r.trigger_at) : "—"}</span>
               {r.offset_minutes != null && <span className="dim">({r.offset_minutes} min before due)</span>}
-              <span className={`badge status-${r.status}`}>{r.status}</span>
-              <span className="reminder-actions">
-                {r.status === "active" && (
+              <Badge variant="outline" className={r.status === "active" ? "border-success text-success" : "text-muted-foreground"}>
+                {r.status}
+              </Badge>
+              <span className="ml-auto flex gap-1">
+                {r.status === "active" ? (
                   <>
-                    <button
-                      className="linklike"
-                      onClick={() => void update(r.id, { status: "snoozed", snooze_until: new Date(Date.now() + 60 * 60_000).toISOString() })}
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto px-0 text-xs"
+                      onClick={() =>
+                        void update(r.id, { status: "snoozed", snooze_until: new Date(Date.now() + 60 * 60_000).toISOString() })
+                      }
                     >
                       snooze 1h
-                    </button>
-                    <button className="linklike" onClick={() => void update(r.id, { status: "dismissed" })}>
+                    </Button>
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto px-0 text-xs text-destructive"
+                      onClick={() => void update(r.id, { status: "dismissed" })}
+                    >
                       dismiss
-                    </button>
+                    </Button>
                   </>
-                )}
-                {r.status !== "active" && (
-                  <button className="linklike" onClick={() => void update(r.id, { status: "active", trigger_at: r.trigger_at ?? new Date().toISOString() })}>
+                ) : (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="h-auto px-0 text-xs"
+                    onClick={() => void update(r.id, { status: "active", trigger_at: r.trigger_at ?? new Date().toISOString() })}
+                  >
                     reactivate
-                  </button>
+                  </Button>
                 )}
               </span>
             </li>

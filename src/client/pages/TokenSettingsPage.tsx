@@ -4,6 +4,10 @@ import { api, formatInstant } from "../api";
 import type { McpTokenDto } from "../../shared/contracts/issues";
 import { MCP_SCOPES } from "../../shared/limits";
 import { PageHeader, Loading, ErrorState, EmptyState } from "../components/ui";
+import { Badge } from "../components/ui/badge";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
 
 export function TokenSettingsPage() {
   const [tokens, setTokens] = useState<McpTokenDto[] | null>(null);
@@ -52,56 +56,64 @@ export function TokenSettingsPage() {
   return (
     <>
       <PageHeader title="MCP tokens" />
-      <p className="page-sub">
+      <p className="mb-4 text-sm text-muted-foreground">
         Personal access tokens authenticate MCP clients against <code>/mcp</code>. Only the SHA-256 hash is stored;
         scopes are enforced per tool call. Revoking a token takes effect immediately.
       </p>
 
       {created && (
-        <div className="token-reveal">
-          <h3>Token created — copy it now, it will not be shown again</h3>
-          <code className="token-value">{created.token}</code>
-          <button
-            className="btn small"
+        <div className="token-reveal mb-4 flex flex-wrap items-center gap-2.5 rounded-lg border border-success bg-success/10 p-3.5">
+          <h3 className="text-sm font-semibold">Token created — copy it now, it will not be shown again</h3>
+          <code className="token-value break-all text-sm select-all">{created.token}</code>
+          <Button
+            size="sm"
+            variant="outline"
             onClick={() => {
               void navigator.clipboard.writeText(created.token);
             }}
           >
             Copy
-          </button>
-          <button className="linklike" onClick={() => setCreated(null)}>
+          </Button>
+          <Button variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => setCreated(null)}>
             dismiss
-          </button>
+          </Button>
         </div>
       )}
 
-      <form className="token-form panel" onSubmit={create}>
-        <h3>New token</h3>
-        <label>
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Claude desktop" maxLength={64} />
-        </label>
-        <fieldset>
-          <legend>Scopes</legend>
-          <div className="scope-grid">
+      <form className="token-form mb-6 flex max-w-[560px] flex-col gap-3 rounded-lg border border-border bg-card p-4" onSubmit={create}>
+        <h3 className="text-sm font-semibold">New token</h3>
+        <Label className="flex w-full flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
+          <span>Name</span>
+          <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Claude desktop" maxLength={64} />
+        </Label>
+        <fieldset className="flex flex-col gap-1.5">
+          <legend className="text-xs font-medium text-muted-foreground">Scopes</legend>
+          <div className="scope-grid grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-1">
             {MCP_SCOPES.map((s) => (
-              <label key={s} className="checkline">
-                <input type="checkbox" checked={scopes.includes(s)} onChange={() => toggleScope(s)} />
+              <Label key={s} className="flex flex-row items-center gap-1.5 text-sm text-foreground">
+                <input type="checkbox" className="accent-primary" checked={scopes.includes(s)} onChange={() => toggleScope(s)} />
                 {s}
-              </label>
+              </Label>
             ))}
           </div>
         </fieldset>
-        <label>
-          Expires in (days, blank = never)
-          <input type="number" min={1} max={365} value={expiresInDays} onChange={(e) => setExpiresInDays(e.target.value)} />
-        </label>
-        <button type="submit" className="btn primary" disabled={creating || !name.trim() || scopes.length === 0}>
+        <Label className="flex w-full flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
+          <span>Expires in (days, blank = never)</span>
+          <Input
+            type="number"
+            min={1}
+            max={365}
+            className="w-40"
+            value={expiresInDays}
+            onChange={(e) => setExpiresInDays(e.target.value)}
+          />
+        </Label>
+        <Button type="submit" disabled={creating || !name.trim() || scopes.length === 0}>
           {creating ? "Creating…" : "Create token"}
-        </button>
+        </Button>
       </form>
 
-      <h2 className="section-title">Existing tokens</h2>
+      <h2 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Existing tokens</h2>
       {error ? <ErrorState error={error} /> : null}
       {!error && !tokens && <Loading />}
       {tokens && tokens.length === 0 && <EmptyState>No tokens yet.</EmptyState>}
@@ -121,22 +133,26 @@ export function TokenSettingsPage() {
           </thead>
           <tbody>
             {tokens.map((t) => (
-              <tr key={t.id} className={t.revoked_at ? "dim" : ""}>
+              <tr key={t.id} className={t.revoked_at ? "opacity-60" : ""}>
                 <td>{t.name}</td>
                 <td>
                   <code>{t.prefix}…</code>
                 </td>
-                <td className="scope-cell">{t.scopes.join(", ")}</td>
+                <td className="scope-cell max-w-[260px]">{t.scopes.join(", ")}</td>
                 <td>{formatInstant(t.created_at)}</td>
                 <td>{t.expires_at ? formatInstant(t.expires_at) : "never"}</td>
                 <td>{t.last_used_at ? formatInstant(t.last_used_at) : "—"}</td>
                 <td>
-                  <span className={`badge status-${t.revoked_at ? "closed" : "open"}`}>{t.revoked_at ? "revoked" : "active"}</span>
+                  <Badge variant="outline" className={t.revoked_at ? "text-muted-foreground" : "border-success text-success"}>
+                    {t.revoked_at ? "revoked" : "active"}
+                  </Badge>
                 </td>
                 <td>
                   {!t.revoked_at && (
-                    <button
-                      className="linklike danger"
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto px-0 text-xs text-destructive"
                       onClick={async () => {
                         setError(null);
                         try {
@@ -148,7 +164,7 @@ export function TokenSettingsPage() {
                       }}
                     >
                       revoke
-                    </button>
+                    </Button>
                   )}
                 </td>
               </tr>

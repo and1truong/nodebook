@@ -23,12 +23,13 @@ export function BacklinksPanel({ issueRef }: { issueRef: string }) {
   if (items.length === 0) return <EmptyState>No backlinks yet.</EmptyState>;
 
   return (
-    <ul className="backlink-list">
+    <ul className="flex flex-col gap-1">
       {items.map((b) => (
-        <li key={b.id}>
+        <li key={b.id} className="py-0.5">
           {b.source_number !== null ? (
-            <Link to={`/issues/${b.source_number}`}>
-              <span className="issue-number">#{b.source_number}</span> {b.source_title}
+            <Link to={`/issues/${b.source_number}`} className="hover:underline">
+              <span className="issue-number font-mono text-xs text-muted-foreground">#{b.source_number}</span>{" "}
+              {b.source_title}
             </Link>
           ) : (
             <span className="dim">referenced by a comment</span>

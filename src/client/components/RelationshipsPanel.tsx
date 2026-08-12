@@ -4,7 +4,13 @@ import { api } from "../api";
 import { Link } from "../router";
 import type { RelationshipDto } from "../../shared/contracts/issues";
 import { RELATIONSHIP_TYPES } from "../../shared/limits";
+import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
 import { Loading, ErrorState, EmptyState } from "./ui";
+
+const nativeSelectClass =
+  "h-9 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
 export function RelationshipsPanel({ issueRef, issueId }: { issueRef: string; issueId: string }) {
   const [items, setItems] = useState<RelationshipDto[] | null>(null);
@@ -52,46 +58,59 @@ export function RelationshipsPanel({ issueRef, issueId }: { issueRef: string; is
   };
 
   return (
-    <section className="panel">
-      <h3>Relationships</h3>
-      <form className="inline-form" onSubmit={add}>
-        <input
+    <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
+      <h3 className="text-sm font-semibold">Relationships</h3>
+      <form className="flex flex-wrap items-center gap-2" onSubmit={add}>
+        <Input
+          className="w-48"
           value={targetRef}
           onChange={(e) => setTargetRef(e.target.value)}
           placeholder="Issue # or UUID"
           aria-label="Target issue"
         />
-        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="Relationship type">
+        <select
+          value={type}
+          onChange={(e) => setType(e.target.value)}
+          aria-label="Relationship type"
+          className={nativeSelectClass}
+        >
           {RELATIONSHIP_TYPES.map((t) => (
             <option key={t} value={t}>
               {t}
             </option>
           ))}
         </select>
-        <button type="submit" className="btn small" disabled={adding || !targetRef.trim()}>
+        <Button type="submit" size="sm" disabled={adding || !targetRef.trim()}>
           Link
-        </button>
+        </Button>
       </form>
       {error ? <ErrorState error={error} /> : null}
       {!error && !items && <Loading label="Loading relationships…" />}
       {items && items.length === 0 && <EmptyState>No relationships.</EmptyState>}
       {items && items.length > 0 && (
-        <ul className="rel-list">
+        <ul className="flex flex-col">
           {items.map((r) => {
             const outgoing = r.source_id === issueId;
             const otherNumber = outgoing ? r.target_number : r.source_number;
             const otherTitle = outgoing ? r.target_title : r.source_title;
             return (
-              <li key={r.id} className="rel-item">
-                <span className="badge rel-type">{r.type}</span>
-                {!outgoing && <span className="rel-arrow">← </span>}
-                <Link to={`/issues/${otherNumber}`}>
+              <li key={r.id} className="rel-item flex flex-wrap items-center gap-2 border-b border-border py-1.5 last:border-b-0">
+                <Badge variant="outline" className="rel-type border-type-wiki text-type-wiki">
+                  {r.type}
+                </Badge>
+                {!outgoing && <span className="rel-arrow text-muted-foreground">← </span>}
+                <Link to={`/issues/${otherNumber}`} className="hover:underline">
                   #{otherNumber} {otherTitle}
                 </Link>
-                {outgoing && <span className="rel-arrow"> →</span>}
-                <button className="linklike danger" onClick={() => void remove(r.id)}>
+                {outgoing && <span className="rel-arrow text-muted-foreground"> →</span>}
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="ml-auto h-auto px-0 text-xs text-destructive"
+                  onClick={() => void remove(r.id)}
+                >
                   remove
-                </button>
+                </Button>
               </li>
             );
           })}

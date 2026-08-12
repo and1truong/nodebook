@@ -24,7 +24,7 @@ export function TodayPage() {
   return (
     <>
       <PageHeader title="Today" />
-      <p className="page-sub">
+      <p className="mb-4 text-sm text-muted-foreground">
         Open work due or scheduled today in <code>{tz}</code>, with overdue work on top.
       </p>
       {error ? <ErrorState error={error} /> : null}
@@ -33,11 +33,15 @@ export function TodayPage() {
         <>
           {overdue.length > 0 && (
             <>
-              <h2 className="section-title overdue-title">Overdue</h2>
+              <h2 className="overdue-title mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-[var(--danger)]">
+                Overdue
+              </h2>
               <PlanningList items={overdue} empty={null} />
             </>
           )}
-          <h2 className="section-title">Due today</h2>
+          <h2 className="section-title mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Due today
+          </h2>
           <PlanningList
             items={due}
             empty={<>Nothing due today. Enjoy the calm — or plan something in Upcoming.</>}

@@ -5,6 +5,9 @@ import type { SearchResultDto } from "../../shared/contracts/issues";
 import { ISSUE_TYPES } from "../../shared/limits";
 import { PageHeader, Loading, ErrorState } from "../components/ui";
 import { SearchResults } from "../components/SearchResults";
+import { Input } from "../components/ui/input";
+import { Label } from "../components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../components/ui/select";
 
 export function SearchPage() {
   const [query, setQuery] = useState("");
@@ -38,36 +41,47 @@ export function SearchPage() {
     <>
       <PageHeader title="Search" />
       <form
-        className="search-form"
+        className="mb-3.5 flex flex-wrap items-center gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           setDebounced(query);
         }}
       >
-        <input
+        <Input
           autoFocus
+          className="min-w-[220px] flex-1"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search titles, bodies, comments, labels, attachments…"
           aria-label="Search query"
         />
-        <select value={type} onChange={(e) => setType(e.target.value)} aria-label="Filter by type">
-          <option value="">All types</option>
-          {ISSUE_TYPES.map((t) => (
-            <option key={t} value={t}>
-              {t}
-            </option>
-          ))}
-        </select>
-        <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status">
-          <option value="">All statuses</option>
-          <option value="open">open</option>
-          <option value="closed">closed</option>
-        </select>
-        <label className="checkline">
-          <input type="checkbox" checked={knowledge} onChange={(e) => setKnowledge(e.target.checked)} />
+        <Select value={type || "all"} onValueChange={(v) => setType(v === "all" ? "" : v)}>
+          <SelectTrigger className="w-36" aria-label="Filter by type">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All types</SelectItem>
+            {ISSUE_TYPES.map((t) => (
+              <SelectItem key={t} value={t}>
+                {t}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Select value={status || "all"} onValueChange={(v) => setStatus(v === "all" ? "" : v)}>
+          <SelectTrigger className="w-36" aria-label="Filter by status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All statuses</SelectItem>
+            <SelectItem value="open">open</SelectItem>
+            <SelectItem value="closed">closed</SelectItem>
+          </SelectContent>
+        </Select>
+        <Label className="flex flex-row items-center gap-1.5 text-sm text-foreground">
+          <input type="checkbox" className="accent-primary" checked={knowledge} onChange={(e) => setKnowledge(e.target.checked)} />
           knowledge first (wiki, decision, finding, incident, learning)
-        </label>
+        </Label>
       </form>
       {error ? <ErrorState error={error} /> : null}
       {!error && debounced.trim() && !results && <Loading label="Searching…" />}

@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NodeBook</title>
+    <script>
+      // Apply the persisted theme before first paint so there is no flash of
+      // the wrong theme. Mirrors src/client/theme.tsx: the .dark class on
+      // <html> is the source of truth; "system" follows prefers-color-scheme.
+      (function () {
+        var stored = null;
+        try {
+          stored = localStorage.getItem("nodebook-theme");
+        } catch (e) {
+          /* storage unavailable: fall back to system */
+        }
+        var theme = stored === "light" || stored === "dark" ? stored : "system";
+        var dark =
+          theme === "dark" ||
+          (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+        var root = document.documentElement;
+        root.classList.toggle("dark", dark);
+        root.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

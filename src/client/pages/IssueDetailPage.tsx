@@ -15,7 +15,10 @@ import { RelationshipsPanel } from "../components/RelationshipsPanel";
 import { BacklinksPanel } from "../components/BacklinksPanel";
 import { ReminderEditor } from "../components/ReminderEditor";
 import { AttachmentSection } from "../components/AttachmentUploader";
-import { TypeBadge, StatusBadge, LabelChip, Loading, ErrorState, EmptyState } from "../components/ui";
+import { TypeBadge, StatusBadge, PriorityBadge, LabelChip, Loading, ErrorState, EmptyState } from "../components/ui";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Textarea } from "../components/ui/textarea";
 import { Link, useRouter } from "../router";
 
 export function IssueDetailPage({
@@ -93,55 +96,81 @@ export function IssueDetailPage({
   };
 
   return (
-    <article className="issue-detail">
-      <div className="issue-head">
+    <article className="issue-detail flex flex-col gap-4">
+      <div className="issue-head border-b border-border pb-3.5">
         {wiki && crumbs.length > 0 && (
-          <nav className="breadcrumbs" aria-label="Breadcrumbs">
+          <nav className="mb-2 text-xs text-muted-foreground" aria-label="Breadcrumbs">
             {crumbs.map((c, i) => (
               <span key={c.id}>
                 {i > 0 && " / "}
-                <Link to={`/wiki/${c.number}`}>{c.title}</Link>
+                <Link to={`/wiki/${c.number}`} className="hover:underline">
+                  {c.title}
+                </Link>
               </span>
             ))}
           </nav>
         )}
-        <div className="issue-title-row">
-          <span className="issue-number big">#{issue.number}</span>
-          <h1>{issue.title}</h1>
+        <div className="issue-title-row flex items-baseline gap-2.5">
+          <span className="issue-number big font-mono text-base text-primary">#{issue.number}</span>
+          <h1 className="text-2xl font-semibold tracking-tight">{issue.title}</h1>
         </div>
-        <div className="issue-tags">
+        <div className="issue-tags mt-1.5 flex flex-wrap gap-1.5">
           <TypeBadge type={issue.type} />
           <StatusBadge status={issue.status} />
-          {issue.priority && <span className={`badge prio-${issue.priority}`}>{issue.priority}</span>}
+          {issue.priority && <PriorityBadge priority={issue.priority} />}
           {issue.labels.map((l) => (
             <LabelChip key={l} name={l} />
           ))}
         </div>
-        <div className="issue-dates dim">
-          {issue.start_date && <span>start {issue.start_date}</span>}
-          {issue.due_date && <span className={issue.status === "open" && issue.due_date < today() ? "overdue-label" : ""}>due {issue.due_date}</span>}
-          {issue.scheduled_date && <span>scheduled {formatInstant(issue.scheduled_date)}</span>}
-          {issue.recurrence_rule && <code className="rrule">{issue.recurrence_rule}</code>}
-          {issue.closed_at && <span>closed {formatInstant(issue.closed_at)}</span>}
+        <div className="issue-dates mt-1.5 flex flex-wrap gap-3.5">
+          {issue.start_date && <span className="dim">start {issue.start_date}</span>}
+          {issue.due_date && (
+            <span className={issue.status === "open" && issue.due_date < today() ? "overdue-label" : "dim"}>
+              due {issue.due_date}
+            </span>
+          )}
+          {issue.scheduled_date && <span className="dim">scheduled {formatInstant(issue.scheduled_date)}</span>}
+          {issue.recurrence_rule && <code className="rrule font-mono text-[11px]">{issue.recurrence_rule}</code>}
+          {issue.closed_at && <span className="dim">closed {formatInstant(issue.closed_at)}</span>}
         </div>
-        <div className="issue-actions">
+        <div className="issue-actions mt-2.5 flex gap-2">
           {issue.status === "open" ? (
             <>
-              <button className="btn small" onClick={async () => { await api.completeTask(issue.number.toString()); load(); }}>
+              <Button
+                size="sm"
+                onClick={async () => {
+                  await api.completeTask(issue.number.toString());
+                  load();
+                }}
+              >
                 ✓ Complete
-              </button>
-              <button className="btn small" onClick={async () => { await api.closeIssue(issue.number.toString()); load(); }}>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={async () => {
+                  await api.closeIssue(issue.number.toString());
+                  load();
+                }}
+              >
                 Close
-              </button>
+              </Button>
             </>
           ) : (
-            <button className="btn small" onClick={async () => { await api.reopenIssue(issue.number.toString()); load(); }}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={async () => {
+                await api.reopenIssue(issue.number.toString());
+                load();
+              }}
+            >
               Reopen
-            </button>
+            </Button>
           )}
-          <button className="btn small" onClick={() => setEditing((e) => !e)}>
+          <Button size="sm" variant="outline" onClick={() => setEditing((e) => !e)}>
             {editing ? "Cancel edit" : "Edit"}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -159,8 +188,8 @@ export function IssueDetailPage({
             <p className="dim">No body yet. Edit to add Markdown.</p>
           )}
 
-          <section className="panel">
-            <h3>Attachments</h3>
+          <section className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-2.5 text-sm font-semibold">Attachments</h3>
             <AttachmentSection
               ownerType="issue"
               ownerId={issue.id}
@@ -170,18 +199,18 @@ export function IssueDetailPage({
 
           <ReminderEditor issueRef={issue.number.toString()} issue={issue} />
 
-          <div className="detail-grid">
+          <div className="detail-grid grid gap-4 md:grid-cols-2">
             <RelationshipsPanel issueRef={issue.number.toString()} issueId={issue.id} />
-            <section className="panel">
-              <h3>
+            <section className="rounded-lg border border-border bg-card p-4">
+              <h3 className="mb-2.5 text-sm font-semibold">
                 Backlinks <span className="dim">({issue.backlink_count})</span>
               </h3>
               <BacklinksPanel issueRef={issue.number.toString()} />
             </section>
           </div>
 
-          <section className="panel">
-            <h3>
+          <section className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-2.5 text-sm font-semibold">
               Children <span className="dim">({issue.child_count})</span>
             </h3>
             {children === null ? (
@@ -189,19 +218,22 @@ export function IssueDetailPage({
             ) : children.length === 0 ? (
               <EmptyState>No children. Add one below.</EmptyState>
             ) : (
-              <ul className="issue-list compact">
+              <ul className="divide-y divide-border">
                 {children.map((c) => (
-                  <li key={c.id} className="issue-row">
-                    <Link to={`/issues/${c.number}`} className="issue-row-main">
-                      <span className="issue-number">#{c.number}</span>
-                      <span className="issue-title">{c.title}</span>
+                  <li key={c.id} className="issue-row flex items-center px-1.5 py-1.5 hover:bg-accent/50">
+                    <Link
+                      to={`/issues/${c.number}`}
+                      className="issue-row-main flex min-w-0 flex-1 items-center gap-2 text-foreground hover:no-underline"
+                    >
+                      <span className="issue-number font-mono text-xs text-muted-foreground">#{c.number}</span>
+                      <span className="issue-title truncate">{c.title}</span>
                     </Link>
                   </li>
                 ))}
               </ul>
             )}
             <form
-              className="inline-form"
+              className="mt-2 flex gap-1.5"
               onSubmit={async (e) => {
                 e.preventDefault();
                 const form = e.currentTarget;
@@ -212,32 +244,32 @@ export function IssueDetailPage({
                 load();
               }}
             >
-              <input name="child-title" placeholder="Child issue title" aria-label="Child issue title" />
-              <button type="submit" className="btn small">
+              <Input name="child-title" placeholder="Child issue title" aria-label="Child issue title" />
+              <Button type="submit" size="sm">
                 Add child
-              </button>
+              </Button>
             </form>
           </section>
 
-          <section className="panel">
-            <h3>Comments</h3>
-            <form className="comment-form" onSubmit={addComment}>
-              <textarea
+          <section className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-2.5 text-sm font-semibold">Comments</h3>
+            <form className="comment-form mb-2 flex flex-col gap-2" onSubmit={addComment}>
+              <Textarea
                 value={commentBody}
                 onChange={(e) => setCommentBody(e.target.value)}
                 placeholder="Markdown comment — reference issues with #123"
                 rows={4}
               />
-              <button type="submit" className="btn small primary" disabled={!commentBody.trim()}>
+              <Button type="submit" size="sm" className="self-start" disabled={!commentBody.trim()}>
                 Comment
-              </button>
+              </Button>
             </form>
             {comments === null ? (
               <Loading label="Loading comments…" />
             ) : comments.length === 0 ? (
               <EmptyState>No comments yet.</EmptyState>
             ) : (
-              <ul className="comment-list">
+              <ul className="flex flex-col">
                 {comments.map((c) => (
                   <CommentItem key={c.id} comment={c} />
                 ))}
@@ -245,8 +277,8 @@ export function IssueDetailPage({
             )}
           </section>
 
-          <section className="panel">
-            <h3>History</h3>
+          <section className="rounded-lg border border-border bg-card p-4">
+            <h3 className="mb-2.5 text-sm font-semibold">History</h3>
             <HistoryPanel issueRef={issue.number.toString()} />
           </section>
         </>
@@ -266,24 +298,34 @@ function CommentItem({ comment }: { comment: CommentDto }) {
   };
 
   return (
-    <li className="comment">
-      <div className="comment-head">
-        <span className="comment-author">{comment.author}</span>
+    <li className="comment border-b border-border py-2.5 last:border-b-0">
+      <div className="comment-head mb-1 flex items-center gap-2.5">
+        <span className="comment-author text-sm font-semibold text-primary">{comment.author}</span>
         <span className="dim">{formatInstant(comment.created_at)}</span>
         {comment.edited_at && <span className="dim">edited</span>}
-        <button className="linklike" onClick={() => setEditing((e) => !e)}>
+        <Button variant="link" size="sm" className="h-auto px-0 text-xs" onClick={() => setEditing((e) => !e)}>
           edit
-        </button>
+        </Button>
       </div>
       {editing ? (
-        <form onSubmit={save}>
-          <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={4} />
-          <button type="submit" className="btn small primary">
-            Save
-          </button>
-          <button type="button" className="btn small" onClick={() => { setBody(comment.body); setEditing(false); }}>
-            Cancel
-          </button>
+        <form className="flex flex-col gap-2" onSubmit={save}>
+          <Textarea value={body} onChange={(e) => setBody(e.target.value)} rows={4} />
+          <div className="flex gap-2">
+            <Button type="submit" size="sm">
+              Save
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                setBody(comment.body);
+                setEditing(false);
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
         </form>
       ) : (
         <Markdown source={comment.body} />
@@ -296,7 +338,7 @@ function CreateIssueForm({ onCreated, onCancel }: { onCreated: (issue: IssueDto)
   const [initial] = useState(emptyFormValues);
   return (
     <div>
-      <h1>New issue</h1>
+      <h1 className="mb-3 text-2xl font-semibold tracking-tight">New issue</h1>
       <IssueEditor
         initial={initial}
         submitLabel="Create"
