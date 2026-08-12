@@ -59,6 +59,20 @@ npx wrangler d1 migrations apply nodebook --local   # migrations prove clean
 npx wrangler deploy --dry-run                       # packaging + bindings check
 ```
 
+## CI/CD
+
+- **CI:** `.github/workflows/ci.yml` runs every gate above (plus e2e) on every
+  pull request and every push to `main` — one job on `ubuntu-latest`, failing
+  fast on any red step. A red check blocks merge.
+- **CD:** production deploys via Cloudflare's Git integration (Workers
+  Builds): a push to `main` makes Cloudflare run `npm ci && npm run build`
+  and `npx wrangler deploy` against this repo. CI never deploys.
+- **Manual/staging:** `npm run deploy` runs the same build + deploy from your
+  machine and remains the staging path.
+
+The one-time Cloudflare dashboard setup (connect the repo, D1 `database_id`,
+secrets) is documented in [docs/deployment.md](docs/deployment.md) §5.
+
 ## MCP
 
 Create a scoped token in **Settings → MCP tokens**, then point any MCP client at:
