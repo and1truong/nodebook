@@ -44,8 +44,18 @@ graphRoutes.get("/:ref/children", async (c) => {
 graphRoutes.get("/:ref/sub-issues", async (c) => {
   const ctx = { env: c.env, actor: c.get("actor"), requestId: crypto.randomUUID() };
   const issue = await graphService.getIssueByRefOrThrow(ctx, c.req.param("ref"));
-  const tree = await graphService.getSubIssueTree(ctx, issue.id);
-  return c.json(tree);
+  const children = await graphService.getDirectSubIssues(ctx, issue.id);
+  return c.json(children);
+});
+
+graphRoutes.get("/:ref/sub-issue-candidates", async (c) => {
+  const ctx = { env: c.env, actor: c.get("actor"), requestId: crypto.randomUUID() };
+  const issue = await graphService.getIssueByRefOrThrow(ctx, c.req.param("ref"));
+  const q = c.req.query("q") ?? "";
+  const limitParam = Number(c.req.query("limit") ?? 20);
+  const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 100) : 20;
+  const candidates = await graphService.getSubIssueCandidates(ctx, issue.id, q, limit);
+  return c.json(candidates);
 });
 
 graphRoutes.get("/:ref/backlinks", async (c) => {

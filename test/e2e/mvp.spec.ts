@@ -76,7 +76,7 @@ test.describe.serial("MVP acceptance", () => {
     await expect(page.locator(".comment", { hasText: "Comment with" })).toBeVisible();
   });
 
-  test("render nested sub-issues", async ({ page, request }) => {
+  test("render nested sub-issues lazily", async ({ page, request }) => {
     // Self-contained fixture: root → child → (grandchild, closed sibling),
     // plus a closed second direct child of the root.
     const rootRes = await apiJson(request, "POST", "/api/issues", {
@@ -114,6 +114,13 @@ test.describe.serial("MVP acceptance", () => {
     expect(extra.status).toBe(201);
     expect((await apiJson(request, "POST", `/api/issues/${(extra.json as { number: number }).number}/close`)).status).toBe(200);
 
+    // Count successful hierarchy responses to prove lazy loading and caching
+    // (an aborted request never produces a response).
+    const subIssueResponses: string[] = [];
+    page.on("response", (res) => {
+      if (res.url().includes("/sub-issues") && res.ok()) subIssueResponses.push(res.url());
+    });
+
     await page.goto(`/issues/${root.number}`);
 
     // Header progress: 2 direct children, 1 closed → 1/2.
@@ -131,35 +138,177 @@ test.describe.serial("MVP acceptance", () => {
     const grandchildTitle = page.locator(".sub-issue-row .issue-title", { hasText: "Validate the deployment steps" });
     const siblingTitle = page.locator(".sub-issue-row .issue-title", { hasText: "Retired setup experiment" });
 
+    // Page load fetches the root level only: direct children are visible and
+    // every branch starts collapsed, so grandchildren are absent.
     await expect(childTitle).toBeVisible();
-    // The child row shows its own progress (1 closed of 2 direct children).
+    await expect(grandchildTitle).toHaveCount(0);
+    await expect(siblingTitle).toHaveCount(0);
+    // The child row shows its own progress from server-provided counts
+    // (1 closed of 2 direct children) without loading them.
     await expect(rowDiv("Write deployment guide").locator(".sub-issues-progress")).toHaveText("1/2");
+    expect(subIssueResponses).toHaveLength(1);
+
+    // Branch failure stays local: abort the branch request, expand, see an
+    // inline error with Retry, and recover without a page reload.
+    const branchUrl = `**/api/graph/${child.number}/sub-issues`;
+    await page.route(branchUrl, (route) => route.abort());
+    await rowDiv("Write deployment guide").locator(".sub-issue-toggle").click();
+    await expect(page.locator(".sub-issue-branch-error")).toBeVisible();
+    await expect(grandchildTitle).toHaveCount(0);
+    await page.unroute(branchUrl);
+    await page.locator(".sub-issue-branch-error").getByRole("button", { name: "Retry" }).click();
+
+    // Retry reveals both direct children; the branch request fired once.
     await expect(grandchildTitle).toBeVisible();
     await expect(siblingTitle).toBeVisible();
+    expect(subIssueResponses).toHaveLength(2);
 
     // Semantic icons: open grandchild vs closed sibling and closed extra child.
     await expect(rowDiv("Validate the deployment steps").locator(".sub-issue-icon-open")).toHaveCount(1);
     await expect(rowDiv("Retired setup experiment").locator(".sub-issue-icon-closed")).toHaveCount(1);
     await expect(rowDiv("Archived setup notes").locator(".sub-issue-icon-closed")).toHaveCount(1);
 
-    // Branch collapse unmounts the nested rows; expanding restores them.
+    // Branch collapse unmounts the nested rows; expanding restores them from
+    // the cache — no additional hierarchy request.
     await rowDiv("Write deployment guide").locator(".sub-issue-toggle").click();
     await expect(grandchildTitle).toHaveCount(0);
     await expect(siblingTitle).toHaveCount(0);
     await rowDiv("Write deployment guide").locator(".sub-issue-toggle").click();
     await expect(grandchildTitle).toBeVisible();
+    await expect(siblingTitle).toBeVisible();
+    expect(subIssueResponses).toHaveLength(2);
 
     // Child navigation opens the child's own detail page.
     await page.locator(".sub-issue-link", { hasText: "Write deployment guide" }).click();
     await expect(page).toHaveURL(new RegExp(`/issues/${child.number}$`));
     await expect(page.getByRole("heading", { name: "Write deployment guide" })).toBeVisible();
 
-    // The panel renders in the dark theme too.
+    // The panel renders in the dark theme too: branches start collapsed and
+    // expand on demand (back on the root page, where the grandchild is nested).
+    await page.goto(`/issues/${root.number}`);
     await page.evaluate(() => localStorage.setItem("nodebook-theme", "dark"));
     await page.reload();
     await expect(page.locator("html")).toHaveClass(/dark/);
+    await expect(page.locator(".sub-issue-row .issue-title", { hasText: "Validate the deployment steps" })).toHaveCount(0);
+    await rowDiv("Write deployment guide").locator(".sub-issue-toggle").click();
     await expect(grandchildTitle).toBeVisible();
     await page.evaluate(() => localStorage.removeItem("nodebook-theme"));
+  });
+
+  test("add an existing issue as a sub-issue: link, reparent, cycle guard", async ({ page, request }) => {
+    // Fixtures: an unattached issue; a parented issue with a descendant; and
+    // an ancestor of the root (to exercise the server-side cycle rejection).
+    const rootRes = await apiJson(request, "POST", "/api/issues", { title: "Linking demo root", type: "task" });
+    expect(rootRes.status).toBe(201);
+    const root = rootRes.json as { id: string; number: number };
+
+    const orphanRes = await apiJson(request, "POST", "/api/issues", {
+      title: "Lonely unattached task",
+      type: "task",
+    });
+    expect(orphanRes.status).toBe(201);
+    const orphan = orphanRes.json as { id: string; number: number };
+
+    const ancestorRes = await apiJson(request, "POST", "/api/issues", { title: "Root ancestor", type: "task" });
+    const ancestor = ancestorRes.json as { id: string; number: number };
+    await apiJson(request, "POST", `/api/graph/${root.number}/parent`, { parent_id: ancestor.id });
+
+    const oldParentRes = await apiJson(request, "POST", "/api/issues", { title: "Old parent issue", type: "task" });
+    const oldParent = oldParentRes.json as { id: string; number: number };
+    const movingRes = await apiJson(request, "POST", "/api/issues", { title: "Moving reparented task", type: "task" });
+    const moving = movingRes.json as { id: string; number: number };
+    const grandchildRes = await apiJson(request, "POST", "/api/issues", {
+      title: "Retained descendant",
+      type: "task",
+    });
+    const grandchild = grandchildRes.json as { id: string; number: number };
+    await apiJson(request, "POST", `/api/graph/${moving.number}/parent`, { parent_id: oldParent.id });
+    await apiJson(request, "POST", `/api/graph/${grandchild.number}/parent`, { parent_id: moving.id });
+    // Highest number allocated by the fixtures above; linking must not allocate
+    // any new issue number beyond it.
+    const maxFixtureNumber = grandchild.number;
+
+    await page.goto(`/issues/${root.number}`);
+
+    const openPicker = async () => {
+      await page.getByRole("button", { name: "Sub-issue actions" }).click();
+      await page
+        .locator(".sub-issues-action-menu")
+        .getByRole("menuitem", { name: "Add existing issue" })
+        .click();
+      await expect(page.locator(".sub-issues-link-form")).toBeVisible();
+    };
+    const search = (q: string) => page.getByLabel("Search issues").fill(q);
+    const linkSelected = () =>
+      page.locator(".sub-issues-link-form").getByRole("button", { name: "Link issue" }).click();
+
+    // 1. Link an unattached issue by number; no new issue is created.
+    await openPicker();
+    await search(String(orphan.number));
+    await expect(page.locator(".existing-issue-result", { hasText: "Lonely unattached task" })).toBeVisible();
+    await page.locator(".existing-issue-result", { hasText: "Lonely unattached task" }).click();
+    await linkSelected();
+
+    await expect(page.locator(".sub-issue-row", { hasText: "Lonely unattached task" })).toBeVisible();
+    await expect(page.locator(".sub-issues-header .sub-issues-progress")).toHaveText("0/1");
+    const orphanDetail = await apiJson(request, "GET", `/api/issues/${orphan.number}`);
+    expect((orphanDetail.json as { parent_id: string | null }).parent_id).toBe(root.id);
+    const list = await apiJson(request, "GET", "/api/issues?limit=100");
+    const numbers = (list.json.issues as { number: number }[]).map((i) => i.number);
+    expect(numbers.filter((n) => n > maxFixtureNumber)).toEqual([]);
+
+    // 2. Reopening the picker excludes the linked issue and the root itself.
+    await openPicker();
+    await search(String(orphan.number));
+    await expect(page.locator(".existing-issue-result", { hasText: "Lonely unattached task" })).toHaveCount(0);
+    await search(String(root.number));
+    await expect(page.locator(".existing-issue-result", { hasText: "Linking demo root" })).toHaveCount(0);
+    await page.locator(".sub-issues-link-form").getByRole("button", { name: "Cancel" }).click();
+    await expect(page.locator(".sub-issues-link-form")).toHaveCount(0);
+
+    // 3. Linking a parented issue moves it from its old parent; its
+    // descendant is preserved but lazy: it appears only after expanding.
+    await openPicker();
+    await search(String(moving.number));
+    const movingRow = page.locator(".existing-issue-result", { hasText: "Moving reparented task" });
+    await expect(movingRow).toContainText("under #" + oldParent.number);
+    await movingRow.click();
+    await expect(page.locator(".sub-issues-link-form")).toContainText("moves it from");
+    await linkSelected();
+
+    const movingTitle = page.locator(".sub-issue-row .issue-title", { hasText: "Moving reparented task" });
+    const retainedTitle = page.locator(".sub-issue-row .issue-title", { hasText: "Retained descendant" });
+    await expect(movingTitle).toBeVisible();
+    // The moved row's progress badge reflects its unloaded descendant.
+    await expect(movingTitle.locator("xpath=ancestor::div[contains(@class,'issue-row')][1]").locator(".sub-issues-progress")).toHaveText("0/1");
+    // Grandchildren are not fetched until their branch expands.
+    await expect(retainedTitle).toHaveCount(0);
+    await expect(page.locator(".sub-issues-header .sub-issues-progress")).toHaveText("0/2");
+    const oldChildren = await apiJson(request, "GET", `/api/graph/${oldParent.number}/children`);
+    expect((oldChildren.json as unknown as { id: string }[]).map((c) => c.id)).not.toContain(moving.id);
+
+    // The picker excludes unexpanded descendants server-side: searching for
+    // the retained grandchild never offers it, while expanding the branch
+    // reveals it locally.
+    await openPicker();
+    await search("Retained descendant");
+    await expect(page.locator(".existing-issue-result", { hasText: "Retained descendant" })).toHaveCount(0);
+    await page.locator(".sub-issues-link-form").getByRole("button", { name: "Cancel" }).click();
+    await expect(page.locator(".sub-issues-link-form")).toHaveCount(0);
+    await movingTitle.locator("xpath=ancestor::div[contains(@class,'issue-row')][1]").locator(".sub-issue-toggle").click();
+    await expect(retainedTitle).toBeVisible();
+
+    // 4. Attaching an ancestor is rejected server-side; the picker stays open
+    // and shows the server message without corrupting the tree.
+    await openPicker();
+    await search(String(ancestor.number));
+    await expect(page.locator(".existing-issue-result", { hasText: "Root ancestor" })).toBeVisible();
+    await page.locator(".existing-issue-result", { hasText: "Root ancestor" }).click();
+    await linkSelected();
+    await expect(page.locator(".sub-issues-link-form").locator(".error-inline")).toContainText("cycle");
+    await expect(page.locator(".sub-issue-row", { hasText: "Root ancestor" })).toHaveCount(0);
+    await expect(page.locator(".sub-issues-link-form")).toBeVisible();
+    await page.locator(".sub-issues-link-form").getByRole("button", { name: "Cancel" }).click();
   });
 
   test("create a reminder, deliver it, and see it in the inbox", async ({ page, request }) => {

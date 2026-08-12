@@ -355,19 +355,21 @@ export interface WikiNodeDto {
   children: WikiNodeDto[];
 }
 
-/** Minimal per-issue payload for the sub-issue tree (no body/labels). */
+/**
+ * Minimal per-issue payload for one level of the sub-issue hierarchy (no
+ * body/labels). `child_count` / `closed_child_count` describe the issue's
+ * own direct children, so expansion controls and progress badges render
+ * without loading any descendants. The API returns flat arrays of these
+ * summaries — one level per request, GitHub-style lazy loading.
+ */
 export interface SubIssueSummaryDto {
   id: string;
   number: number;
   title: string;
   status: IssueStatus;
   parent_id: string | null;
-}
-
-/** Recursive node in the sub-issue tree (descendants of one issue). */
-export interface SubIssueNodeDto {
-  issue: SubIssueSummaryDto;
-  children: SubIssueNodeDto[];
+  child_count: number;
+  closed_child_count: number;
 }
 
 export interface SearchResultDto {

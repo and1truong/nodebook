@@ -4,8 +4,9 @@ import { ConflictError, NotFoundError, ValidationError } from "../../domain/erro
 import type { IssueRecord, ReferenceRecord, RelationshipRecord } from "../../domain/models";
 import type {
   BacklinkDto,
+  IssueDto,
   RelationshipDto,
-  SubIssueNodeDto,
+  SubIssueSummaryDto,
   WikiNodeDto,
 } from "../../shared/contracts/issues";
 import type { RelationshipType } from "../../shared/limits";
@@ -18,13 +19,15 @@ import {
   getChildren,
   getRelationshipById,
   insertRelationship,
+  isInSubtree,
   listAncestors,
   listBacklinks,
+  listDirectChildren,
+  listLinkCandidates,
   listRelatedIssues,
   listRelationships,
-  listSubtree,
 } from "../repositories/graph";
-import { getIssueById, getIssueByRef, getIssueByNumber, getIssueLabels, getNumbersByIds, listIssues } from "../repositories/issues";
+import { getIssueById, getIssueByNumber, getIssueByRef, getIssueLabels, getNumbersByIds, listIssues } from "../repositories/issues";
 import { toIssueDto, toIssueDtos } from "./dto";
 
 // ---------------------------------------------------------------------------
@@ -85,35 +88,52 @@ export async function getChildrenDtos(ctx: Ctx, issueId: string): Promise<Awaite
 }
 
 /**
- * Sub-issue tree: all descendants of `rootId` assembled recursively.
- * Completion progress is derived client-side from direct children per node.
+ * Sub-issues, one hierarchy level per request: the direct children of
+ * `rootId` as summaries carrying their own direct-child counts. Missing
+ * roots 404 in the route; leaves return an empty array. Descendants load
+ * lazily by requesting each branch's own direct children.
  */
-export async function getSubIssueTree(ctx: Ctx, rootId: string): Promise<SubIssueNodeDto[]> {
-  const rows = await listSubtree(ctx.env.DB, rootId);
-  const nodes = new Map<string, SubIssueNodeDto>();
-  const roots: SubIssueNodeDto[] = [];
-  for (const row of rows) {
-    const node: SubIssueNodeDto = {
-      issue: {
-        id: row.id,
-        number: row.number,
-        title: row.title,
-        status: row.status as IssueStatus,
-        parent_id: row.parent_id,
-      },
-      children: [],
-    };
-    nodes.set(row.id, node);
-    if (row.parent_id === rootId) roots.push(node);
-  }
-  for (const row of rows) {
-    if (row.parent_id !== null && row.parent_id !== rootId) {
-      nodes.get(row.parent_id)?.children.push(nodes.get(row.id)!);
+export async function getDirectSubIssues(ctx: Ctx, rootId: string): Promise<SubIssueSummaryDto[]> {
+  const rows = await listDirectChildren(ctx.env.DB, rootId);
+  return rows.map((row) => ({
+    id: row.id,
+    number: row.number,
+    title: row.title,
+    status: row.status as IssueStatus,
+    parent_id: row.parent_id,
+    child_count: row.child_count,
+    closed_child_count: row.closed_child_count,
+  }));
+}
+
+/**
+ * Existing-issue picker candidates: issues that may be linked under `rootId`
+ * (everything except the root and its descendants, excluded server-side via a
+ * recursive CTE). `q` filters title/body LIKE matches; `#123` / `123` are
+ * exact number lookups merged (deduped) with the LIKE results, matching the
+ * picker's previous client-side behavior. Newest issues first.
+ */
+export async function getSubIssueCandidates(ctx: Ctx, rootId: string, q: string, limit: number): Promise<IssueDto[]> {
+  const exactNumber = /^#?(\d+)$/.exec(q.trim());
+  const query = exactNumber ? null : (q.trim() || null);
+  const rows = await listLinkCandidates(ctx.env.DB, rootId, query, limit);
+  const issues: IssueRecord[] = [];
+  const seen = new Set<string>();
+
+  if (exactNumber) {
+    const hit = await getIssueByNumber(ctx.env.DB, Number(exactNumber[1]));
+    if (hit && !(await isInSubtree(ctx.env.DB, rootId, hit.id))) {
+      issues.push(hit);
+      seen.add(hit.id);
     }
   }
-  // Rows arrive ordered by number (sequential per workspace), so both the
-  // root list and every sibling group are deterministically ordered.
-  return roots;
+  for (const row of rows) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    const full = await getIssueById(ctx.env.DB, row.id);
+    if (full) issues.push(full);
+  }
+  return toIssueDtos(ctx, issues);
 }
 
 // ---------------------------------------------------------------------------

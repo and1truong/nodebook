@@ -188,7 +188,7 @@ describe("sub-issues tree", () => {
     expect(res.body).toEqual([]);
   });
 
-  it("builds a nested tree with statuses, sibling ordering, and exclusion", async () => {
+  it("returns one hierarchy level per request with counts", async () => {
     const root = await createIssue({ title: "sub root" });
     const childA = await createIssue({ title: "sub a" });
     const childB = await createIssue({ title: "sub b" });
@@ -200,29 +200,144 @@ describe("sub-issues tree", () => {
     await post(`/api/graph/${grandchild.number}/parent`, { parent_id: childB.id });
     await post(`/api/issues/${childA.number}/close`, {});
 
+    // Root request: direct children only, ordered by number, with status and
+    // each row's own direct-child counts. Grandchildren are NOT included.
     const res = await api(`/api/graph/${root.number}/sub-issues`);
     expect(res.status).toBe(200);
-    const tree = res.body as {
-      issue: { id: string; number: number; title: string; status: string; parent_id: string | null };
-      children: { issue: { number: number; title: string; status: string }; children: unknown[] }[];
+    const rows = res.body as {
+      id: string;
+      number: number;
+      title: string;
+      status: string;
+      parent_id: string | null;
+      child_count: number;
+      closed_child_count: number;
     }[];
 
-    // Direct children only, ordered by number, with status data.
-    expect(tree).toHaveLength(2);
-    expect(tree[0]!.issue.number).toBe(childA.number);
-    expect(tree[0]!.issue.status).toBe("closed");
-    expect(tree[0]!.issue.parent_id).toBe(root.id);
-    expect(tree[0]!.children).toHaveLength(0);
-    expect(tree[1]!.issue.number).toBe(childB.number);
-    expect(tree[1]!.issue.status).toBe("open");
-
-    // Grandchildren are nested beneath their direct parent.
-    expect(tree[1]!.children).toHaveLength(1);
-    expect(tree[1]!.children[0]!.issue.number).toBe(grandchild.number);
-    expect(tree[1]!.children[0]!.issue.title).toBe("grandchild");
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.number).toBe(childA.number);
+    expect(rows[0]!.status).toBe("closed");
+    expect(rows[0]!.parent_id).toBe(root.id);
+    expect(rows[0]!.child_count).toBe(0);
+    expect(rows[1]!.number).toBe(childB.number);
+    expect(rows[1]!.status).toBe("open");
+    // Counts describe unloaded descendants: childB has one open grandchild.
+    expect(rows[1]!.child_count).toBe(1);
+    expect(rows[1]!.closed_child_count).toBe(0);
+    // The response is flat — no recursive children anywhere.
+    expect(rows.every((r) => !("children" in r))).toBe(true);
 
     // Unrelated issues never appear.
-    expect(tree.some((n) => n.issue.number === unrelated.number)).toBe(false);
+    expect(rows.some((r) => r.number === unrelated.number)).toBe(false);
+
+    // A child request returns only that issue's direct children.
+    const childRes = await api(`/api/graph/${childB.number}/sub-issues`);
+    expect(childRes.status).toBe(200);
+    const childRows = childRes.body as { number: number; child_count: number }[];
+    expect(childRows).toHaveLength(1);
+    expect(childRows[0]!.number).toBe(grandchild.number);
+    expect(childRows[0]!.child_count).toBe(0);
+  });
+
+  it("excludes descendants from link candidates server-side", async () => {
+    const root = await createIssue({ title: "candidate root" });
+    const child = await createIssue({ title: "candidate child" });
+    const grandchild = await createIssue({ title: "candidate grandchild" });
+    const sibling = await createIssue({ title: "candidate sibling" });
+    const orphan = await createIssue({ title: "candidate orphan" });
+
+    await post(`/api/graph/${child.number}/parent`, { parent_id: root.id });
+    await post(`/api/graph/${grandchild.number}/parent`, { parent_id: child.id });
+
+    // Missing root → 404.
+    const missing = await api("/api/graph/999999/sub-issue-candidates");
+    expect(missing.status).toBe(404);
+
+    // Recent candidates: root, its descendants, and itself never appear,
+    // even though the client never loaded the subtree.
+    const recent = await api(`/api/graph/${root.number}/sub-issue-candidates?limit=100`);
+    expect(recent.status).toBe(200);
+    const recentIds = (recent.body as { id: string; number: number }[]).map((i) => i.id);
+    expect(recentIds).not.toContain(root.id);
+    expect(recentIds).not.toContain(child.id);
+    expect(recentIds).not.toContain(grandchild.id);
+    expect(recentIds).toContain(sibling.id);
+    expect(recentIds).toContain(orphan.id);
+
+    // LIKE search also excludes the whole subtree.
+    const search = await api(`/api/graph/${root.number}/sub-issue-candidates?q=candidate&limit=100`);
+    const searchNumbers = (search.body as { number: number }[]).map((i) => i.number);
+    expect(searchNumbers).toContain(sibling.number);
+    expect(searchNumbers).toContain(orphan.number);
+    expect(searchNumbers).not.toContain(child.number);
+    expect(searchNumbers).not.toContain(grandchild.number);
+
+    // Exact #number lookups: eligible issues resolve, descendants do not.
+    const exact = await api(`/api/graph/${root.number}/sub-issue-candidates?q=${orphan.number}`);
+    const exactNumbers = (exact.body as { number: number }[]).map((i) => i.number);
+    expect(exactNumbers).toContain(orphan.number);
+
+    const exactDescendant = await api(`/api/graph/${root.number}/sub-issue-candidates?q=${grandchild.number}`);
+    const descendantNumbers = (exactDescendant.body as { number: number }[]).map((i) => i.number);
+    expect(descendantNumbers).not.toContain(grandchild.number);
+
+    // Candidates are full IssueDtos (parent_number included for the move badge).
+    const orphanRow = (exact.body as { number: number; parent_number: number | null }[]).find(
+      (i) => i.number === orphan.number,
+    );
+    expect(orphanRow).toBeDefined();
+    expect(orphanRow!.parent_number).toBeNull();
+  });
+
+  it("reparents an issue and preserves its descendants", async () => {
+    const oldParent = await createIssue({ title: "old parent" });
+    const newParent = await createIssue({ title: "new parent" });
+    const moving = await createIssue({ title: "moving issue" });
+    const descendant = await createIssue({ title: "kept descendant" });
+    await post(`/api/graph/${moving.number}/parent`, { parent_id: oldParent.id });
+    await post(`/api/graph/${descendant.number}/parent`, { parent_id: moving.id });
+
+    const before = await api(`/api/graph/${oldParent.number}/sub-issues`);
+    expect((before.body as unknown[]).length).toBe(1);
+
+    // Linking an issue under another parent moves it; nothing else changes.
+    const moved = await post(`/api/graph/${moving.number}/parent`, { parent_id: newParent.id });
+    expect(moved.status).toBe(200);
+
+    // It disappears from the old parent's subtree…
+    const afterOld = await api(`/api/graph/${oldParent.number}/sub-issues`);
+    expect(afterOld.body).toEqual([]);
+
+    // …and appears under the new parent as a direct child whose own counts
+    // reflect the preserved descendant (loaded lazily on demand).
+    const afterNew = await api(`/api/graph/${newParent.number}/sub-issues`);
+    const rows = afterNew.body as { number: number; child_count: number; closed_child_count: number }[];
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.number).toBe(moving.number);
+    expect(rows[0]!.child_count).toBe(1);
+    expect(rows[0]!.closed_child_count).toBe(0);
+
+    // The descendant is still there, one level down.
+    const descendantLevel = await api(`/api/graph/${moving.number}/sub-issues`);
+    const descendantRows = descendantLevel.body as { number: number }[];
+    expect(descendantRows).toHaveLength(1);
+    expect(descendantRows[0]!.number).toBe(descendant.number);
+
+    // The move is audited as issue.set_parent with before/after payloads.
+    const history = await api(`/api/issues/${moving.number}/history`);
+    const events = history.body as {
+      action: string;
+      before: { parent_id: string | null };
+      after: { parent_id: string | null };
+    }[];
+    expect(
+      events.some(
+        (e) =>
+          e.action === "issue.set_parent" &&
+          e.before.parent_id === oldParent.id &&
+          e.after.parent_id === newParent.id,
+      ),
+    ).toBe(true);
   });
 });
 
