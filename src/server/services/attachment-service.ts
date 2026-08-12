@@ -86,15 +86,31 @@ export async function uploadAttachment(ctx: Ctx, input: UploadInput): Promise<At
 
   // Close the GC race: if a garbage collector tombstoned and deleted this
   // blob between our put and our row insert, restore the blob and clear the
-  // tombstone so the new row is never left dangling.
+  // tombstone so the new row is never left dangling. The GC issues at most
+  // one delete per key per run; the verification below re-puts the blob if
+  // that delete lands after our restore, so the final write is ours.
   const tombstone = await ctx.env.DB.prepare("SELECT r2_key FROM gc_tombstones WHERE r2_key = ?")
     .bind(r2Key)
     .first();
   if (tombstone) {
-    await ctx.env.FILES.put(r2Key, input.bytes, {
-      httpMetadata: { contentType: input.contentType },
-    });
-    await ctx.env.DB.prepare("DELETE FROM gc_tombstones WHERE r2_key = ?").bind(r2Key).run();
+    let restored = false;
+    for (let attempt = 0; attempt < 3 && !restored; attempt++) {
+      await ctx.env.FILES.put(r2Key, input.bytes, {
+        httpMetadata: { contentType: input.contentType },
+      });
+      await ctx.env.DB.prepare("DELETE FROM gc_tombstones WHERE r2_key = ?").bind(r2Key).run();
+      // If the GC's awaited delete was still in flight and lands after our
+      // restore, head observes the missing blob and the loop re-puts after
+      // the delete has completed.
+      restored = (await ctx.env.FILES.head(r2Key)) !== null;
+    }
+    if (!restored) {
+      // Last resort: the delete raced every restore; write the blob once more
+      // so the final state has it present.
+      await ctx.env.FILES.put(r2Key, input.bytes, {
+        httpMetadata: { contentType: input.contentType },
+      });
+    }
   }
 
   await indexAttachment(ctx, record);
@@ -190,6 +206,14 @@ export async function softDeleteAttachment(ctx: Ctx, attachmentId: string): Prom
  * deleted; uploads that land concurrently repair the blob via the tombstone
  * (see uploadAttachment), so a referenced blob is never permanently lost to a
  * D1/R2 partial ordering.
+ *
+ * Handshake ordering: the tombstone is inserted before the blob delete, and
+ * the delete is re-checked against both the tombstone and the active-row
+ * count immediately before it runs. A concurrent upload that restores the
+ * blob and clears the tombstone therefore cancels the delete (the upload's
+ * verified re-put loop in uploadAttachment covers a delete already in
+ * flight), and an upload whose row lands while the GC is mid-run is seen by
+ * the post-tombstone active-row re-check.
  */
 export async function runAttachmentGc(ctx: Ctx, now: Date = new Date()): Promise<{ scanned: number; deletedRows: number; deletedBlobs: number }> {
   const cutoff = new Date(now.getTime() - ATTACHMENT_GC_GRACE_MS).toISOString();
@@ -211,6 +235,14 @@ export async function runAttachmentGc(ctx: Ctx, now: Date = new Date()): Promise
     await ctx.env.DB.prepare("INSERT OR IGNORE INTO gc_tombstones (r2_key, created_at) VALUES (?, ?)")
       .bind(key, now.toISOString())
       .run();
+    // Re-check after the tombstone insert: an upload may have repaired the
+    // blob (clearing the tombstone) or landed an active row between our
+    // initial check and the insert. Never delete a blob a repair depends on.
+    const stillTombstoned = await ctx.env.DB.prepare("SELECT r2_key FROM gc_tombstones WHERE r2_key = ?")
+      .bind(key)
+      .first();
+    if (!stillTombstoned) continue;
+    if ((await fileRepo.countActiveByR2Key(ctx.env.DB, key)) > 0) continue;
     await ctx.env.FILES.delete(key);
     deletedBlobs += 1;
     idsToDelete.push(...ids);

@@ -6,11 +6,21 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Loading, ErrorState, EmptyState } from "./ui";
+import { cn } from "@/lib/utils";
 
 const nativeSelectClass =
   "h-9 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
-export function ReminderEditor({ issueRef, issue }: { issueRef: string; issue: IssueDto }) {
+export function ReminderEditor({
+  issueRef,
+  issue,
+  embedded = false,
+}: {
+  issueRef: string;
+  issue: IssueDto;
+  /** Compact sidebar presentation: no outer card/heading, stacked controls. */
+  embedded?: boolean;
+}) {
   const [items, setItems] = useState<ReminderDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [kind, setKind] = useState<"absolute" | "before_due" | "recurring">("absolute");
@@ -63,14 +73,14 @@ export function ReminderEditor({ issueRef, issue }: { issueRef: string; issue: I
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-      <h3 className="text-sm font-semibold">Reminders</h3>
-      <form className="reminder-form flex flex-wrap items-center gap-2" onSubmit={create}>
+    <section className={cn("flex flex-col gap-3", !embedded && "rounded-lg border border-border bg-card p-4")}>
+      {!embedded && <h3 className="text-sm font-semibold">Reminders</h3>}
+      <form className={cn("reminder-form flex gap-2", embedded ? "flex-col" : "flex-wrap items-center")} onSubmit={create}>
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as typeof kind)}
           aria-label="Reminder kind"
-          className={nativeSelectClass}
+          className={cn(nativeSelectClass, embedded && "w-full")}
         >
           <option value="absolute">At a specific time</option>
           <option value="before_due">Before due date</option>
@@ -79,24 +89,26 @@ export function ReminderEditor({ issueRef, issue }: { issueRef: string; issue: I
         {kind === "absolute" && (
           <Input
             type="datetime-local"
-            className="w-fit"
+            className={embedded ? "w-full" : "w-fit"}
             value={triggerAt}
             onChange={(e) => setTriggerAt(e.target.value)}
             aria-label="Trigger time"
           />
         )}
         {kind === "before_due" && (
-          <label className="flex items-center gap-1.5 text-sm">
+          <label className={cn("flex gap-1.5 text-sm", embedded ? "flex-col items-start" : "flex-wrap items-center")}>
             <Input
               type="number"
               min={1}
               max={43200}
-              className="w-24"
+              className={embedded ? "w-full" : "w-24"}
               value={offset}
               onChange={(e) => setOffset(Number(e.target.value))}
             />
-            minutes before due
-            {!issue.due_date && <span className="warn"> (issue has no due date yet)</span>}
+            <span className="flex flex-wrap items-center gap-1.5">
+              minutes before due
+              {!issue.due_date && <span className="warn"> (issue has no due date yet)</span>}
+            </span>
           </label>
         )}
         {kind === "recurring" && (
@@ -104,7 +116,7 @@ export function ReminderEditor({ issueRef, issue }: { issueRef: string; issue: I
             value={recurrence}
             onChange={(e) => setRecurrence(e.target.value)}
             aria-label="Recurrence"
-            className={nativeSelectClass}
+            className={cn(nativeSelectClass, embedded && "w-full")}
           >
             <option value="FREQ=DAILY;INTERVAL=1">Daily</option>
             <option value="FREQ=WEEKLY;INTERVAL=1">Weekly</option>

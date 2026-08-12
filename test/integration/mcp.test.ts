@@ -1,5 +1,6 @@
 /** MCP: protocol tests, one test per tool family, scopes, parity with HTTP. */
 import { describe, expect, it } from "vitest";
+import { SELF } from "cloudflare:test";
 import { api, createIssue, createMcpToken, mcpCall, mcpInitialize, post } from "./helpers";
 
 async function callTool(
@@ -238,5 +239,27 @@ describe("MCP tools", () => {
 
     const after = await mcpCall(token, "ping", {}, sessionId);
     expect(after.status).toBe(401);
+  });
+
+  it("answers CORS preflights without a bearer token", async () => {
+    // A cross-origin browser MCP client sends OPTIONS with no Authorization
+    // header; the middleware must let it through so the /mcp route can emit
+    // the configured CORS headers (otherwise MCP_CORS_ORIGINS is unusable).
+    const res = await SELF.fetch("https://nodebook.test/mcp", {
+      method: "OPTIONS",
+      headers: { Origin: "https://example.com", "Access-Control-Request-Method": "POST" },
+    });
+    expect(res.status).toBe(204);
+    expect(res.headers.get("access-control-allow-origin")).toBeTruthy();
+    expect(res.headers.get("access-control-allow-methods")).toContain("POST");
+    expect(res.headers.get("access-control-allow-headers")).toContain("Authorization");
+
+    // The subsequent authenticated request is still required (and enforced).
+    const noToken = await SELF.fetch("https://nodebook.test/mcp", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "ping" }),
+    });
+    expect(noToken.status).toBe(401);
   });
 });
