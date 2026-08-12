@@ -57,10 +57,12 @@ export function DatePicker({
   // Keep the editable text in sync when the stored value changes externally.
   useEffect(() => setText(value), [value]);
 
-  const openPicker = () => {
-    const v = parseIso(value);
-    if (v) setView({ y: v.y, m: v.m });
-    setOpen(true);
+  const handleOpenChange = (nextOpen: boolean) => {
+    if (nextOpen && !open) {
+      const v = parseIso(value);
+      if (v) setView({ y: v.y, m: v.m });
+    }
+    setOpen(nextOpen);
   };
 
   const commit = (iso: string) => {
@@ -83,8 +85,8 @@ export function DatePicker({
 
   return (
     <div className={cn("relative w-40", className)}>
-      <Popover.Root open={open} onOpenChange={setOpen}>
-        <Popover.Trigger asChild>
+      <Popover.Root open={open} onOpenChange={handleOpenChange}>
+        <Popover.Anchor asChild>
           <div className="relative">
             <Input
               id={id}
@@ -97,14 +99,23 @@ export function DatePicker({
               onBlur={() => {
                 if (!parseIso(text)) setText(value);
               }}
-              onFocus={openPicker}
+              onFocus={() => handleOpenChange(true)}
+              onClick={() => handleOpenChange(true)}
               placeholder="YYYY-MM-DD"
               aria-label={ariaLabel}
-              className="cursor-pointer pr-8"
+              className="cursor-pointer pr-10"
             />
-            <CalendarDays className="pointer-events-none absolute right-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <Popover.Trigger asChild>
+              <button
+                type="button"
+                aria-label={`${ariaLabel} calendar`}
+                className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <CalendarDays className="size-4" />
+              </button>
+            </Popover.Trigger>
           </div>
-        </Popover.Trigger>
+        </Popover.Anchor>
         <Popover.Content
           align="start"
           side="bottom"

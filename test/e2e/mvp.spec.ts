@@ -7,10 +7,8 @@
  */
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
-const BASE = "http://localhost:8787";
-
 async function apiJson(request: APIRequestContext, method: string, path: string, body?: unknown) {
-  const res = await request.fetch(`${BASE}${path}`, {
+  const res = await request.fetch(path, {
     method,
     headers: { "Content-Type": "application/json" },
     data: body ? JSON.stringify(body) : undefined,
@@ -46,7 +44,12 @@ test.describe.serial("MVP acceptance", () => {
     await page.locator('.label-editor input').press("Enter");
     // Planning is collapsed when empty; expand it to set a due date.
     await page.getByRole("button", { name: /Planning/ }).click();
-    await page.getByLabel("Due date").fill("2099-01-01");
+    // A normal click on the icon must leave the calendar open after release.
+    const dueDateCalendar = page.getByRole("button", { name: "Due date calendar" });
+    await dueDateCalendar.click();
+    await expect(dueDateCalendar).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("button", { name: "Previous month" })).toBeVisible();
+    await page.getByRole("textbox", { name: "Due date" }).fill("2099-01-01");
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Bootstrap the wiki")).toBeVisible();
     await expect(page.locator(".chip", { hasText: "setup" })).toBeVisible();
@@ -62,6 +65,68 @@ test.describe.serial("MVP acceptance", () => {
     await subIssuesTab.press("ArrowRight");
     await expect(page.getByRole("tab", { name: "Backlinks, 0 items" })).toHaveAttribute("aria-selected", "true");
     await subIssuesTab.click();
+  });
+
+  test("organize inbox issues with per-row controls", async ({ page, request }) => {
+    const createInboxIssue = async (title: string, type = "task") => {
+      const response = await apiJson(request, "POST", "/api/issues", { title, type });
+      expect(response.status).toBe(201);
+      return response.json as unknown as { id: string; number: number; created_at: string };
+    };
+
+    const priorityTask = await createInboxIssue("Inbox priority task");
+    const todayTask = await createInboxIssue("Inbox today task");
+    const tomorrowTask = await createInboxIssue("Inbox tomorrow task");
+    const customDateTask = await createInboxIssue("Inbox custom date task");
+    const closeNote = await createInboxIssue("Inbox note to close", "note");
+
+    await page.goto("/inbox");
+
+    const priorityRow = page.locator(".issue-row", { hasText: "Inbox priority task" });
+    const createdTime = priorityRow.locator("time.issue-created");
+    await expect(createdTime).toHaveAttribute("datetime", priorityTask.created_at);
+    await expect(createdTime).toContainText("Created ");
+
+    await priorityRow.getByLabel(`Priority for #${priorityTask.number}`).click();
+    await page.getByRole("option", { name: "High" }).click();
+    await expect(priorityRow.getByLabel(`Priority for #${priorityTask.number}`)).toContainText("High");
+    const prioritized = await apiJson(request, "GET", `/api/issues/${priorityTask.number}`);
+    expect(prioritized.json.priority).toBe("high");
+
+    await priorityRow.getByRole("button", { name: `Complete issue #${priorityTask.number}` }).click();
+    await expect(priorityRow).toHaveCount(0);
+
+    const todayRow = page.locator(".issue-row", { hasText: "Inbox today task" });
+    await todayRow.getByRole("button", { name: `Plan issue #${todayTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Today", exact: true }).click();
+    await expect(todayRow).toHaveCount(0);
+    const plannedToday = await apiJson(request, "GET", `/api/issues/${todayTask.number}`);
+    expect(plannedToday.json.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    const tomorrowRow = page.locator(".issue-row", { hasText: "Inbox tomorrow task" });
+    await tomorrowRow.getByRole("button", { name: `Plan issue #${tomorrowTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Tomorrow", exact: true }).click();
+    await expect(tomorrowRow).toHaveCount(0);
+    const plannedTomorrow = await apiJson(request, "GET", `/api/issues/${tomorrowTask.number}`);
+    expect(plannedTomorrow.json.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(plannedTomorrow.json.due_date).not.toBe(plannedToday.json.due_date);
+
+    const customRow = page.locator(".issue-row", { hasText: "Inbox custom date task" });
+    await customRow.getByRole("button", { name: `Plan issue #${customDateTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Pick date…" }).click();
+    const customDate = customRow.getByRole("textbox", { name: `Due date for #${customDateTask.number}` });
+    await customDate.fill("2099-02-03");
+    await customDate.press("Escape");
+    await customRow.getByRole("button", { name: "Apply" }).click();
+    await expect(customRow).toHaveCount(0);
+    const plannedCustom = await apiJson(request, "GET", `/api/issues/${customDateTask.number}`);
+    expect(plannedCustom.json.due_date).toBe("2099-02-03");
+
+    const noteRow = page.locator(".issue-row", { hasText: "Inbox note to close" });
+    await noteRow.getByRole("button", { name: `Close issue #${closeNote.number}` }).click();
+    await expect(noteRow).toHaveCount(0);
+    const closed = await apiJson(request, "GET", `/api/issues/${closeNote.number}`);
+    expect(closed.json.status).toBe("closed");
   });
 
   test("add a child, link a relationship, and comment", async ({ page, request }) => {
@@ -411,7 +476,7 @@ test.describe.serial("MVP acceptance", () => {
     // Fetch the attachment id from the DOM link.
     const href = await page.locator(".attachment-link a").first().getAttribute("href");
     attachmentId = href!.split("/")[3]!;
-    const content = await request.fetch(`${BASE}/api/attachments/${attachmentId}/content`);
+    const content = await request.fetch(`/api/attachments/${attachmentId}/content`);
     expect(content.status()).toBe(200);
     expect(content.headers()["content-disposition"]).toContain("inline");
   });
@@ -420,8 +485,8 @@ test.describe.serial("MVP acceptance", () => {
     await page.goto(`/issues/${issueNumber}`);
     const aside = page.getByRole("complementary", { name: "Issue details" });
 
-    // The sidebar keeps metadata and secondary tools; attachments,
-    // backlinks, and reminders now live in the main-column tab set.
+    // The sidebar keeps metadata and secondary tools; attachments and
+    // backlinks now live in the main-column tab set.
     await expect(aside).toBeVisible();
     await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
     await expect(aside.getByText("due 2099-01-01")).toBeVisible();
@@ -504,7 +569,7 @@ test.describe.serial("MVP acceptance", () => {
     mcpToken = tokenValue!.trim();
 
     // Use the token over MCP.
-    const init = await request.fetch(`${BASE}/mcp`, {
+    const init = await request.fetch("/mcp", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${mcpToken}` },
       data: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
@@ -512,7 +577,7 @@ test.describe.serial("MVP acceptance", () => {
     expect(init.status()).toBe(200);
     const sessionId = init.headers()["mcp-session-id"]!;
 
-    const call = await request.fetch(`${BASE}/mcp`, {
+    const call = await request.fetch("/mcp", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -541,7 +606,7 @@ test.describe.serial("MVP acceptance", () => {
     const tokenId = tokens.find((t) => t.name === "e2e agent")!.id;
     await apiJson(request, "POST", `/api/tokens/${tokenId}/revoke`);
 
-    const after = await request.fetch(`${BASE}/mcp`, {
+    const after = await request.fetch("/mcp", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${mcpToken}` },
       data: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping" }),
