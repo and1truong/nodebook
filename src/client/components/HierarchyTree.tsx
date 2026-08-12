@@ -1,57 +1,106 @@
-/** Hierarchy tree for wiki navigation. */
-import { useState } from "react";
+/** Friendly, accessible hierarchy tree for wiki navigation. */
+import { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, FileText, Folder, FolderOpen } from "lucide-react";
 import { Link } from "../router";
 import type { WikiNodeDto } from "../../shared/contracts/issues";
 import { cn } from "@/lib/utils";
 
-export function HierarchyTree({ nodes, selectedId }: { nodes: WikiNodeDto[]; selectedId?: string | null }) {
+export function HierarchyTree({
+  nodes,
+  selectedId,
+  expandAll = false,
+}: {
+  nodes: WikiNodeDto[];
+  selectedId?: string | null;
+  expandAll?: boolean;
+}) {
   return (
-    <ul className="tree flex flex-col gap-0.5">
+    <ul className="tree flex flex-col gap-0.5" role="tree">
       {nodes.map((node) => (
-        <TreeNode key={node.issue.id} node={node} depth={0} selectedId={selectedId} />
+        <TreeNode key={node.issue.id} node={node} depth={0} selectedId={selectedId} expandAll={expandAll} />
       ))}
     </ul>
   );
 }
 
-function TreeNode({ node, depth, selectedId }: { node: WikiNodeDto; depth: number; selectedId?: string | null }) {
-  const [expanded, setExpanded] = useState(true);
+function TreeNode({
+  node,
+  depth,
+  selectedId,
+  expandAll,
+}: {
+  node: WikiNodeDto;
+  depth: number;
+  selectedId?: string | null;
+  expandAll: boolean;
+}) {
   const issue = node.issue;
   const hasChildren = node.children.length > 0;
   const selected = issue.id === selectedId;
+  const containsSelected = selectedId ? treeContains(node, selectedId) : false;
+  const [expanded, setExpanded] = useState(() => expandAll || containsSelected);
+  const FolderIcon = expanded ? FolderOpen : Folder;
+
+  // Search results and the path to the current page must remain visible even
+  // though the default tree shows root pages only.
+  useEffect(() => {
+    if (expandAll || containsSelected) setExpanded(true);
+  }, [expandAll, containsSelected]);
 
   return (
-    <li>
+    <li role="treeitem" aria-expanded={hasChildren ? expanded : undefined} aria-selected={selected || undefined}>
       <div
-        className={cn("tree-row flex items-center gap-1.5 rounded-md px-1.5 py-1 hover:bg-accent", selected && "selected bg-accent")}
-        style={{ paddingLeft: depth * 18 + 6 }}
+        className={cn(
+          "tree-row group flex min-w-0 items-center gap-1 rounded-md py-1.5 pr-2 text-sm transition-colors hover:bg-accent",
+          selected && "bg-accent font-medium text-accent-foreground",
+        )}
+        style={{ paddingLeft: depth * 16 + 4 }}
       >
         {hasChildren ? (
           <button
-            className="tree-toggle h-3.5 w-3.5 flex-none cursor-pointer border-0 bg-transparent p-0 text-muted-foreground"
-            onClick={() => setExpanded((e) => !e)}
-            aria-label={expanded ? "Collapse" : "Expand"}
+            type="button"
+            className="tree-toggle flex size-5 flex-none cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-background/70 hover:text-foreground"
+            onClick={() => setExpanded((value) => !value)}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${issue.title}`}
           >
-            {expanded ? "▾" : "▸"}
+            {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
           </button>
         ) : (
-          <span className="tree-toggle h-3.5 w-3.5 flex-none text-muted-foreground">·</span>
+          <span className="size-5 flex-none" aria-hidden="true" />
         )}
-        <span className={`dot status-dot ${issue.status}`} />
+        {hasChildren ? (
+          <FolderIcon className="size-4 flex-none text-primary/80" aria-hidden="true" />
+        ) : (
+          <FileText className="size-4 flex-none text-muted-foreground" aria-hidden="true" />
+        )}
         <Link
           to={`/wiki/${issue.number}`}
-          className="tree-link truncate text-foreground hover:text-primary hover:no-underline"
+          className="tree-link min-w-0 flex-1 truncate text-foreground hover:text-foreground hover:no-underline"
+          title={issue.title}
         >
-          <span className="issue-number font-mono text-xs text-muted-foreground">#{issue.number}</span> {issue.title}
+          {issue.title}
         </Link>
+        <span className="issue-number flex-none font-mono text-[10px] text-muted-foreground/70 group-hover:text-muted-foreground">
+          #{issue.number}
+        </span>
       </div>
       {hasChildren && expanded && (
-        <ul className="tree flex flex-col gap-0.5">
+        <ul className="tree flex flex-col gap-0.5" role="group">
           {node.children.map((child) => (
-            <TreeNode key={child.issue.id} node={child} depth={depth + 1} selectedId={selectedId} />
+            <TreeNode
+              key={child.issue.id}
+              node={child}
+              depth={depth + 1}
+              selectedId={selectedId}
+              expandAll={expandAll}
+            />
           ))}
         </ul>
       )}
     </li>
   );
+}
+
+function treeContains(node: WikiNodeDto, issueId: string): boolean {
+  return node.issue.id === issueId || node.children.some((child) => treeContains(child, issueId));
 }

@@ -221,6 +221,47 @@
   @apply text-sm font-bold text-[var(--danger)];
 }
 
+/* GitHub-style issue conversation, expressed through NodeBook theme tokens. */
+.issue-state-open {
+  background: var(--success);
+  color: var(--primary-foreground);
+}
+.issue-state-closed {
+  background: var(--muted-foreground);
+  color: var(--card);
+}
+.issue-timeline::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 1rem;
+  width: 2px;
+  background: var(--border);
+}
+.timeline-entry,
+.comment-composer {
+  z-index: 0;
+}
+.conversation-card {
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+.issue-editor-inline {
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--foreground) 4%, transparent);
+}
+
+@media (max-width: 640px) {
+  .timeline-entry,
+  .comment-composer {
+    padding-left: 0;
+  }
+  .issue-timeline::before,
+  .timeline-avatar,
+  .timeline-icon {
+    display: none;
+  }
+}
+
 /* Status dot used by issue rows and the wiki tree. */
 .dot {
   @apply inline-block size-2 flex-none rounded-full;

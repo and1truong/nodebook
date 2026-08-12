@@ -7,10 +7,8 @@
  */
 import { expect, test, type APIRequestContext } from "@playwright/test";
 
-const BASE = "http://localhost:8787";
-
 async function apiJson(request: APIRequestContext, method: string, path: string, body?: unknown) {
-  const res = await request.fetch(`${BASE}${path}`, {
+  const res = await request.fetch(path, {
     method,
     headers: { "Content-Type": "application/json" },
     data: body ? JSON.stringify(body) : undefined,
@@ -44,10 +42,91 @@ test.describe.serial("MVP acceptance", () => {
     await page.locator('textarea').first().fill("Bootstrap the wiki. Reference #99999 from the future.");
     await page.locator('.label-editor input').fill("setup");
     await page.locator('.label-editor input').press("Enter");
-    await page.getByLabel("Due date").fill("2099-01-01");
+    // Planning is collapsed when empty; expand it to set a due date.
+    await page.getByRole("button", { name: /Planning/ }).click();
+    // A normal click on the icon must leave the calendar open after release.
+    const dueDateCalendar = page.getByRole("button", { name: "Due date calendar" });
+    await dueDateCalendar.click();
+    await expect(dueDateCalendar).toHaveAttribute("aria-expanded", "true");
+    await expect(page.getByRole("button", { name: "Previous month" })).toBeVisible();
+    await page.getByRole("textbox", { name: "Due date" }).fill("2099-01-01");
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Bootstrap the wiki")).toBeVisible();
     await expect(page.locator(".chip", { hasText: "setup" })).toBeVisible();
+
+    // Issue content tabs expose empty states without opening every panel and
+    // support standard arrow-key navigation.
+    const subIssuesTab = page.getByRole("tab", { name: "Sub-issues, 0 items" });
+    await expect(subIssuesTab).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "Backlinks, 0 items" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Attachments, 0 items" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Reminders, 0 items" })).toBeVisible();
+    await subIssuesTab.focus();
+    await subIssuesTab.press("ArrowRight");
+    await expect(page.getByRole("tab", { name: "Backlinks, 0 items" })).toHaveAttribute("aria-selected", "true");
+    await subIssuesTab.click();
+  });
+
+  test("organize inbox issues with per-row controls", async ({ page, request }) => {
+    const createInboxIssue = async (title: string, type = "task") => {
+      const response = await apiJson(request, "POST", "/api/issues", { title, type });
+      expect(response.status).toBe(201);
+      return response.json as unknown as { id: string; number: number; created_at: string };
+    };
+
+    const priorityTask = await createInboxIssue("Inbox priority task");
+    const todayTask = await createInboxIssue("Inbox today task");
+    const tomorrowTask = await createInboxIssue("Inbox tomorrow task");
+    const customDateTask = await createInboxIssue("Inbox custom date task");
+    const closeNote = await createInboxIssue("Inbox note to close", "note");
+
+    await page.goto("/inbox");
+
+    const priorityRow = page.locator(".issue-row", { hasText: "Inbox priority task" });
+    const createdTime = priorityRow.locator("time.issue-created");
+    await expect(createdTime).toHaveAttribute("datetime", priorityTask.created_at);
+    await expect(createdTime).toContainText("Created ");
+
+    await priorityRow.getByLabel(`Priority for #${priorityTask.number}`).click();
+    await page.getByRole("option", { name: "High" }).click();
+    await expect(priorityRow.getByLabel(`Priority for #${priorityTask.number}`)).toContainText("High");
+    const prioritized = await apiJson(request, "GET", `/api/issues/${priorityTask.number}`);
+    expect(prioritized.json.priority).toBe("high");
+
+    await priorityRow.getByRole("button", { name: `Complete issue #${priorityTask.number}` }).click();
+    await expect(priorityRow).toHaveCount(0);
+
+    const todayRow = page.locator(".issue-row", { hasText: "Inbox today task" });
+    await todayRow.getByRole("button", { name: `Plan issue #${todayTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Today", exact: true }).click();
+    await expect(todayRow).toHaveCount(0);
+    const plannedToday = await apiJson(request, "GET", `/api/issues/${todayTask.number}`);
+    expect(plannedToday.json.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+
+    const tomorrowRow = page.locator(".issue-row", { hasText: "Inbox tomorrow task" });
+    await tomorrowRow.getByRole("button", { name: `Plan issue #${tomorrowTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Tomorrow", exact: true }).click();
+    await expect(tomorrowRow).toHaveCount(0);
+    const plannedTomorrow = await apiJson(request, "GET", `/api/issues/${tomorrowTask.number}`);
+    expect(plannedTomorrow.json.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(plannedTomorrow.json.due_date).not.toBe(plannedToday.json.due_date);
+
+    const customRow = page.locator(".issue-row", { hasText: "Inbox custom date task" });
+    await customRow.getByRole("button", { name: `Plan issue #${customDateTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Pick date…" }).click();
+    const customDate = customRow.getByRole("textbox", { name: `Due date for #${customDateTask.number}` });
+    await customDate.fill("2099-02-03");
+    await customDate.press("Escape");
+    await customRow.getByRole("button", { name: "Apply" }).click();
+    await expect(customRow).toHaveCount(0);
+    const plannedCustom = await apiJson(request, "GET", `/api/issues/${customDateTask.number}`);
+    expect(plannedCustom.json.due_date).toBe("2099-02-03");
+
+    const noteRow = page.locator(".issue-row", { hasText: "Inbox note to close" });
+    await noteRow.getByRole("button", { name: `Close issue #${closeNote.number}` }).click();
+    await expect(noteRow).toHaveCount(0);
+    const closed = await apiJson(request, "GET", `/api/issues/${closeNote.number}`);
+    expect(closed.json.status).toBe("closed");
   });
 
   test("add a child, link a relationship, and comment", async ({ page, request }) => {
@@ -74,6 +153,48 @@ test.describe.serial("MVP acceptance", () => {
     await page.locator("textarea[placeholder^='Markdown comment']").fill("Comment with #1");
     await page.getByRole("button", { name: "Comment" }).click();
     await expect(page.locator(".comment", { hasText: "Comment with" })).toBeVisible();
+  });
+
+  test("preview a referenced issue on hover", async ({ page, request }) => {
+    const targetRes = await apiJson(request, "POST", "/api/issues", {
+      title: "Hover card target",
+      body: "A concise target summary for the issue preview.",
+      type: "decision",
+      labels: ["preview"],
+    });
+    const target = targetRes.json as unknown as { id: string; number: number };
+    const sourceRes = await apiJson(request, "POST", "/api/issues", {
+      title: "Hover card source",
+      body: `Review #${target.number} before continuing.`,
+      type: "task",
+      parent_id: target.id,
+    });
+    const source = sourceRes.json as unknown as { number: number };
+
+    await page.goto(`/issues/${source.number}`);
+    await page.locator(`.issue-body a[href='/issues/${target.number}']`).hover();
+
+    const card = page.locator(".issue-hover-card");
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("Hover card target");
+    await expect(card).toContainText(`#${target.number}`);
+    await expect(card).toContainText("open");
+    await expect(card).toContainText("A concise target summary");
+    await expect(card.locator(".chip", { hasText: "preview" })).toBeVisible();
+
+    // Sidebar links, including the Parent property, use the same preview.
+    await page.mouse.move(0, 0);
+    await expect(card).toBeHidden();
+    await page.locator(`.issue-sidebar a[href='/issues/${target.number}']`).hover();
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("Hover card target");
+
+    // Incoming references moved from the sidebar into a count-aware tab.
+    await page.goto(`/issues/${target.number}`);
+    const backlinksTab = page.getByRole("tab", { name: "Backlinks, 1 item" });
+    await expect(backlinksTab).toBeVisible();
+    await backlinksTab.click();
+    await expect(page.getByRole("tabpanel").getByRole("link", { name: new RegExp(`#${source.number} Hover card source`) })).toBeVisible();
   });
 
   test("render nested sub-issues lazily", async ({ page, request }) => {
@@ -314,11 +435,14 @@ test.describe.serial("MVP acceptance", () => {
   test("create a reminder, deliver it, and see it in the inbox", async ({ page, request }) => {
     await page.goto(`/issues/${issueNumber}`);
 
+    await page.getByRole("tab", { name: "Reminders, 0 items" }).click();
     await page.getByLabel("Reminder kind").selectOption("absolute");
-    const past = new Date(Date.now() - 60_000);
-    await page.getByLabel("Trigger time").fill(past.toISOString().slice(0, 16));
+    const past = new Date(Date.now() - 60_000).toISOString().slice(0, 16);
+    await page.getByLabel("Trigger date", { exact: true }).fill(past.slice(0, 10));
+    await page.getByLabel("Trigger time", { exact: true }).fill(past.slice(11));
     await page.locator(".reminder-form").getByRole("button", { name: "Add" }).click();
     await expect(page.locator(".reminder")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Reminders, 1 item" })).toBeVisible();
 
     // Process due reminders (same path as the one-minute Cron Trigger).
     const processed = await apiJson(request, "POST", "/api/reminders/process");
@@ -336,6 +460,8 @@ test.describe.serial("MVP acceptance", () => {
 
   test("upload an attachment and preview it", async ({ page, request }) => {
     await page.goto(`/issues/${issueNumber}`);
+    const attachmentsTab = page.getByRole("tab", { name: "Attachments, 0 items" });
+    await attachmentsTab.click();
     const fileInput = page.locator('.uploader input[type="file"]');
     await fileInput.setInputFiles({
       name: "diagram.png",
@@ -343,13 +469,14 @@ test.describe.serial("MVP acceptance", () => {
       buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     });
     await expect(page.locator(".attachment-item", { hasText: "diagram.png" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Attachments, 1 item" })).toBeVisible();
 
     const attachments = await apiJson(request, "GET", `/api/attachments/issue/${issueNumber}`);
     void attachments;
     // Fetch the attachment id from the DOM link.
     const href = await page.locator(".attachment-link a").first().getAttribute("href");
     attachmentId = href!.split("/")[3]!;
-    const content = await request.fetch(`${BASE}/api/attachments/${attachmentId}/content`);
+    const content = await request.fetch(`/api/attachments/${attachmentId}/content`);
     expect(content.status()).toBe(200);
     expect(content.headers()["content-disposition"]).toContain("inline");
   });
@@ -358,14 +485,20 @@ test.describe.serial("MVP acceptance", () => {
     await page.goto(`/issues/${issueNumber}`);
     const aside = page.getByRole("complementary", { name: "Issue details" });
 
-    // The sidebar is a complementary region holding the moved metadata and tools.
+    // The sidebar keeps metadata and secondary tools; attachments and
+    // backlinks now live in the main-column tab set.
     await expect(aside).toBeVisible();
     await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
     await expect(aside.getByText("due 2099-01-01")).toBeVisible();
-    await expect(aside.locator(".uploader")).toBeVisible();
-    await expect(aside.locator(".reminder-form")).toBeVisible();
+    await expect(aside.locator(".uploader")).toHaveCount(0);
+    await expect(aside.getByText("Backlinks", { exact: true })).toHaveCount(0);
+    await expect(aside.locator(".reminder-form")).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Reminders, 1 item" })).toBeVisible();
     await expect(aside.locator(".rel-item", { hasText: "#" + childNumber })).toBeVisible();
-    await expect(aside.locator(".attachment-item", { hasText: "diagram.png" })).toBeVisible();
+    const attachmentsTab = page.getByRole("tab", { name: "Attachments, 1 item" });
+    await expect(attachmentsTab).toBeVisible();
+    await attachmentsTab.click();
+    await expect(page.locator(".issue-main .attachment-item", { hasText: "diagram.png" })).toBeVisible();
     // The status badge and state-transition controls stay in the full-width header.
     await expect(page.locator(".issue-head").getByRole("button", { name: "✓ Complete" })).toBeVisible();
 
@@ -436,7 +569,7 @@ test.describe.serial("MVP acceptance", () => {
     mcpToken = tokenValue!.trim();
 
     // Use the token over MCP.
-    const init = await request.fetch(`${BASE}/mcp`, {
+    const init = await request.fetch("/mcp", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${mcpToken}` },
       data: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }),
@@ -444,7 +577,7 @@ test.describe.serial("MVP acceptance", () => {
     expect(init.status()).toBe(200);
     const sessionId = init.headers()["mcp-session-id"]!;
 
-    const call = await request.fetch(`${BASE}/mcp`, {
+    const call = await request.fetch("/mcp", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -465,15 +598,15 @@ test.describe.serial("MVP acceptance", () => {
     await page.goto(`/issues/${mcpIssue.number}`);
     await expect(page.getByRole("heading", { name: "Created by MCP agent" })).toBeVisible();
 
-    // …with an mcp-attributed audit trail.
-    await expect(page.locator(".history-item").first()).toContainText("mcp");
+    // …with creator attribution sourced from the MCP audit event.
+    await expect(page.locator(".issue-summary")).toContainText("mcp");
 
     // Revocation takes effect immediately.
     const tokens = (await apiJson(request, "GET", "/api/tokens")).json as unknown as { id: string; name: string }[];
     const tokenId = tokens.find((t) => t.name === "e2e agent")!.id;
     await apiJson(request, "POST", `/api/tokens/${tokenId}/revoke`);
 
-    const after = await request.fetch(`${BASE}/mcp`, {
+    const after = await request.fetch("/mcp", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${mcpToken}` },
       data: JSON.stringify({ jsonrpc: "2.0", id: 3, method: "ping" }),
@@ -481,8 +614,27 @@ test.describe.serial("MVP acceptance", () => {
     expect(after.status()).toBe(401);
   });
 
-  test("wiki tree shows the hierarchy", async ({ page }) => {
+  test("wiki provides a browsable home and focused reading view", async ({ page }) => {
     await page.goto("/wiki");
-    await expect(page.locator(".tree-link", { hasText: "Set up the NodeBook workspace" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Browse by topic" })).toBeVisible();
+
+    const rootPage = page.locator(".tree-link", { hasText: "Set up the NodeBook workspace" });
+    const childPage = page.locator(".tree-link", { hasText: "Write deployment guide" });
+    await expect(rootPage).toBeVisible();
+    await expect(childPage).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Expand Set up the NodeBook workspace" }).click();
+    await expect(childPage).toBeVisible();
+    await rootPage.click();
+
+    await expect(page).toHaveURL(`/wiki/${issueNumber}`);
+    await expect(page.locator('aside[aria-label="Wiki pages"]')).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Set up the NodeBook workspace", exact: true })).toBeVisible();
+    await expect(page.getByText("Bootstrap the wiki.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "Edit & manage" })).toHaveAttribute("href", `/issues/${issueNumber}`);
+
+    await page.getByRole("link", { name: "New page" }).click();
+    await expect(page.getByRole("heading", { name: "New wiki page" })).toBeVisible();
+    await expect(page.getByLabel("Type", { exact: true })).toContainText("wiki");
   });
 });

@@ -7,6 +7,11 @@ import { Button } from "./ui/button";
 import { Loading, ErrorState, EmptyState } from "./ui";
 import { cn } from "@/lib/utils";
 
+export type AttachmentLoadState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; count: number };
+
 export function AttachmentUploader({
   url,
   onUploaded,
@@ -153,19 +158,42 @@ export function AttachmentPreview({ attachment }: { attachment: AttachmentDto })
   );
 }
 
-export function AttachmentSection({ ownerType, ownerId, uploadUrl }: { ownerType: "issue" | "comment"; ownerId: string; uploadUrl: string }) {
+export function AttachmentSection({
+  ownerType,
+  ownerId,
+  uploadUrl,
+  onLoadStateChange,
+}: {
+  ownerType: "issue" | "comment";
+  ownerId: string;
+  uploadUrl: string;
+  onLoadStateChange?: (state: AttachmentLoadState) => void;
+}) {
   const [attachments, setAttachments] = useState<AttachmentDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
+    let cancelled = false;
     setAttachments(null);
     setError(null);
+    onLoadStateChange?.({ status: "loading" });
     api
       .attachments(ownerType, ownerId)
-      .then(setAttachments)
-      .catch(setError);
-  }, [ownerType, ownerId, reloadKey]);
+      .then((nextAttachments) => {
+        if (cancelled) return;
+        setAttachments(nextAttachments);
+        onLoadStateChange?.({ status: "ready", count: nextAttachments.length });
+      })
+      .catch((nextError) => {
+        if (cancelled) return;
+        setError(nextError);
+        onLoadStateChange?.({ status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ownerType, ownerId, reloadKey, onLoadStateChange]);
 
   return (
     <div>
