@@ -50,6 +50,18 @@ test.describe.serial("MVP acceptance", () => {
     await page.getByRole("button", { name: "Save" }).click();
     await expect(page.getByText("Bootstrap the wiki")).toBeVisible();
     await expect(page.locator(".chip", { hasText: "setup" })).toBeVisible();
+
+    // Issue content tabs expose empty states without opening every panel and
+    // support standard arrow-key navigation.
+    const subIssuesTab = page.getByRole("tab", { name: "Sub-issues, 0 items" });
+    await expect(subIssuesTab).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "Backlinks, 0 items" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Attachments, 0 items" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Reminders, 0 items" })).toBeVisible();
+    await subIssuesTab.focus();
+    await subIssuesTab.press("ArrowRight");
+    await expect(page.getByRole("tab", { name: "Backlinks, 0 items" })).toHaveAttribute("aria-selected", "true");
+    await subIssuesTab.click();
   });
 
   test("add a child, link a relationship, and comment", async ({ page, request }) => {
@@ -111,6 +123,13 @@ test.describe.serial("MVP acceptance", () => {
     await page.locator(`.issue-sidebar a[href='/issues/${target.number}']`).hover();
     await expect(card).toBeVisible();
     await expect(card).toContainText("Hover card target");
+
+    // Incoming references moved from the sidebar into a count-aware tab.
+    await page.goto(`/issues/${target.number}`);
+    const backlinksTab = page.getByRole("tab", { name: "Backlinks, 1 item" });
+    await expect(backlinksTab).toBeVisible();
+    await backlinksTab.click();
+    await expect(page.getByRole("tabpanel").getByRole("link", { name: new RegExp(`#${source.number} Hover card source`) })).toBeVisible();
   });
 
   test("render nested sub-issues lazily", async ({ page, request }) => {
@@ -351,12 +370,14 @@ test.describe.serial("MVP acceptance", () => {
   test("create a reminder, deliver it, and see it in the inbox", async ({ page, request }) => {
     await page.goto(`/issues/${issueNumber}`);
 
+    await page.getByRole("tab", { name: "Reminders, 0 items" }).click();
     await page.getByLabel("Reminder kind").selectOption("absolute");
     const past = new Date(Date.now() - 60_000).toISOString().slice(0, 16);
     await page.getByLabel("Trigger date", { exact: true }).fill(past.slice(0, 10));
     await page.getByLabel("Trigger time", { exact: true }).fill(past.slice(11));
     await page.locator(".reminder-form").getByRole("button", { name: "Add" }).click();
     await expect(page.locator(".reminder")).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Reminders, 1 item" })).toBeVisible();
 
     // Process due reminders (same path as the one-minute Cron Trigger).
     const processed = await apiJson(request, "POST", "/api/reminders/process");
@@ -374,6 +395,8 @@ test.describe.serial("MVP acceptance", () => {
 
   test("upload an attachment and preview it", async ({ page, request }) => {
     await page.goto(`/issues/${issueNumber}`);
+    const attachmentsTab = page.getByRole("tab", { name: "Attachments, 0 items" });
+    await attachmentsTab.click();
     const fileInput = page.locator('.uploader input[type="file"]');
     await fileInput.setInputFiles({
       name: "diagram.png",
@@ -381,6 +404,7 @@ test.describe.serial("MVP acceptance", () => {
       buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
     });
     await expect(page.locator(".attachment-item", { hasText: "diagram.png" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "Attachments, 1 item" })).toBeVisible();
 
     const attachments = await apiJson(request, "GET", `/api/attachments/issue/${issueNumber}`);
     void attachments;
@@ -396,14 +420,20 @@ test.describe.serial("MVP acceptance", () => {
     await page.goto(`/issues/${issueNumber}`);
     const aside = page.getByRole("complementary", { name: "Issue details" });
 
-    // The sidebar is a complementary region holding the moved metadata and tools.
+    // The sidebar keeps metadata and secondary tools; attachments,
+    // backlinks, and reminders now live in the main-column tab set.
     await expect(aside).toBeVisible();
     await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
     await expect(aside.getByText("due 2099-01-01")).toBeVisible();
-    await expect(aside.locator(".uploader")).toBeVisible();
-    await expect(aside.locator(".reminder-form")).toBeVisible();
+    await expect(aside.locator(".uploader")).toHaveCount(0);
+    await expect(aside.getByText("Backlinks", { exact: true })).toHaveCount(0);
+    await expect(aside.locator(".reminder-form")).toHaveCount(0);
+    await expect(page.getByRole("tab", { name: "Reminders, 1 item" })).toBeVisible();
     await expect(aside.locator(".rel-item", { hasText: "#" + childNumber })).toBeVisible();
-    await expect(aside.locator(".attachment-item", { hasText: "diagram.png" })).toBeVisible();
+    const attachmentsTab = page.getByRole("tab", { name: "Attachments, 1 item" });
+    await expect(attachmentsTab).toBeVisible();
+    await attachmentsTab.click();
+    await expect(page.locator(".issue-main .attachment-item", { hasText: "diagram.png" })).toBeVisible();
     // The status badge and state-transition controls stay in the full-width header.
     await expect(page.locator(".issue-head").getByRole("button", { name: "✓ Complete" })).toBeVisible();
 

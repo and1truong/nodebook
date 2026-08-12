@@ -5,18 +5,42 @@ import { Link } from "../router";
 import type { BacklinkDto } from "../../shared/contracts/issues";
 import { Loading, ErrorState, EmptyState } from "./ui";
 
-export function BacklinksPanel({ issueRef }: { issueRef: string }) {
+export type BacklinksLoadState =
+  | { status: "loading" }
+  | { status: "error" }
+  | { status: "ready"; count: number };
+
+export function BacklinksPanel({
+  issueRef,
+  onLoadStateChange,
+}: {
+  issueRef: string;
+  onLoadStateChange?: (state: BacklinksLoadState) => void;
+}) {
   const [items, setItems] = useState<BacklinkDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
 
   useEffect(() => {
+    let cancelled = false;
     setItems(null);
     setError(null);
+    onLoadStateChange?.({ status: "loading" });
     api
       .backlinks(issueRef)
-      .then(setItems)
-      .catch(setError);
-  }, [issueRef]);
+      .then((nextItems) => {
+        if (cancelled) return;
+        setItems(nextItems);
+        onLoadStateChange?.({ status: "ready", count: nextItems.length });
+      })
+      .catch((nextError) => {
+        if (cancelled) return;
+        setError(nextError);
+        onLoadStateChange?.({ status: "error" });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [issueRef, onLoadStateChange]);
 
   if (error) return <ErrorState error={error} />;
   if (!items) return <Loading label="Loading backlinks…" />;

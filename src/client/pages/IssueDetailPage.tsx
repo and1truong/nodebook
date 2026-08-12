@@ -15,7 +15,7 @@ import {
 import { HistoryItem } from "../components/HistoryPanel";
 import { IssueSidebar } from "../components/IssueSidebar";
 import { IssueLinkPreview } from "../components/IssueLinkPreview";
-import { SubIssuesPanel } from "../components/SubIssuesPanel";
+import { IssueContentTabs } from "../components/IssueContentTabs";
 import { Loading, ErrorState } from "../components/ui";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
@@ -226,7 +226,7 @@ export function IssueDetailPage({
                 </div>
               </section>
 
-              <SubIssuesPanel issueRef={issue.number.toString()} rootId={issue.id} />
+              <IssueContentTabs issue={issue} />
             </div>
 
             <ol className="issue-timeline relative mt-4 flex flex-col gap-4">
