@@ -8,11 +8,21 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Loading, ErrorState, EmptyState } from "./ui";
+import { cn } from "@/lib/utils";
 
 const nativeSelectClass =
   "h-9 rounded-md border border-input bg-background px-2.5 text-sm shadow-xs outline-none transition-[color,box-shadow] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50";
 
-export function RelationshipsPanel({ issueRef, issueId }: { issueRef: string; issueId: string }) {
+export function RelationshipsPanel({
+  issueRef,
+  issueId,
+  embedded = false,
+}: {
+  issueRef: string;
+  issueId: string;
+  /** Compact sidebar presentation: no outer card/heading, stacked controls. */
+  embedded?: boolean;
+}) {
   const [items, setItems] = useState<RelationshipDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [targetRef, setTargetRef] = useState("");
@@ -58,11 +68,11 @@ export function RelationshipsPanel({ issueRef, issueId }: { issueRef: string; is
   };
 
   return (
-    <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
-      <h3 className="text-sm font-semibold">Relationships</h3>
-      <form className="flex flex-wrap items-center gap-2" onSubmit={add}>
+    <section className={cn("flex flex-col gap-3", !embedded && "rounded-lg border border-border bg-card p-4")}>
+      {!embedded && <h3 className="text-sm font-semibold">Relationships</h3>}
+      <form className={cn("flex gap-2", embedded ? "flex-col" : "flex-wrap items-center")} onSubmit={add}>
         <Input
-          className="w-48"
+          className={embedded ? "w-full" : "w-48"}
           value={targetRef}
           onChange={(e) => setTargetRef(e.target.value)}
           placeholder="Issue # or UUID"
@@ -72,7 +82,7 @@ export function RelationshipsPanel({ issueRef, issueId }: { issueRef: string; is
           value={type}
           onChange={(e) => setType(e.target.value)}
           aria-label="Relationship type"
-          className={nativeSelectClass}
+          className={cn(nativeSelectClass, embedded && "w-full")}
         >
           {RELATIONSHIP_TYPES.map((t) => (
             <option key={t} value={t}>

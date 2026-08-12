@@ -354,6 +354,37 @@ test.describe.serial("MVP acceptance", () => {
     expect(content.headers()["content-disposition"]).toContain("inline");
   });
 
+  test("issue details sidebar: desktop placement and responsive stacking", async ({ page }) => {
+    await page.goto(`/issues/${issueNumber}`);
+    const aside = page.getByRole("complementary", { name: "Issue details" });
+
+    // The sidebar is a complementary region holding the moved metadata and tools.
+    await expect(aside).toBeVisible();
+    await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
+    await expect(aside.getByText("due 2099-01-01")).toBeVisible();
+    await expect(aside.locator(".uploader")).toBeVisible();
+    await expect(aside.locator(".reminder-form")).toBeVisible();
+    await expect(aside.locator(".rel-item", { hasText: "#" + childNumber })).toBeVisible();
+    await expect(aside.locator(".attachment-item", { hasText: "diagram.png" })).toBeVisible();
+    // The status badge and state-transition controls stay in the full-width header.
+    await expect(page.locator(".issue-head").getByRole("button", { name: "✓ Complete" })).toBeVisible();
+
+    // Desktop: the aside physically sits to the right of the main column.
+    const mainBox = await page.locator(".issue-main").boundingBox();
+    const asideBox = await aside.boundingBox();
+    expect(asideBox!.x).toBeGreaterThanOrEqual(mainBox!.x + mainBox!.width - 1);
+
+    // Narrow: the aside stacks below the main column without horizontal overflow.
+    await page.setViewportSize({ width: 900, height: 800 });
+    const mainBoxNarrow = await page.locator(".issue-main").boundingBox();
+    const asideBoxNarrow = await aside.boundingBox();
+    expect(asideBoxNarrow!.y).toBeGreaterThanOrEqual(mainBoxNarrow!.y + mainBoxNarrow!.height - 1);
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(1);
+  });
+
   test("search finds the issue and its comment", async ({ page }) => {
     await page.goto("/search");
     await page.getByLabel("Search query").fill("Bootstrap the wiki");
