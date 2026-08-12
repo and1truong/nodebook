@@ -54,18 +54,35 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-const PRIORITY_BADGE_CLASSES: Record<string, string> = {
-  low: "text-muted-foreground",
-  medium: "text-foreground",
-  high: "border-warning text-warning",
-  urgent: "border-danger text-danger",
+const PRIORITY_STYLES: Record<string, { dot: string; pill: string }> = {
+  urgent: { dot: "bg-danger", pill: "border-danger/30 bg-danger/10 text-danger" },
+  high: { dot: "bg-warning", pill: "border-warning/30 bg-warning/10 text-warning" },
+  medium: { dot: "bg-primary", pill: "border-primary/30 bg-primary/10 text-primary" },
+  low: { dot: "bg-muted-foreground", pill: "border-border text-muted-foreground" },
 };
 
+const PRIORITY_FALLBACK = { dot: "bg-muted-foreground", pill: "border-border text-muted-foreground" };
+
+/** Colored-dot pill for detail views and sidebars. */
 export function PriorityBadge({ priority }: { priority: string }) {
+  const style = PRIORITY_STYLES[priority] ?? PRIORITY_FALLBACK;
   return (
-    <Badge variant="outline" className={cn("capitalize", PRIORITY_BADGE_CLASSES[priority])}>
+    <Badge variant="outline" className={cn("capitalize", style.pill)}>
+      <span className={cn("size-1.5 flex-none rounded-full", style.dot)} aria-hidden="true" />
       {priority}
     </Badge>
+  );
+}
+
+/** Dot-only indicator for dense list rows. */
+export function PriorityDot({ priority }: { priority: string }) {
+  const style = PRIORITY_STYLES[priority] ?? PRIORITY_FALLBACK;
+  return (
+    <span
+      className={cn("inline-block size-2 flex-none rounded-full", style.dot)}
+      title={`Priority: ${priority}`}
+      aria-label={`Priority: ${priority}`}
+    />
   );
 }
 
@@ -104,7 +121,7 @@ export function IssueRow({ issue, matched, matchedKind }: { issue: IssueDto; mat
         <span className="issue-number flex-none font-mono text-xs text-muted-foreground">#{issue.number}</span>
         <span className={`dot status-dot ${issue.status}`} title={issue.status} />
         <span className="issue-title truncate">{issue.title}</span>
-        {issue.priority && <PriorityBadge priority={issue.priority} />}
+        {issue.priority && <PriorityDot priority={issue.priority} />}
         {issue.labels.map((l) => (
           <LabelChip key={l} name={l} />
         ))}
