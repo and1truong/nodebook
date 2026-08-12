@@ -29,7 +29,7 @@ type ActionMode = "idle" | "create" | "link";
 /** Shared lazy-branch state threaded through the recursive node renderer. */
 interface BranchHandlers {
   expanded: ReadonlySet<string>;
-  loadingId: string | null;
+  loading: ReadonlySet<string>;
   errors: ReadonlyMap<string, string>;
   cache: ReadonlyMap<string, SubIssueSummaryDto[]>;
   onToggle: (id: string, number: number) => void;
@@ -50,7 +50,7 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
   // loaded children keyed by issue id. A ref mirrors the cache so toggle
   // guards don't depend on a stale render closure.
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
-  const [loadingBranch, setLoadingBranch] = useState<string | null>(null);
+  const [loadingBranches, setLoadingBranches] = useState<ReadonlySet<string>>(new Set());
   const [branchErrors, setBranchErrors] = useState<ReadonlyMap<string, string>>(new Map());
   const [childrenCache, setChildrenCache] = useState<ReadonlyMap<string, SubIssueSummaryDto[]>>(new Map());
   const cacheRef = useRef<ReadonlyMap<string, SubIssueSummaryDto[]>>(childrenCache);
@@ -61,7 +61,7 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
       next.delete(id);
       return next;
     });
-    setLoadingBranch(id);
+    setLoadingBranches((prev) => new Set(prev).add(id));
     api
       .subIssues(String(number))
       .then((children) => {
@@ -80,58 +80,63 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
         });
       })
       .finally(() => {
-        setLoadingBranch((current) => (current === id ? null : current));
+        setLoadingBranches((prev) => {
+          const next = new Set(prev);
+          next.delete(id);
+          return next;
+        });
       });
   }, []);
 
   const toggleBranch = useCallback(
     (id: string, number: number) => {
+      const expanding = !expanded.has(id);
+      // Pure state update; the fetch decision below runs once per click (not
+      // inside the updater, which StrictMode double-invokes in dev) and uses
+      // the pre-toggle expansion state so collapsing never refetches.
       setExpanded((prev) => {
         const next = new Set(prev);
-        if (next.has(id)) {
-          next.delete(id);
-        } else {
-          next.add(id);
-          // First expansion fetches this branch; later toggles reuse the cache.
-          if (!cacheRef.current.has(id) && loadingBranch !== id && !branchErrors.has(id)) {
-            loadBranch(id, number);
-          }
-        }
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
         return next;
       });
+      // First expansion fetches this branch; later toggles reuse the cache.
+      if (expanding && !cacheRef.current.has(id) && !loadingBranches.has(id) && !branchErrors.has(id)) {
+        loadBranch(id, number);
+      }
     },
-    [loadBranch, loadingBranch, branchErrors],
+    [expanded, loadBranch, loadingBranches, branchErrors],
   );
 
+  // Monotonic sequence guarding against stale responses: every load (effect,
+  // create-submit, linked, retry) stamps a newer sequence, and only the newest
+  // may publish. Navigation bumps the sequence via the effect, so an older
+  // request resolving late can never clobber the current issue's tree.
+  const loadSeq = useRef(0);
   const load = useCallback(() => {
-    // Guard against stale responses: if issueRef changes (client-side
-    // navigation) or the panel unmounts before the request settles, the
-    // cleanup cancels this load so an older tree can't clobber the current
-    // issue's panel.
-    let cancelled = false;
+    const seq = ++loadSeq.current;
     setError(null);
     api
       .subIssues(issueRef)
       .then((tree) => {
-        if (!cancelled) setTree(tree);
+        if (loadSeq.current === seq) setTree(tree);
       })
       .catch((err) => {
-        if (!cancelled) setError(err);
+        if (loadSeq.current === seq) setError(err);
       });
-    return () => {
-      cancelled = true;
-    };
   }, [issueRef]);
 
   useEffect(() => {
     // Navigating to another issue resets all cached branches and expansion
     // state so the panel starts fresh (root level only, all rows collapsed).
+    // The load's sequence stamp invalidates any in-flight request from the
+    // previous issue.
     cacheRef.current = new Map();
     setChildrenCache(new Map());
     setExpanded(new Set());
     setBranchErrors(new Map());
-    setLoadingBranch(null);
-    return load();
+    setLoadingBranches(new Set());
+    load();
   }, [load]);
 
   const roots = tree ?? [];
@@ -162,7 +167,7 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
 
   const handlers: BranchHandlers = {
     expanded,
-    loadingId: loadingBranch,
+    loading: loadingBranches,
     errors: branchErrors,
     cache: childrenCache,
     onToggle: toggleBranch,
@@ -212,7 +217,7 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
             </p>
           )}
           {tree !== null && !hasError && roots.length > 0 && (
-            <ul className="sub-issues-tree flex flex-col" role="tree" aria-label="Sub-issues">
+            <ul className="sub-issues-tree flex flex-col" aria-label="Sub-issues">
               {roots.map((node) => (
                 <SubIssueNode key={node.id} node={node} depth={0} handlers={handlers} />
               ))}
@@ -312,7 +317,7 @@ function SubIssueNode({
 }) {
   const expanded = handlers.expanded.has(node.id);
   const hasChildren = node.child_count > 0;
-  const loading = handlers.loadingId === node.id;
+  const loading = handlers.loading.has(node.id);
   const branchError = handlers.errors.get(node.id);
   const children = handlers.cache.get(node.id);
   const closed = node.status === "closed";
@@ -321,7 +326,7 @@ function SubIssueNode({
   const done = total > 0 && closedCount === total;
 
   return (
-    <li className="sub-issue-row" role="treeitem" aria-expanded={hasChildren ? expanded : undefined}>
+    <li className="sub-issue-row">
       <div
         className="issue-row flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent/50"
         style={{ paddingLeft: depth * 20 + 6 }}
@@ -386,7 +391,7 @@ function SubIssueNode({
         </div>
       )}
       {expanded && !loading && !branchError && children && (
-        <ul className="sub-issues-children ml-[22px] flex flex-col border-l border-border pl-1" role="group">
+        <ul className="sub-issues-children ml-[22px] flex flex-col border-l border-border pl-1">
           {children.map((child) => (
             <SubIssueNode key={child.id} node={child} depth={depth + 1} handlers={handlers} />
           ))}

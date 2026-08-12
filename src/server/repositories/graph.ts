@@ -86,8 +86,9 @@ export async function listLinkCandidates(
   const where: string[] = ["i.id <> ?", "i.id NOT IN (SELECT id FROM subtree)"];
   const args: string[] = [rootId];
   if (query) {
-    where.push("(i.title LIKE ? OR i.body LIKE ?)");
-    args.push(`%${query}%`, `%${query}%`);
+    where.push("(i.title LIKE ? ESCAPE '\\' OR i.body LIKE ? ESCAPE '\\')");
+    const escaped = escapeLikePattern(query);
+    args.push(`%${escaped}%`, `%${escaped}%`);
   }
   const res = await db
     .prepare(
@@ -107,6 +108,16 @@ export async function listLinkCandidates(
     .bind(rootId, ...args, limit)
     .all<SubIssueRow>();
   return res.results;
+}
+
+/**
+ * Escape LIKE wildcards so user input matches literally: `%`, `_`, and the
+ * escape character itself are backslash-escaped (paired with `ESCAPE '\'` in
+ * the query above). Without this, `q=%` matches every issue and `_` matches
+ * any single character.
+ */
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
 }
 
 /** Whether `issueId` is the root itself or one of its descendants. */

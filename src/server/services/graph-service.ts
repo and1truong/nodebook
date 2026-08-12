@@ -27,7 +27,7 @@ import {
   listRelatedIssues,
   listRelationships,
 } from "../repositories/graph";
-import { getIssueById, getIssueByNumber, getIssueByRef, getIssueLabels, getNumbersByIds, listIssues } from "../repositories/issues";
+import { getIssueById, getIssueByNumber, getIssueByRef, getIssueLabels, getIssuesByIds, getNumbersByIds, listIssues } from "../repositories/issues";
 import { toIssueDto, toIssueDtos } from "./dto";
 
 // ---------------------------------------------------------------------------
@@ -117,22 +117,25 @@ export async function getSubIssueCandidates(ctx: Ctx, rootId: string, q: string,
   const exactNumber = /^#?(\d+)$/.exec(q.trim());
   const query = exactNumber ? null : (q.trim() || null);
   const rows = await listLinkCandidates(ctx.env.DB, rootId, query, limit);
-  const issues: IssueRecord[] = [];
+  const ids: string[] = [];
   const seen = new Set<string>();
 
   if (exactNumber) {
     const hit = await getIssueByNumber(ctx.env.DB, Number(exactNumber[1]));
     if (hit && !(await isInSubtree(ctx.env.DB, rootId, hit.id))) {
-      issues.push(hit);
+      ids.push(hit.id);
       seen.add(hit.id);
     }
   }
   for (const row of rows) {
     if (seen.has(row.id)) continue;
     seen.add(row.id);
-    const full = await getIssueById(ctx.env.DB, row.id);
-    if (full) issues.push(full);
+    ids.push(row.id);
   }
+  // One batched fetch instead of a per-candidate getIssueById; ordering is
+  // preserved via the ids list above.
+  const byId = new Map((await getIssuesByIds(ctx.env.DB, ids)).map((issue) => [issue.id, issue]));
+  const issues = ids.map((id) => byId.get(id)).filter((issue): issue is IssueRecord => issue !== undefined);
   return toIssueDtos(ctx, issues);
 }
 

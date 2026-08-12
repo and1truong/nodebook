@@ -289,6 +289,27 @@ describe("sub-issues tree", () => {
     expect(orphanRow!.parent_number).toBeNull();
   });
 
+  it("treats % and _ in candidate queries literally (LIKE escaping)", async () => {
+    const root = await createIssue({ title: "escape root" });
+    const pct = await createIssue({ title: "pct 100% done" });
+    const anyChar = await createIssue({ title: "pct 100X done" });
+    const underscore = await createIssue({ title: "pct 100_ years" });
+
+    // Unescaped, `100%` would match any title containing "100", and `100_`
+    // any title where "100" is followed by a single character.
+    const pctSearch = await api(`/api/graph/${root.number}/sub-issue-candidates?q=100%25&limit=100`);
+    const pctNumbers = (pctSearch.body as { number: number }[]).map((i) => i.number);
+    expect(pctNumbers).toContain(pct.number);
+    expect(pctNumbers).not.toContain(anyChar.number);
+    expect(pctNumbers).not.toContain(underscore.number);
+
+    const underscoreSearch = await api(`/api/graph/${root.number}/sub-issue-candidates?q=100_&limit=100`);
+    const underscoreNumbers = (underscoreSearch.body as { number: number }[]).map((i) => i.number);
+    expect(underscoreNumbers).toContain(underscore.number);
+    expect(underscoreNumbers).not.toContain(pct.number);
+    expect(underscoreNumbers).not.toContain(anyChar.number);
+  });
+
   it("reparents an issue and preserves its descendants", async () => {
     const oldParent = await createIssue({ title: "old parent" });
     const newParent = await createIssue({ title: "new parent" });
