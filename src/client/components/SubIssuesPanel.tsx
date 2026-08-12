@@ -22,14 +22,26 @@ export function SubIssuesPanel({ issueRef, rootId }: { issueRef: string; rootId:
   const [submitting, setSubmitting] = useState(false);
 
   const load = useCallback(() => {
+    // Guard against stale responses: if issueRef changes (client-side
+    // navigation) or the panel unmounts before the request settles, the
+    // cleanup cancels this load so an older tree can't clobber the current
+    // issue's panel.
+    let cancelled = false;
     setError(null);
     api
       .subIssues(issueRef)
-      .then(setTree)
-      .catch(setError);
+      .then((tree) => {
+        if (!cancelled) setTree(tree);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [issueRef]);
 
-  useEffect(load, [load]);
+  useEffect(() => load(), [load]);
 
   const roots = tree ?? [];
   const hasError = !!error;

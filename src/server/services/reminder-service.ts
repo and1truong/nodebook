@@ -254,11 +254,13 @@ async function deliverOccurrence(ctx: Ctx, occurrence: ReminderOccurrenceRecord)
 
   // Advance recurring reminders to their next occurrence. The ordinal counts
   // already-delivered occurrences (the current one was marked delivered
-  // above) so COUNT-terminated rules close instead of restarting from 1.
+  // above), and nextOccurrence increments before its COUNT check, so passing
+  // `delivered` (not `delivered + 1`) lets COUNT-terminated rules close
+  // exactly after the requested number of deliveries instead of one early.
   if (reminder.kind === "recurring" && reminder.recurrence_rule) {
     const rule = parseRecurrenceRule(reminder.recurrence_rule);
     const delivered = await planningRepo.countDeliveredOccurrences(ctx.env.DB, reminder.id);
-    const next = nextOccurrence(rule, reminder.timezone, new Date(occurrence.occurrence_at), undefined, delivered + 1);
+    const next = nextOccurrence(rule, reminder.timezone, new Date(occurrence.occurrence_at), undefined, delivered);
     if (next) {
       const nextIso = next.toISOString();
       await planningRepo.insertReminderOccurrence(ctx.env.DB, {

@@ -225,7 +225,7 @@ describe("reminders", () => {
     expect((notifications.body as unknown[]).length).toBe(1);
   });
 
-  it("closes COUNT-terminated recurring reminders once exhausted", async () => {
+  it("delivers exactly COUNT occurrences then completes", async () => {
     const issue = await createIssue({ title: "counted reminder" });
     const created = await post(`/api/reminders/issue/${issue.number}`, {
       kind: "recurring",
@@ -233,25 +233,32 @@ describe("reminders", () => {
       timezone: "UTC",
     });
     const reminderId = (created.body as { id: string }).id;
-
-    // Deliver the first (and, for COUNT=2, only) occurrence.
     const env = testEnv();
-    const first = await env.DB.prepare(
-      "SELECT occurrence_at FROM reminder_occurrences WHERE reminder_id = ? ORDER BY occurrence_at ASC LIMIT 1",
-    ).bind(reminderId).first<{ occurrence_at: string }>();
-    await process(new Date(new Date(first!.occurrence_at).getTime() + 60_000));
 
-    // The ordinal is derived from delivered occurrences (not restarted at 1),
-    // so COUNT=2 does not schedule another occurrence after every delivery.
-    const reminder = await env.DB.prepare("SELECT status FROM reminders WHERE id = ?").bind(reminderId).first<{ status: string }>();
-    expect(reminder!.status).toBe("completed");
+    const status = async () =>
+      (await env.DB.prepare("SELECT status FROM reminders WHERE id = ?").bind(reminderId).first<{ status: string }>())!.status;
+    const occurrenceAt = async (st: string): Promise<string> => {
+      const row = await env.DB.prepare(
+        "SELECT occurrence_at FROM reminder_occurrences WHERE reminder_id = ? AND status = ? ORDER BY occurrence_at ASC LIMIT 1",
+      ).bind(reminderId, st).first<{ occurrence_at: string }>();
+      return row!.occurrence_at;
+    };
+
+    // Deliver occurrence 1 → the second (final) occurrence is materialized.
+    await process(new Date(new Date(await occurrenceAt("due")).getTime() + 60_000));
+    expect(await status()).toBe("active");
+    expect(await occurrenceAt("due")).toBeTruthy();
+
+    // Deliver occurrence 2 → COUNT=2 is exhausted: reminder completes.
+    await process(new Date(new Date(await occurrenceAt("due")).getTime() + 60_000));
+    expect(await status()).toBe("completed");
 
     const occurrences = await env.DB.prepare(
       "SELECT status FROM reminder_occurrences WHERE reminder_id = ?",
     ).bind(reminderId).all<{ status: string }>();
-    expect(occurrences.results.map((r) => r.status)).toEqual(["delivered"]);
+    expect(occurrences.results.map((r) => r.status).sort()).toEqual(["delivered", "delivered"]);
     const notifications = await api("/api/notifications");
-    expect((notifications.body as unknown[]).length).toBe(1);
+    expect((notifications.body as unknown[]).length).toBe(2);
   });
 
   it("delivers COUNT occurrences then completes", async () => {
@@ -275,15 +282,19 @@ describe("reminders", () => {
     await process(new Date(new Date(await occurrenceAt("due")).getTime() + 60_000));
     expect(await occurrenceAt("due")).toBeTruthy();
 
-    // Deliver occurrence 2 → COUNT=3 is exhausted: no third delivery.
+    // Deliver occurrence 2 → occurrence 3 is materialized.
+    await process(new Date(new Date(await occurrenceAt("due")).getTime() + 60_000));
+    expect(await occurrenceAt("due")).toBeTruthy();
+
+    // Deliver occurrence 3 → COUNT=3 is exhausted: no fourth delivery.
     await process(new Date(new Date(await occurrenceAt("due")).getTime() + 60_000));
     const reminder = await env.DB.prepare("SELECT status FROM reminders WHERE id = ?").bind(reminderId).first<{ status: string }>();
     expect(reminder!.status).toBe("completed");
     const occurrences = await env.DB.prepare(
       "SELECT status FROM reminder_occurrences WHERE reminder_id = ?",
     ).bind(reminderId).all<{ status: string }>();
-    expect(occurrences.results.map((r) => r.status).sort()).toEqual(["delivered", "delivered"]);
+    expect(occurrences.results.map((r) => r.status).sort()).toEqual(["delivered", "delivered", "delivered"]);
     const notifications = await api("/api/notifications");
-    expect((notifications.body as unknown[]).length).toBe(2);
+    expect((notifications.body as unknown[]).length).toBe(3);
   });
 });
