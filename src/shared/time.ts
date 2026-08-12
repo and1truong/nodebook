@@ -90,14 +90,41 @@ export function civilDateString(instant: Date, timezone: string): string {
   return `${c.year}-${String(c.month).padStart(2, "0")}-${String(c.day).padStart(2, "0")}`;
 }
 
+/** Number of days in `month` (1-12) of `year` (proleptic Gregorian). */
+export function daysInMonth(year: number, month: number): number {
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
 export function parseCivilDate(value: string): CivilParts | null {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   if (!m) return null;
   const year = Number(m[1]);
   const month = Number(m[2]);
   const day = Number(m[3]);
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
   return { year, month, day, hour: 0, minute: 0, second: 0 };
+}
+
+/**
+ * Civil datetime (YYYY-MM-DDTHH:mm) of `instant` in `timezone` — the value
+ * shape of a `<input type="datetime-local">`. Fill inputs with this so the
+ * stored UTC instant is shown as the wall clock of the intended timezone.
+ */
+export function civilDateTimeString(instant: Date, timezone: string): string {
+  const c = civilFromInstant(instant, timezone);
+  return `${c.year}-${String(c.month).padStart(2, "0")}-${String(c.day).padStart(2, "0")}T${String(c.hour).padStart(2, "0")}:${String(c.minute).padStart(2, "0")}`;
+}
+
+/** Parse a datetime-local value (YYYY-MM-DDTHH:mm) into civil parts; null if malformed. */
+export function parseCivilDateTime(value: string): CivilParts | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(value);
+  if (!m) return null;
+  const date = parseCivilDate(`${m[1]}-${m[2]}-${m[3]}`);
+  if (!date) return null;
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  if (hour > 23 || minute > 59) return null;
+  return { ...date, hour, minute };
 }
 
 /** Civil date (YYYY-MM-DD) of `instant` in `timezone`. */

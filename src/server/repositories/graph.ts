@@ -43,6 +43,100 @@ export async function getChildren(db: D1Database, issueId: string): Promise<{ id
   return res.results;
 }
 
+export interface SubIssueRow {
+  id: string;
+  number: number;
+  title: string;
+  status: string;
+  parent_id: string | null;
+  child_count: number;
+  closed_child_count: number;
+}
+
+/**
+ * Direct children of `issueId` only (one hierarchy level), ordered by
+ * number. Each row carries its own direct-child counts so the client can
+ * render expand controls and progress badges without fetching descendants.
+ */
+export async function listDirectChildren(db: D1Database, issueId: string): Promise<SubIssueRow[]> {
+  const res = await db
+    .prepare(
+      `SELECT i.id, i.number, i.title, i.status, i.parent_id,
+              (SELECT COUNT(*) FROM issues c WHERE c.parent_id = i.id) AS child_count,
+              (SELECT COUNT(*) FROM issues c WHERE c.parent_id = i.id AND c.status = 'closed') AS closed_child_count
+       FROM issues i WHERE i.parent_id = ? ORDER BY i.number ASC`,
+    )
+    .bind(issueId)
+    .all<SubIssueRow>();
+  return res.results;
+}
+
+/**
+ * Issues that may be linked under `rootId`: every issue except the root
+ * itself and all of its descendants (server-side recursive CTE), so the
+ * picker never exposes tree members regardless of what the client has
+ * loaded. `query` filters title/body LIKE matches; rows are newest first.
+ */
+export async function listLinkCandidates(
+  db: D1Database,
+  rootId: string,
+  query: string | null,
+  limit: number,
+): Promise<SubIssueRow[]> {
+  const where: string[] = ["i.id <> ?", "i.id NOT IN (SELECT id FROM subtree)"];
+  const args: string[] = [rootId];
+  if (query) {
+    where.push("(i.title LIKE ? ESCAPE '\\' OR i.body LIKE ? ESCAPE '\\')");
+    const escaped = escapeLikePattern(query);
+    args.push(`%${escaped}%`, `%${escaped}%`);
+  }
+  const res = await db
+    .prepare(
+      `WITH RECURSIVE subtree(id) AS (
+         SELECT id FROM issues WHERE parent_id = ?
+         UNION ALL
+         SELECT i.id FROM issues i JOIN subtree s ON i.parent_id = s.id
+       )
+       SELECT i.id, i.number, i.title, i.status, i.parent_id,
+              (SELECT COUNT(*) FROM issues c WHERE c.parent_id = i.id) AS child_count,
+              (SELECT COUNT(*) FROM issues c WHERE c.parent_id = i.id AND c.status = 'closed') AS closed_child_count
+       FROM issues i
+       WHERE ${where.join(" AND ")}
+       ORDER BY i.number DESC
+       LIMIT ?`,
+    )
+    .bind(rootId, ...args, limit)
+    .all<SubIssueRow>();
+  return res.results;
+}
+
+/**
+ * Escape LIKE wildcards so user input matches literally: `%`, `_`, and the
+ * escape character itself are backslash-escaped (paired with `ESCAPE '\'` in
+ * the query above). Without this, `q=%` matches every issue and `_` matches
+ * any single character.
+ */
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/** Whether `issueId` is the root itself or one of its descendants. */
+export async function isInSubtree(db: D1Database, rootId: string, issueId: string): Promise<boolean> {
+  if (rootId === issueId) return true;
+  const res = await db
+    .prepare(
+      `WITH RECURSIVE subtree(id) AS (
+         SELECT id FROM issues WHERE parent_id = ?
+         UNION ALL
+         SELECT i.id FROM issues i JOIN subtree s ON i.parent_id = s.id
+       )
+       SELECT 1 AS hit FROM subtree WHERE id = ? LIMIT 1`,
+    )
+    .bind(rootId, issueId)
+    .first<{ hit: number }>();
+  return res !== null;
+}
+
 // ---------------------------------------------------------------------------
 // Relationships
 // ---------------------------------------------------------------------------

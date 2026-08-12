@@ -5,7 +5,7 @@ import { api } from "../api";
 import { ISSUE_TYPES, PRIORITIES, type IssueType } from "../../shared/limits";
 import type { IssueDto } from "../../shared/contracts/issues";
 import { buildRecurrenceRule, serializeRecurrenceRule, weekdayOfDate } from "../../shared/recurrence";
-import { todayCivil } from "../../shared/time";
+import { civilDateTimeString, instantFromCivil, parseCivilDateTime, todayCivil } from "../../shared/time";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
@@ -54,11 +54,25 @@ export function formValuesFromIssue(issue: IssueDto): IssueFormValues {
     labels: issue.labels,
     start_date: issue.start_date ?? "",
     due_date: issue.due_date ?? "",
-    scheduled_date: issue.scheduled_date ? issue.scheduled_date.slice(0, 16) : "",
+    // The stored value is a UTC instant; render it as the wall clock of the
+    // issue's timezone so an untouched field round-trips to the same instant.
+    scheduled_date: issue.scheduled_date ? civilDateTimeString(new Date(issue.scheduled_date), issue.timezone) : "",
     timezone: issue.timezone,
     recurrence,
     parent_id: issue.parent_id ?? "",
   };
+}
+
+/**
+ * Convert a datetime-local wall-clock value to a UTC instant in the form's
+ * timezone (the inverse of the form fill in `formValuesFromIssue`). Returns
+ * null when the field is empty; malformed values throw via parseCivilDateTime.
+ */
+export function scheduledDateToIso(values: Pick<IssueFormValues, "scheduled_date" | "timezone">): string | null {
+  if (!values.scheduled_date) return null;
+  const civil = parseCivilDateTime(values.scheduled_date);
+  if (!civil) throw new Error("Invalid scheduled date");
+  return instantFromCivil(values.timezone, civil).toISOString();
 }
 
 function parseRecurrenceForForm(rule: string | null): IssueFormValues["recurrence"] {

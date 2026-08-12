@@ -206,6 +206,20 @@ export async function listOccurrencesForReminder(db: D1Database, reminderId: str
   return res.results.map(rowToOccurrence);
 }
 
+/**
+ * Number of deliveries already completed for a reminder. Recurring reminders
+ * derive their series ordinal from this so COUNT-terminated rules close once
+ * the materialized deliveries are exhausted (mirrors recurring-task
+ * completion, which counts the `occurrences` table).
+ */
+export async function countDeliveredOccurrences(db: D1Database, reminderId: string): Promise<number> {
+  const row = await db
+    .prepare("SELECT COUNT(*) AS n FROM reminder_occurrences WHERE reminder_id = ? AND status = 'delivered'")
+    .bind(reminderId)
+    .first<{ n: number }>();
+  return Number(row?.n ?? 0);
+}
+
 function rowToOccurrence(row: Record<string, unknown>): ReminderOccurrenceRecord {
   return {
     id: String(row.id),

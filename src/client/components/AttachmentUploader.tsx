@@ -100,7 +100,10 @@ export function AttachmentList({ attachments, onDeleted }: { attachments: Attach
     <ul className="flex flex-col">
       {error && <li className="error-inline">{error}</li>}
       {attachments.map((a) => (
-        <li key={a.id} className="attachment-item flex items-center justify-between gap-2 border-b border-border py-1.5 last:border-b-0">
+        <li
+          key={a.id}
+          className="attachment-item flex flex-wrap items-center justify-between gap-2 border-b border-border py-1.5 last:border-b-0"
+        >
           <AttachmentPreview attachment={a} />
           <Button
             variant="link"
@@ -119,8 +122,8 @@ export function AttachmentList({ attachments, onDeleted }: { attachments: Attach
 export function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
   if (attachment.content_type === "application/pdf") {
     return (
-      <span className="attachment-link flex items-center gap-2">
-        <a href={attachment.url} target="_blank" rel="noreferrer" className="hover:underline">
+      <span className="attachment-link flex min-w-0 items-center gap-2">
+        <a href={attachment.url} target="_blank" rel="noreferrer" className="break-words hover:underline">
           📄 {attachment.filename} · {formatInstant(attachment.created_at)}
         </a>
       </span>
@@ -128,8 +131,8 @@ export function AttachmentPreview({ attachment }: { attachment: AttachmentDto })
   }
   if (attachment.content_type.startsWith("image/") && isPreviewContentType(attachment.content_type)) {
     return (
-      <span className="attachment-link flex items-center gap-2">
-        <a href={attachment.url} target="_blank" rel="noreferrer" className="hover:no-underline">
+      <span className="attachment-link flex min-w-0 items-center gap-2">
+        <a href={attachment.url} target="_blank" rel="noreferrer" className="flex-none hover:no-underline">
           <img
             src={attachment.url}
             alt={attachment.filename}
@@ -137,13 +140,13 @@ export function AttachmentPreview({ attachment }: { attachment: AttachmentDto })
             loading="lazy"
           />
         </a>
-        <span className="attachment-name text-xs text-muted-foreground">{attachment.filename}</span>
+        <span className="attachment-name min-w-0 break-words text-xs text-muted-foreground">{attachment.filename}</span>
       </span>
     );
   }
   return (
-    <span className="attachment-link flex items-center gap-2">
-      <a href={attachment.url} download className="hover:underline">
+    <span className="attachment-link flex min-w-0 items-center gap-2">
+      <a href={attachment.url} download className="break-words hover:underline">
         ⬇ {attachment.filename} · {(attachment.size / 1024).toFixed(1)} KB
       </a>
     </span>

@@ -1,6 +1,7 @@
 /** Issue CRUD, state transitions, numbering, comments, history. */
 import { describe, expect, it } from "vitest";
 import { api, createIssue, patch, post } from "./helpers";
+import { civilDateTimeString } from "../../src/shared/time";
 
 describe("issue lifecycle", () => {
   it("creates an issue with sequential numbers and validates input", async () => {
@@ -49,6 +50,29 @@ describe("issue lifecycle", () => {
     expect(issue.labels).toEqual(["Alpha", "beta"]);
     const bad = await post("/api/issues", { title: "x", due_date: "12/31/2025" });
     expect(bad.status).toBe(400);
+  });
+
+  it("rejects nonexistent calendar dates", async () => {
+    for (const field of ["start_date", "due_date"]) {
+      const bad = await post("/api/issues", { title: "x", [field]: "2025-02-31" });
+      expect(bad.status).toBe(400);
+    }
+    const nonLeap = await post("/api/issues", { title: "x", due_date: "2025-02-29" });
+    expect(nonLeap.status).toBe(400);
+    const leap = await post("/api/issues", { title: "leap", due_date: "2024-02-29" });
+    expect(leap.status).toBe(201);
+  });
+
+  it("round-trips scheduled_date instants into the issue timezone", async () => {
+    const issue = await createIssue({
+      title: "scheduled tz",
+      timezone: "America/Los_Angeles",
+      scheduled_date: "2025-08-12T18:00:00.000Z",
+    });
+    // The stored instant renders as the wall clock of the issue's timezone
+    // (the same conversion the editor's datetime-local input uses), so an
+    // untouched edit field submits back the identical instant.
+    expect(civilDateTimeString(new Date(issue.scheduled_date as string), issue.timezone as string)).toBe("2025-08-12T11:00");
   });
 
   it("closes and reopens with legal state transitions", async () => {

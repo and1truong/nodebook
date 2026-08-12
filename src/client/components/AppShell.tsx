@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { Check, Monitor, Moon, Settings, Sun } from "lucide-react";
 import { api } from "../api";
-import { Link } from "../router";
+import { Link, matchPath } from "../router";
 import { useTheme } from "../theme";
 import type { Theme } from "../theme";
 import { NotificationInbox } from "./NotificationInbox";
@@ -154,7 +154,7 @@ export function AppShell({
       </header>
       <div className="grid grid-cols-[190px_1fr]">
         <nav
-          className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto border-r border-border p-2"
+          className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto border-r border-border bg-card p-2"
           aria-label="Primary"
         >
           {navItems.map((item) => (
@@ -172,7 +172,19 @@ export function AppShell({
             </Link>
           ))}
         </nav>
-        <main className="w-full max-w-[980px] px-7 pb-20 pt-6">{children}</main>
+        <main
+          className={cn(
+            "w-full px-7 pb-20 pt-6",
+            // Issue/wiki detail routes get a wider shell for the two-column
+            // layout; lists and settings stay at the classic narrow width.
+            !matchPath("/issues/new", path) &&
+              (matchPath("/issues/:ref", path) !== null || matchPath("/wiki/:ref", path) !== null)
+              ? "max-w-[1280px]"
+              : "max-w-[980px]",
+          )}
+        >
+          {children}
+        </main>
       </div>
     </div>
   );

@@ -43,6 +43,9 @@ export const accessAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next) =
 
 /** Bearer token auth for /mcp; verified identity (with scopes) is stored for the route. */
 export const mcpAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
+  // CORS preflights carry no Authorization header; let the /mcp OPTIONS
+  // handler (worker.ts app.all("/mcp", ...)) answer with the CORS headers.
+  if (c.req.method === "OPTIONS") return next();
   const header = c.req.header("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
   if (!token) return c.json({ error: { code: "unauthorized", message: "Missing bearer token" } }, 401);

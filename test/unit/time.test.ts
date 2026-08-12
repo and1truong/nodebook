@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  civilDateTimeString,
   civilFromInstant,
   civilDateString,
   dayRange,
   instantFromCivil,
   isValidTimezone,
+  parseCivilDate,
+  parseCivilDateTime,
   todayCivil,
   utcOffsetMinutes,
 } from "../../src/shared/time";
@@ -66,5 +69,41 @@ describe("civil time helpers", () => {
     expect(isValidTimezone("UTC")).toBe(true);
     expect(isValidTimezone("America/New_York")).toBe(true);
     expect(isValidTimezone("Not/AZone")).toBe(false);
+  });
+
+  it("rejects nonexistent calendar dates", () => {
+    expect(parseCivilDate("2025-02-31")).toBeNull(); // February never has 31 days
+    expect(parseCivilDate("2025-02-29")).toBeNull(); // 2025 is not a leap year
+    expect(parseCivilDate("2025-04-31")).toBeNull(); // April has 30 days
+    expect(parseCivilDate("2025-00-10")).toBeNull();
+    expect(parseCivilDate("2025-13-01")).toBeNull();
+    expect(parseCivilDate("2025-01-00")).toBeNull();
+    expect(parseCivilDate("2024-02-29")).toEqual({ year: 2024, month: 2, day: 29, hour: 0, minute: 0, second: 0 }); // leap year
+    expect(parseCivilDate("2025-12-31")).toEqual({ year: 2025, month: 12, day: 31, hour: 0, minute: 0, second: 0 });
+  });
+
+  it("formats instants as datetime-local wall clocks in the target timezone", () => {
+    expect(civilDateTimeString(new Date("2025-08-12T18:00:00.000Z"), "UTC")).toBe("2025-08-12T18:00");
+    expect(civilDateTimeString(new Date("2025-08-12T18:00:00.000Z"), "America/Los_Angeles")).toBe("2025-08-12T11:00"); // UTC-7 (PDT)
+    expect(civilDateTimeString(new Date("2025-08-12T18:00:00.000Z"), "Asia/Tokyo")).toBe("2025-08-13T03:00"); // UTC+9
+    expect(civilDateTimeString(new Date("2025-01-15T00:30:00.000Z"), "America/New_York")).toBe("2025-01-14T19:30"); // UTC-5 (EST)
+  });
+
+  it("round-trips datetime-local values through the form's timezone", () => {
+    const tz = "America/Los_Angeles";
+    const parts = parseCivilDateTime("2025-08-12T18:00")!;
+    expect(parts).toEqual({ year: 2025, month: 8, day: 12, hour: 18, minute: 0, second: 0 });
+    const instant = instantFromCivil(tz, parts);
+    expect(instant.toISOString()).toBe("2025-08-13T01:00:00.000Z"); // 18:00 PDT
+    expect(civilDateTimeString(instant, tz)).toBe("2025-08-12T18:00");
+  });
+
+  it("rejects malformed datetime-local values", () => {
+    expect(parseCivilDateTime("")).toBeNull();
+    expect(parseCivilDateTime("2025-08-12 18:00")).toBeNull(); // space, not T
+    expect(parseCivilDateTime("2025-08-12T18:00:00")).toBeNull(); // seconds not allowed
+    expect(parseCivilDateTime("2025-08-12T24:00")).toBeNull();
+    expect(parseCivilDateTime("2025-08-12T18:60")).toBeNull();
+    expect(parseCivilDateTime("2025-02-31T18:00")).toBeNull(); // nonexistent date
   });
 });

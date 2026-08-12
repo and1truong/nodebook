@@ -8,16 +8,14 @@ import {
   emptyFormValues,
   formValuesFromIssue,
   recurrenceToRule,
+  scheduledDateToIso,
   type IssueFormValues,
 } from "../components/IssueEditor";
 import { HistoryPanel } from "../components/HistoryPanel";
-import { RelationshipsPanel } from "../components/RelationshipsPanel";
-import { BacklinksPanel } from "../components/BacklinksPanel";
-import { ReminderEditor } from "../components/ReminderEditor";
-import { AttachmentSection } from "../components/AttachmentUploader";
-import { TypeBadge, StatusBadge, PriorityBadge, LabelChip, Loading, ErrorState, EmptyState } from "../components/ui";
+import { IssueSidebar } from "../components/IssueSidebar";
+import { SubIssuesPanel } from "../components/SubIssuesPanel";
+import { StatusBadge, Loading, ErrorState, EmptyState } from "../components/ui";
 import { Button } from "../components/ui/button";
-import { Input } from "../components/ui/input";
 import { Textarea } from "../components/ui/textarea";
 import { Link, useRouter } from "../router";
 
@@ -37,7 +35,6 @@ export function IssueDetailPage({
   const [comments, setComments] = useState<CommentDto[] | null>(null);
   const [commentBody, setCommentBody] = useState("");
   const [crumbs, setCrumbs] = useState<{ id: string; number: number; title: string }[]>([]);
-  const [children, setChildren] = useState<IssueDto[] | null>(null);
 
   const load = useCallback(() => {
     if (!issueRef) return;
@@ -47,7 +44,6 @@ export function IssueDetailPage({
       .then((i) => {
         setIssue(i);
         void api.comments(i.number.toString()).then(setComments).catch(() => setComments([]));
-        void api.children(i.number.toString()).then(setChildren).catch(() => setChildren([]));
         if (wiki) {
           void api.breadcrumbs(i.number.toString()).then(setCrumbs).catch(() => setCrumbs([]));
         }
@@ -78,7 +74,7 @@ export function IssueDetailPage({
       labels: values.labels,
       start_date: values.start_date || null,
       due_date: values.due_date || null,
-      scheduled_date: values.scheduled_date ? new Date(values.scheduled_date).toISOString() : null,
+      scheduled_date: scheduledDateToIso(values),
       timezone: values.timezone,
       recurrence_rule: recurrenceToRule(values),
       parent_id: values.parent_id || null,
@@ -115,23 +111,7 @@ export function IssueDetailPage({
           <h1 className="text-2xl font-semibold tracking-tight">{issue.title}</h1>
         </div>
         <div className="issue-tags mt-1.5 flex flex-wrap gap-1.5">
-          <TypeBadge type={issue.type} />
           <StatusBadge status={issue.status} />
-          {issue.priority && <PriorityBadge priority={issue.priority} />}
-          {issue.labels.map((l) => (
-            <LabelChip key={l} name={l} />
-          ))}
-        </div>
-        <div className="issue-dates mt-1.5 flex flex-wrap gap-3.5">
-          {issue.start_date && <span className="dim">start {issue.start_date}</span>}
-          {issue.due_date && (
-            <span className={issue.status === "open" && issue.due_date < today() ? "overdue-label" : "dim"}>
-              due {issue.due_date}
-            </span>
-          )}
-          {issue.scheduled_date && <span className="dim">scheduled {formatInstant(issue.scheduled_date)}</span>}
-          {issue.recurrence_rule && <code className="rrule font-mono text-[11px]">{issue.recurrence_rule}</code>}
-          {issue.closed_at && <span className="dim">closed {formatInstant(issue.closed_at)}</span>}
         </div>
         <div className="issue-actions mt-2.5 flex gap-2">
           {issue.status === "open" ? (
@@ -181,107 +161,50 @@ export function IssueDetailPage({
           onCancel={() => setEditing(false)}
         />
       ) : (
-        <>
-          {issue.body ? (
-            <Markdown source={issue.body} className="issue-body" />
-          ) : (
-            <p className="dim">No body yet. Edit to add Markdown.</p>
-          )}
+        <div className="issue-layout grid grid-cols-1 gap-6 min-[1200px]:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="issue-main flex min-w-0 flex-col gap-4">
+            {issue.body ? (
+              <Markdown source={issue.body} className="issue-body" />
+            ) : (
+              <p className="dim">No body yet. Edit to add Markdown.</p>
+            )}
 
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-2.5 text-sm font-semibold">Attachments</h3>
-            <AttachmentSection
-              ownerType="issue"
-              ownerId={issue.id}
-              uploadUrl={`/api/attachments/issue/${issue.number}`}
-            />
-          </section>
+            <SubIssuesPanel issueRef={issue.number.toString()} rootId={issue.id} />
 
-          <ReminderEditor issueRef={issue.number.toString()} issue={issue} />
-
-          <div className="detail-grid grid gap-4 md:grid-cols-2">
-            <RelationshipsPanel issueRef={issue.number.toString()} issueId={issue.id} />
             <section className="rounded-lg border border-border bg-card p-4">
-              <h3 className="mb-2.5 text-sm font-semibold">
-                Backlinks <span className="dim">({issue.backlink_count})</span>
-              </h3>
-              <BacklinksPanel issueRef={issue.number.toString()} />
+              <h3 className="mb-2.5 text-sm font-semibold">Comments</h3>
+              <form className="comment-form mb-2 flex flex-col gap-2" onSubmit={addComment}>
+                <Textarea
+                  value={commentBody}
+                  onChange={(e) => setCommentBody(e.target.value)}
+                  placeholder="Markdown comment — reference issues with #123"
+                  rows={4}
+                />
+                <Button type="submit" size="sm" className="self-start" disabled={!commentBody.trim()}>
+                  Comment
+                </Button>
+              </form>
+              {comments === null ? (
+                <Loading label="Loading comments…" />
+              ) : comments.length === 0 ? (
+                <EmptyState>No comments yet.</EmptyState>
+              ) : (
+                <ul className="flex flex-col">
+                  {comments.map((c) => (
+                    <CommentItem key={c.id} comment={c} />
+                  ))}
+                </ul>
+              )}
+            </section>
+
+            <section className="rounded-lg border border-border bg-card p-4">
+              <h3 className="mb-2.5 text-sm font-semibold">History</h3>
+              <HistoryPanel issueRef={issue.number.toString()} />
             </section>
           </div>
 
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-2.5 text-sm font-semibold">
-              Children <span className="dim">({issue.child_count})</span>
-            </h3>
-            {children === null ? (
-              <Loading label="Loading children…" />
-            ) : children.length === 0 ? (
-              <EmptyState>No children. Add one below.</EmptyState>
-            ) : (
-              <ul className="divide-y divide-border">
-                {children.map((c) => (
-                  <li key={c.id} className="issue-row flex items-center px-1.5 py-1.5 hover:bg-accent/50">
-                    <Link
-                      to={`/issues/${c.number}`}
-                      className="issue-row-main flex min-w-0 flex-1 items-center gap-2 text-foreground hover:no-underline"
-                    >
-                      <span className="issue-number font-mono text-xs text-muted-foreground">#{c.number}</span>
-                      <span className="issue-title truncate">{c.title}</span>
-                    </Link>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <form
-              className="mt-2 flex gap-1.5"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const form = e.currentTarget;
-                const title = (form.elements.namedItem("child-title") as HTMLInputElement).value.trim();
-                if (!title) return;
-                await api.createIssue({ title, type: "task", parent_id: issue.id });
-                (form.elements.namedItem("child-title") as HTMLInputElement).value = "";
-                load();
-              }}
-            >
-              <Input name="child-title" placeholder="Child issue title" aria-label="Child issue title" />
-              <Button type="submit" size="sm">
-                Add child
-              </Button>
-            </form>
-          </section>
-
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-2.5 text-sm font-semibold">Comments</h3>
-            <form className="comment-form mb-2 flex flex-col gap-2" onSubmit={addComment}>
-              <Textarea
-                value={commentBody}
-                onChange={(e) => setCommentBody(e.target.value)}
-                placeholder="Markdown comment — reference issues with #123"
-                rows={4}
-              />
-              <Button type="submit" size="sm" className="self-start" disabled={!commentBody.trim()}>
-                Comment
-              </Button>
-            </form>
-            {comments === null ? (
-              <Loading label="Loading comments…" />
-            ) : comments.length === 0 ? (
-              <EmptyState>No comments yet.</EmptyState>
-            ) : (
-              <ul className="flex flex-col">
-                {comments.map((c) => (
-                  <CommentItem key={c.id} comment={c} />
-                ))}
-              </ul>
-            )}
-          </section>
-
-          <section className="rounded-lg border border-border bg-card p-4">
-            <h3 className="mb-2.5 text-sm font-semibold">History</h3>
-            <HistoryPanel issueRef={issue.number.toString()} />
-          </section>
-        </>
+          <IssueSidebar issue={issue} />
+        </div>
       )}
     </article>
   );
@@ -352,7 +275,7 @@ function CreateIssueForm({ onCreated, onCancel }: { onCreated: (issue: IssueDto)
             labels: values.labels,
             start_date: values.start_date || null,
             due_date: values.due_date || null,
-            scheduled_date: values.scheduled_date ? new Date(values.scheduled_date).toISOString() : null,
+            scheduled_date: scheduledDateToIso(values),
             timezone: values.timezone,
             recurrence_rule: recurrenceToRule(values),
           });
@@ -361,9 +284,4 @@ function CreateIssueForm({ onCreated, onCancel }: { onCreated: (issue: IssueDto)
       />
     </div>
   );
-}
-
-function today(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

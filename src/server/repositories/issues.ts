@@ -97,6 +97,16 @@ export async function getIssueById(db: D1Database, id: string): Promise<IssueRec
   return row ? rowToIssue(row) : null;
 }
 
+/** Batch variant of getIssueById, preserving no particular order. */
+export async function getIssuesByIds(db: D1Database, ids: string[]): Promise<IssueRecord[]> {
+  if (ids.length === 0) return [];
+  const res = await db
+    .prepare(`SELECT ${ISSUE_COLUMNS} FROM issues WHERE id IN (${ids.map(() => "?").join(",")})`)
+    .bind(...ids)
+    .all();
+  return res.results.map(rowToIssue);
+}
+
 export async function getIssueByNumber(db: D1Database, number: number): Promise<IssueRecord | null> {
   const row = await db.prepare(`SELECT ${ISSUE_COLUMNS} FROM issues WHERE number = ?`).bind(number).first();
   return row ? rowToIssue(row) : null;
