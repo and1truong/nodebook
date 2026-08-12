@@ -5,6 +5,11 @@ import { ISSUE_TYPES, PRIORITIES, type IssueType } from "../../shared/limits";
 import type { IssueDto } from "../../shared/contracts/issues";
 import { buildRecurrenceRule, serializeRecurrenceRule, weekdayOfDate } from "../../shared/recurrence";
 import { todayCivil } from "../../shared/time";
+import { Button } from "./ui/button";
+import { Input } from "./ui/input";
+import { Textarea } from "./ui/textarea";
+import { Label } from "./ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 export interface IssueFormValues {
   type: IssueType;
@@ -79,6 +84,8 @@ export function recurrenceToRule(values: IssueFormValues): string | null {
   return serializeRecurrenceRule(rule);
 }
 
+const selectClass = "w-40";
+
 export function IssueEditor({
   initial,
   onSubmit,
@@ -143,38 +150,48 @@ export function IssueEditor({
   };
 
   return (
-    <form className="issue-editor" onSubmit={submit}>
-      <div className="field-row">
-        <label>
+    <form className="issue-editor mt-3 flex flex-col gap-3.5 rounded-lg border border-border bg-card p-5" onSubmit={submit}>
+      <div className="flex flex-wrap gap-3">
+        <Label className="flex flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
           Type
-          <select value={values.type} onChange={(e) => set("type", e.target.value as IssueType)}>
-            {ISSUE_TYPES.map((t) => (
-              <option key={t} value={t}>
-                {t}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
+          <Select value={values.type} onValueChange={(v) => set("type", v as IssueType)}>
+            <SelectTrigger className={selectClass} aria-label="Type">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ISSUE_TYPES.map((t) => (
+                <SelectItem key={t} value={t}>
+                  {t}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
+        <Label className="flex flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
           Priority
-          <select value={values.priority} onChange={(e) => set("priority", e.target.value)}>
-            <option value="">—</option>
-            {PRIORITIES.map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </label>
+          <Select value={values.priority || "none"} onValueChange={(v) => set("priority", v === "none" ? "" : v)}>
+            <SelectTrigger className={selectClass} aria-label="Priority">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">—</SelectItem>
+              {PRIORITIES.map((p) => (
+                <SelectItem key={p} value={p}>
+                  {p}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Label>
       </div>
-      <label>
-        Title
-        <input value={values.title} onChange={(e) => set("title", e.target.value)} maxLength={500} autoFocus />
-      </label>
-      <label>
-        Labels
-        <div className="label-editor">
-          <input
+      <Label className="flex w-full flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
+        <span>Title</span>
+        <Input value={values.title} onChange={(e) => set("title", e.target.value)} maxLength={500} autoFocus />
+      </Label>
+      <Label className="flex w-full flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
+        <span>Labels</span>
+        <div className="label-editor flex w-full flex-col gap-1.5">
+          <Input
             value={labelInput}
             onChange={(e) => setLabelInput(e.target.value)}
             onKeyDown={(e) => {
@@ -191,7 +208,7 @@ export function IssueEditor({
               <option key={l} value={l} />
             ))}
           </datalist>
-          <div className="chips">
+          <div className="flex flex-wrap gap-1">
             {values.labels.map((l) => (
               <span key={l} className="chip">
                 {l}
@@ -202,11 +219,11 @@ export function IssueEditor({
             ))}
           </div>
         </div>
-      </label>
-      <label>
-        Body (Markdown — reference other issues with #123)
-        <textarea value={values.body} onChange={(e) => set("body", e.target.value)} rows={10} />
-      </label>
+      </Label>
+      <Label className="flex w-full flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
+        <span>Body (Markdown — reference other issues with #123)</span>
+        <Textarea value={values.body} onChange={(e) => set("body", e.target.value)} rows={10} />
+      </Label>
 
       <PlanningFields values={values} set={set} today={today} />
 
@@ -217,14 +234,14 @@ export function IssueEditor({
       )}
 
       {error && <p className="error-inline">{error}</p>}
-      <div className="editor-actions">
-        <button type="submit" className="btn primary" disabled={saving}>
+      <div className="flex gap-2">
+        <Button type="submit" disabled={saving}>
           {saving ? "Saving…" : submitLabel}
-        </button>
+        </Button>
         {onCancel && (
-          <button type="button" className="btn" onClick={onCancel}>
+          <Button type="button" variant="outline" onClick={onCancel}>
             Cancel
-          </button>
+          </Button>
         )}
       </div>
     </form>
@@ -244,74 +261,84 @@ function PlanningFields({
   const weekdays = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
 
   return (
-    <fieldset className="planning-fields">
-      <legend>Planning</legend>
-      <div className="field-row">
-        <label>
-          Start date
-          <input type="date" value={values.start_date} min={today} onChange={(e) => set("start_date", e.target.value)} />
-        </label>
-        <label>
-          Due date
-          <input type="date" value={values.due_date} onChange={(e) => set("due_date", e.target.value)} />
-        </label>
-        <label>
-          Scheduled
-          <input
+    <fieldset className="flex flex-col gap-2.5 rounded-md border border-border p-3">
+      <legend className="px-1 text-xs font-semibold text-muted-foreground">Planning</legend>
+      <div className="flex flex-wrap gap-3">
+        <Label className="flex flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
+          <span>Start date</span>
+          <Input type="date" value={values.start_date} min={today} onChange={(e) => set("start_date", e.target.value)} />
+        </Label>
+        <Label className="flex flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
+          <span>Due date</span>
+          <Input type="date" value={values.due_date} onChange={(e) => set("due_date", e.target.value)} />
+        </Label>
+        <Label className="flex flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
+          <span>Scheduled</span>
+          <Input
             type="datetime-local"
             value={values.scheduled_date}
             onChange={(e) => set("scheduled_date", e.target.value)}
           />
-        </label>
+        </Label>
       </div>
 
-      <div className="recurrence-box">
-        <label className="checkline">
+      <div className="flex flex-col gap-2 border-t border-dashed border-border pt-2.5">
+        <Label className="flex flex-row items-center gap-1.5 text-sm text-foreground">
           <input
             type="checkbox"
+            className="accent-primary"
             checked={r.enabled}
             onChange={(e) => set("recurrence", { ...r, enabled: e.target.checked })}
           />
           Recurring task
-        </label>
+        </Label>
         {r.enabled && (
-          <div className="field-row">
-            <label>
+          <div className="flex flex-wrap gap-3">
+            <Label className="flex flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
               Frequency
-              <select
+              <Select
                 value={r.freq}
-                onChange={(e) =>
+                onValueChange={(v) =>
                   set("recurrence", {
                     ...r,
-                    freq: e.target.value as "DAILY" | "WEEKLY" | "MONTHLY",
-                    byDay: e.target.value === "WEEKLY" ? (r.byDay.length ? r.byDay : [weekdayOfDate(today)]) : [],
+                    freq: v as "DAILY" | "WEEKLY" | "MONTHLY",
+                    byDay: v === "WEEKLY" ? (r.byDay.length ? r.byDay : [weekdayOfDate(today)]) : [],
                   })
                 }
               >
-                <option value="DAILY">Daily</option>
-                <option value="WEEKLY">Weekly</option>
-                <option value="MONTHLY">Monthly</option>
-              </select>
-            </label>
-            <label>
+                <SelectTrigger className={selectClass} aria-label="Frequency">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="DAILY">Daily</SelectItem>
+                  <SelectItem value="WEEKLY">Weekly</SelectItem>
+                  <SelectItem value="MONTHLY">Monthly</SelectItem>
+                </SelectContent>
+              </Select>
+            </Label>
+            <Label className="flex flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
               Every
-              <input
-                type="number"
-                min={1}
-                max={99}
-                value={r.interval}
-                onChange={(e) => set("recurrence", { ...r, interval: Math.max(1, Number(e.target.value) || 1) })}
-              />
-              {r.freq === "DAILY" && "day(s)"}
-              {r.freq === "WEEKLY" && "week(s)"}
-              {r.freq === "MONTHLY" && "month(s)"}
-            </label>
+              <div className="flex items-center gap-1.5 text-sm">
+                <Input
+                  type="number"
+                  min={1}
+                  max={99}
+                  className="w-20"
+                  value={r.interval}
+                  onChange={(e) => set("recurrence", { ...r, interval: Math.max(1, Number(e.target.value) || 1) })}
+                />
+                {r.freq === "DAILY" && "day(s)"}
+                {r.freq === "WEEKLY" && "week(s)"}
+                {r.freq === "MONTHLY" && "month(s)"}
+              </div>
+            </Label>
             {r.freq === "WEEKLY" && (
-              <div className="weekday-picker">
+              <div className="flex items-center gap-1">
                 {weekdays.map((d) => (
-                  <label key={d} className="weekday">
+                  <Label key={d} className="flex flex-row items-center gap-1 text-[11px] text-muted-foreground">
                     <input
                       type="checkbox"
+                      className="accent-primary"
                       checked={r.byDay.includes(d)}
                       onChange={(e) =>
                         set("recurrence", {
@@ -323,21 +350,24 @@ function PlanningFields({
                       }
                     />
                     {d}
-                  </label>
+                  </Label>
                 ))}
               </div>
             )}
-            <label>
+            <Label className="flex flex-col items-start gap-1.5 text-xs font-medium text-muted-foreground">
               Ends after
-              <input
-                type="number"
-                min={0}
-                placeholder="∞"
-                value={r.count ?? ""}
-                onChange={(e) => set("recurrence", { ...r, count: e.target.value ? Number(e.target.value) : null })}
-              />
-              occurrence(s)
-            </label>
+              <div className="flex items-center gap-1.5 text-sm">
+                <Input
+                  type="number"
+                  min={0}
+                  placeholder="∞"
+                  className="w-20"
+                  value={r.count ?? ""}
+                  onChange={(e) => set("recurrence", { ...r, count: e.target.value ? Number(e.target.value) : null })}
+                />
+                occurrence(s)
+              </div>
+            </Label>
           </div>
         )}
         {r.enabled && (

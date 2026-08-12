@@ -21,7 +21,7 @@ export function UpcomingPage() {
   return (
     <>
       <PageHeader title="Upcoming" />
-      <p className="page-sub">
+      <p className="mb-4 text-sm text-muted-foreground">
         Open work scheduled or due after today in <code>{tz}</code>.
       </p>
       {error ? <ErrorState error={error} /> : null}

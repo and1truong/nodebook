@@ -3,7 +3,9 @@ import { useEffect, useRef, useState } from "react";
 import { api, formatInstant } from "../api";
 import type { AttachmentDto } from "../../shared/contracts/issues";
 import { isPreviewContentType } from "../../shared/limits";
+import { Button } from "./ui/button";
 import { Loading, ErrorState, EmptyState } from "./ui";
+import { cn } from "@/lib/utils";
 
 export function AttachmentUploader({
   url,
@@ -48,7 +50,10 @@ export function AttachmentUploader({
 
   return (
     <div
-      className={`uploader ${dragOver ? "dragover" : ""}`}
+      className={cn(
+        "uploader mb-2 flex cursor-pointer flex-col items-center gap-1 rounded-lg border-[1.5px] border-dashed border-border p-3.5 text-center text-sm text-muted-foreground transition-colors hover:border-primary",
+        dragOver && "dragover border-primary text-primary",
+      )}
       onClick={() => inputRef.current?.click()}
       onDragOver={(e) => {
         e.preventDefault();
@@ -92,14 +97,19 @@ export function AttachmentList({ attachments, onDeleted }: { attachments: Attach
     }
   };
   return (
-    <ul className="attachment-list">
+    <ul className="flex flex-col">
       {error && <li className="error-inline">{error}</li>}
       {attachments.map((a) => (
-        <li key={a.id} className="attachment-item">
+        <li key={a.id} className="attachment-item flex items-center justify-between gap-2 border-b border-border py-1.5 last:border-b-0">
           <AttachmentPreview attachment={a} />
-          <button className="linklike danger" onClick={() => void remove(a.id)}>
+          <Button
+            variant="link"
+            size="sm"
+            className="h-auto px-0 text-xs text-destructive"
+            onClick={() => void remove(a.id)}
+          >
             delete
-          </button>
+          </Button>
         </li>
       ))}
     </ul>
@@ -109,8 +119,8 @@ export function AttachmentList({ attachments, onDeleted }: { attachments: Attach
 export function AttachmentPreview({ attachment }: { attachment: AttachmentDto }) {
   if (attachment.content_type === "application/pdf") {
     return (
-      <span className="attachment-link">
-        <a href={attachment.url} target="_blank" rel="noreferrer">
+      <span className="attachment-link flex items-center gap-2">
+        <a href={attachment.url} target="_blank" rel="noreferrer" className="hover:underline">
           📄 {attachment.filename} · {formatInstant(attachment.created_at)}
         </a>
       </span>
@@ -118,17 +128,22 @@ export function AttachmentPreview({ attachment }: { attachment: AttachmentDto })
   }
   if (attachment.content_type.startsWith("image/") && isPreviewContentType(attachment.content_type)) {
     return (
-      <span className="attachment-link">
-        <a href={attachment.url} target="_blank" rel="noreferrer">
-          <img src={attachment.url} alt={attachment.filename} className="attachment-thumb" loading="lazy" />
+      <span className="attachment-link flex items-center gap-2">
+        <a href={attachment.url} target="_blank" rel="noreferrer" className="hover:no-underline">
+          <img
+            src={attachment.url}
+            alt={attachment.filename}
+            className="attachment-thumb max-h-14 max-w-[90px] rounded border border-border"
+            loading="lazy"
+          />
         </a>
-        <span className="attachment-name">{attachment.filename}</span>
+        <span className="attachment-name text-xs text-muted-foreground">{attachment.filename}</span>
       </span>
     );
   }
   return (
-    <span className="attachment-link">
-      <a href={attachment.url} download>
+    <span className="attachment-link flex items-center gap-2">
+      <a href={attachment.url} download className="hover:underline">
         ⬇ {attachment.filename} · {(attachment.size / 1024).toFixed(1)} KB
       </a>
     </span>
@@ -150,7 +165,7 @@ export function AttachmentSection({ ownerType, ownerId, uploadUrl }: { ownerType
   }, [ownerType, ownerId, reloadKey]);
 
   return (
-    <div className="attachment-section">
+    <div>
       <AttachmentUploader url={uploadUrl} onUploaded={() => setReloadKey((k) => k + 1)} />
       {error ? <ErrorState error={error} /> : null}
       {!error && !attachments && <Loading label="Loading attachments…" />}

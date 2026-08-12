@@ -1,6 +1,6 @@
 /** Tiny shared path router: module-level state + subscribers so every Link
  * and page observes the same navigation (history API + popstate). */
-import { useCallback, useEffect, useState } from "react";
+import { forwardRef, useCallback, useEffect, useState } from "react";
 
 export interface RouterState {
   path: string;
@@ -57,24 +57,19 @@ export function matchPath(pattern: string, path: string): Record<string, string>
   return params;
 }
 
-export function Link({
-  to,
-  className,
-  children,
-  title,
-  onClick,
-}: {
+export const Link = forwardRef<HTMLAnchorElement, {
   to: string;
   className?: string;
   children: React.ReactNode;
   title?: string;
   onClick?: () => void;
-}) {
+}>(function Link({ to, className, children, title, onClick }, ref) {
   return (
     <a
       href={to}
       className={className}
       title={title}
+      ref={ref}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
         e.preventDefault();
@@ -85,4 +80,4 @@ export function Link({
       {children}
     </a>
   );
-}
+});
