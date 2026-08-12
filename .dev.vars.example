@@ -1,0 +1,14 @@
+# Copy to .dev.vars for local development (wrangler dev).
+# In production, configure these through the Cloudflare dashboard / `wrangler secret put`
+# and DO NOT set AUTH_DEV_EMAIL.
+
+# Identity that local development requests are attributed to.
+AUTH_DEV_EMAIL=owner@nodebook.local
+
+# Cloudflare Access configuration (leave empty for local development).
+# ACCESS_TEAM=example.cloudflareaccess.com
+# ACCESS_AUD=<your-access-application-audience-tag>
+
+# The single owner of the workspace. Access assertions are checked against this address.
+# OWNER_EMAIL=you@example.com
+# OWNER_TIMEZONE=America/Los_Angeles

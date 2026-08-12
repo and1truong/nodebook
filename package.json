@@ -1,0 +1,50 @@
+{
+  "name": "nodebook",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Issue-native wiki, planning, reminders, attachments, and MCP workspace on Cloudflare Workers",
+  "scripts": {
+    "dev:web": "vite",
+    "dev:worker": "wrangler dev --local",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:integration": "vitest run --config vitest.integration.config.ts",
+    "test:e2e": "playwright test",
+    "db:migrate:local": "wrangler d1 migrations apply nodebook --local",
+    "db:migrate:remote": "wrangler d1 migrations apply nodebook --remote",
+    "build": "vite build",
+    "deploy": "npm run build && wrangler deploy",
+    "deploy:dry-run": "npm run build && wrangler deploy --dry-run"
+  },
+  "dependencies": {
+    "dompurify": "^3.2.3",
+    "hono": "^4.6.14",
+    "marked": "^12.0.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.5.36",
+    "@cloudflare/workers-types": "^4.20250124.3",
+    "@playwright/test": "^1.49.1",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.18.0",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.21.0",
+    "vite": "^5.4.11",
+    "vitest": "^2.1.8",
+    "wrangler": "^3.105.1"
+  },
+  "allowScripts": {
+    "esbuild@0.17.19": true,
+    "esbuild@0.21.5": true,
+    "workerd@1.20241230.0": true,
+    "workerd@1.20250718.0": true,
+    "sharp@0.33.5": true
+  }
+}

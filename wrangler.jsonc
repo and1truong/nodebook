@@ -1,0 +1,66 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "nodebook",
+  "main": "src/worker.ts",
+  "compatibility_date": "2025-02-01",
+  // No nodejs_compat: the entire application uses Web Platform APIs only.
+  "assets": {
+    "directory": "dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application"
+  },
+  "vars": {
+    // The single human owner of the workspace.
+    "OWNER_EMAIL": "owner@example.com",
+    "OWNER_TIMEZONE": "UTC",
+    // Cloudflare Access. When both ACCESS_TEAM and ACCESS_AUD are set, every
+    // web/API request must present a valid Access JWT whose email matches
+    // OWNER_EMAIL. Otherwise (and only when AUTH_DEV_EMAIL is set) the
+    // development fallback identity is used. Production must set ACCESS_*.
+    "ACCESS_TEAM": "",
+    "ACCESS_AUD": "",
+    "AUTH_DEV_EMAIL": "owner@nodebook.local",
+    // Upload limits in bytes: browser uploads vs. MCP base64 uploads.
+    "MAX_UPLOAD_BYTES": "26214400",
+    "MCP_MAX_UPLOAD_BYTES": "5242880",
+    // Allowed CORS origins for the MCP endpoint (comma separated). Empty = *.
+    "MCP_CORS_ORIGINS": ""
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "nodebook",
+      "database_id": "local",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "FILES",
+      "bucket_name": "nodebook-files"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "MCP_SESSION",
+        "class_name": "McpSession"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["McpSession"]
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *",
+      "0 3 * * *"
+    ]
+  },
+  "observability": {
+    "enabled": true
+  }
+}
