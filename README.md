@@ -15,7 +15,7 @@ NodeBook is a single-owner workspace where every issue is a first-class node in 
 - **Planning** — Inbox / Today / Upcoming / Overdue views in the owner's timezone; recurring tasks (RFC 5545 rules) record occurrences and advance planning dates instead of closing.
 - **Reminders & notifications** — absolute, before-due, and recurring reminders delivered to an in-app notification inbox by a one-minute Cron Trigger, with idempotent delivery and expiring claim locks.
 - **Attachments** — private R2 blobs with checksum deduplication, inline previews or forced downloads, range support, soft deletion, and daily garbage collection.
-- **Theming** — light, dark, and system themes (Tailwind CSS v4 + CSS-variable tokens on shadcn/ui components) with a topbar switcher, localStorage persistence, no flash-of-wrong-theme on load, and live following of the OS preference in system mode.
+- **Theming** — light, dark, and system themes (Tailwind CSS v4 + CSS-variable tokens on shadcn/ui components) with a topbar switcher, localStorage persistence, no flash-of-wrong-theme on load, and live following of the OS preference in system mode. The palette is derived from TabTerm's warm parchment/brown/gold theme (light `#f5f0e8`/`#fffcf6`/`#8b6f00`, dark `#1a1200`/`#251a00`/`#ffd000`).
 - **MCP** — a Streamable HTTP MCP server on `/mcp` exposing 18 scoped read/write tools that share the exact same services, validation, and audit trail as the web UI.
 
 ## Architecture

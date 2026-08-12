@@ -383,6 +383,20 @@ test.describe.serial("MVP acceptance", () => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     );
     expect(overflow).toBeLessThanOrEqual(1);
+
+    // The sidebar keeps the same warm hierarchy in the dark theme.
+    await page.evaluate(() => localStorage.setItem("nodebook-theme", "dark"));
+    await page.reload();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    await expect(aside).toBeVisible();
+    await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
+    await expect(aside.getByText("due 2099-01-01")).toBeVisible();
+    const darkTokens = await page.evaluate(() => {
+      const s = getComputedStyle(document.documentElement);
+      return { bg: s.getPropertyValue("--background").trim(), card: s.getPropertyValue("--card").trim() };
+    });
+    expect(darkTokens).toEqual({ bg: "#1a1200", card: "#251a00" });
+    await page.evaluate(() => localStorage.removeItem("nodebook-theme"));
   });
 
   test("search finds the issue and its comment", async ({ page }) => {

@@ -31,6 +31,7 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-recess: var(--recess);
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-danger: var(--danger);
@@ -58,113 +59,123 @@
   --color-sidebar-ring: var(--sidebar-ring);
 }
 
+/* Warm parchment/brown/gold palette derived from TabTerm's client theme
+   (read-only reference: ~/dirs/tabterm/src/client/index.css). Light: #f5f0e8
+   background, #fffcf6 panels, #8b6f00 gold accent. Dark: #1a1200 background,
+   #251a00 panels, #ffd000 gold accent. NodeBook retains its own light/dark/
+   system switching, persistence key, and pre-paint bootstrap. */
+
 /* Light theme (default). */
 :root {
   color-scheme: light;
   --radius: 0.5rem;
-  --background: #ffffff;
-  --foreground: #1f2328;
-  --card: #ffffff;
-  --card-foreground: #1f2328;
-  --popover: #ffffff;
-  --popover-foreground: #1f2328;
-  --primary: #2f81f7;
-  --primary-foreground: #ffffff;
-  --secondary: #f6f8fa;
-  --secondary-foreground: #1f2328;
-  --muted: #f6f8fa;
-  --muted-foreground: #59636e;
-  --accent: #ddf4ff;
-  --accent-foreground: #0a4d91;
-  --destructive: #cf222e;
-  --destructive-foreground: #ffffff;
-  --border: #d1d9e0;
-  --input: #d1d9e0;
-  --ring: #2f81f7;
-  --chart-1: #2f81f7;
-  --chart-2: #1a7f37;
-  --chart-3: #9a6700;
-  --chart-4: #8250df;
-  --chart-5: #cf222e;
-  --sidebar: #f6f8fa;
-  --sidebar-foreground: #1f2328;
-  --sidebar-primary: #2f81f7;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #eaeef2;
-  --sidebar-accent-foreground: #1f2328;
-  --sidebar-border: #d1d9e0;
-  --sidebar-ring: #2f81f7;
+  --background: #f5f0e8;
+  --foreground: #1a1200;
+  --card: #fffcf6;
+  --card-foreground: #1a1200;
+  --popover: #fffcf6;
+  --popover-foreground: #1a1200;
+  --primary: #8b6f00;
+  --primary-foreground: #fffcf6;
+  --secondary: #ede6d6;
+  --secondary-foreground: #1a1200;
+  --muted: #ede6d6;
+  --muted-foreground: #6b5e47;
+  --accent: #ede6d6;
+  --accent-foreground: #1a1200;
+  --destructive: #dc2626;
+  --destructive-foreground: #fffcf6;
+  --border: #e5ddd0;
+  --input: #c9bfae;
+  --ring: #8b6f00;
+  --recess: #ece5d8;
+  --chart-1: #8b6f00;
+  --chart-2: #166534;
+  --chart-3: #c2410c;
+  --chart-4: #6d28d9;
+  --chart-5: #dc2626;
+  --sidebar: #fffcf6;
+  --sidebar-foreground: #1a1200;
+  --sidebar-primary: #8b6f00;
+  --sidebar-primary-foreground: #fffcf6;
+  --sidebar-accent: #ede6d6;
+  --sidebar-accent-foreground: #1a1200;
+  --sidebar-border: #e5ddd0;
+  --sidebar-ring: #8b6f00;
   /* Semantic status colors. */
-  --success: #1a7f37;
-  --warning: #9a6700;
-  --danger: #cf222e;
-  /* Issue-type palette. */
-  --type-wiki: #0969da;
-  --type-decision: #0969da;
-  --type-finding: #0969da;
-  --type-learning: #0969da;
-  --type-note: #0969da;
-  --type-story: #0969da;
-  --type-epic: #8250df;
-  --type-bug: #9a6700;
-  --type-incident: #cf222e;
-  /* Label chips. */
-  --chip-bg: #ddf4ff;
-  --chip-fg: #0969da;
+  --success: #166534;
+  --warning: #c2410c;
+  --danger: #dc2626;
+  /* Issue-type palette: gold for knowledge types, purple for epics, orange
+     for bugs, red for incidents; task stays muted via text-muted-foreground. */
+  --type-wiki: #8b6f00;
+  --type-decision: #8b6f00;
+  --type-finding: #8b6f00;
+  --type-learning: #8b6f00;
+  --type-note: #8b6f00;
+  --type-story: #8b6f00;
+  --type-epic: #6d28d9;
+  --type-bug: #c2410c;
+  --type-incident: #dc2626;
+  /* Label chips (TabTerm brand colours). */
+  --chip-bg: #fff1b3;
+  --chip-fg: #5c4a00;
 }
 
-/* Dark theme (matches the original NodeBook palette). */
+/* Dark theme (TabTerm-derived). */
 .dark {
   color-scheme: dark;
-  --background: #0f1216;
-  --foreground: #dbe3ea;
-  --card: #171c22;
-  --card-foreground: #dbe3ea;
-  --popover: #171c22;
-  --popover-foreground: #dbe3ea;
-  --primary: #2f81f7;
-  --primary-foreground: #ffffff;
-  --secondary: #171c22;
-  --secondary-foreground: #dbe3ea;
-  --muted: #171c22;
-  --muted-foreground: #8b98a5;
-  --accent: #1d242c;
-  --accent-foreground: #dbe3ea;
-  --destructive: #e5534b;
-  --destructive-foreground: #ffffff;
-  --border: #2a333d;
-  --input: #3d4854;
-  --ring: #4da3ff;
-  --chart-1: #4da3ff;
-  --chart-2: #3fb96f;
-  --chart-3: #d29922;
-  --chart-4: #c678dd;
-  --chart-5: #e5534b;
-  --sidebar: #0f1216;
-  --sidebar-foreground: #dbe3ea;
-  --sidebar-primary: #2f81f7;
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #171c22;
-  --sidebar-accent-foreground: #dbe3ea;
-  --sidebar-border: #2a333d;
-  --sidebar-ring: #4da3ff;
+  --background: #1a1200;
+  --foreground: #f5f0e8;
+  --card: #251a00;
+  --card-foreground: #f5f0e8;
+  --popover: #251a00;
+  --popover-foreground: #f5f0e8;
+  --primary: #ffd000;
+  --primary-foreground: #251a00;
+  --secondary: #2e2208;
+  --secondary-foreground: #f5f0e8;
+  --muted: #2e2208;
+  --muted-foreground: #b8ac93;
+  --accent: #2e2208;
+  --accent-foreground: #f5f0e8;
+  --destructive: #f87171;
+  --destructive-foreground: #fffcf6;
+  --border: #3a2c0a;
+  --input: #5c4814;
+  --ring: #ffd000;
+  --recess: #120c00;
+  --chart-1: #ffd000;
+  --chart-2: #4ade80;
+  --chart-3: #fb923c;
+  --chart-4: #c9a4ff;
+  --chart-5: #f87171;
+  --sidebar: #251a00;
+  --sidebar-foreground: #f5f0e8;
+  --sidebar-primary: #ffd000;
+  --sidebar-primary-foreground: #251a00;
+  --sidebar-accent: #2e2208;
+  --sidebar-accent-foreground: #f5f0e8;
+  --sidebar-border: #3a2c0a;
+  --sidebar-ring: #ffd000;
   /* Semantic status colors. */
-  --success: #3fb96f;
-  --warning: #d29922;
-  --danger: #e5534b;
-  /* Issue-type palette. */
-  --type-wiki: #4da3ff;
-  --type-decision: #4da3ff;
-  --type-finding: #4da3ff;
-  --type-learning: #4da3ff;
-  --type-note: #4da3ff;
-  --type-story: #4da3ff;
-  --type-epic: #c678dd;
-  --type-bug: #d29922;
-  --type-incident: #e5534b;
-  /* Label chips. */
-  --chip-bg: #243649;
-  --chip-fg: #9ecbff;
+  --success: #4ade80;
+  --warning: #fb923c;
+  --danger: #f87171;
+  /* Issue-type palette: gold for knowledge types, purple for epics, orange
+     for bugs, red for incidents; task stays muted via text-muted-foreground. */
+  --type-wiki: #ffd000;
+  --type-decision: #ffd000;
+  --type-finding: #ffd000;
+  --type-learning: #ffd000;
+  --type-note: #ffd000;
+  --type-story: #ffd000;
+  --type-epic: #c9a4ff;
+  --type-bug: #fb923c;
+  --type-incident: #f87171;
+  /* Label chips (TabTerm brand colours). */
+  --chip-bg: #3a2c0a;
+  --chip-fg: #ffd000;
 }
 
 @layer base {
@@ -271,7 +282,7 @@
   color: var(--muted-foreground);
 }
 .markdown pre {
-  background: var(--muted);
+  background: var(--recess);
   border: 1px solid var(--border);
   border-radius: 6px;
   padding: 10px 12px;

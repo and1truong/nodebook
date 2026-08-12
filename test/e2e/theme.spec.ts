@@ -40,4 +40,56 @@ test.describe.serial("Theme switching", () => {
     await page.emulateMedia({ colorScheme: "light" });
     await expect(page.locator("html")).not.toHaveClass(/dark/);
   });
+
+  test("palette tokens map to the TabTerm-derived values in both themes", async ({ page }) => {
+    await page.goto("/inbox");
+    const token = (name: string) =>
+      page.evaluate(
+        (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim(),
+        name,
+      );
+
+    // Light: warm parchment surfaces, brown text, gold accent.
+    expect(await token("--background")).toBe("#f5f0e8");
+    expect(await token("--card")).toBe("#fffcf6");
+    expect(await token("--foreground")).toBe("#1a1200");
+    expect(await token("--muted-foreground")).toBe("#6b5e47");
+    expect(await token("--primary")).toBe("#8b6f00");
+    expect(await token("--border")).toBe("#e5ddd0");
+    expect(await token("--input")).toBe("#c9bfae");
+    expect(await token("--ring")).toBe("#8b6f00");
+    expect(await token("--recess")).toBe("#ece5d8");
+    expect(await token("--success")).toBe("#166534");
+    expect(await token("--warning")).toBe("#c2410c");
+    expect(await token("--danger")).toBe("#dc2626");
+    expect(await token("--type-epic")).toBe("#6d28d9");
+    expect(await token("--type-bug")).toBe("#c2410c");
+    expect(await token("--type-incident")).toBe("#dc2626");
+    expect(await token("--chip-bg")).toBe("#fff1b3");
+    // The old blue palette must not come back.
+    expect(await token("--primary")).not.toBe("#2f81f7");
+    expect(await token("--ring")).not.toBe("#4da3ff");
+
+    // Dark: brown background, panel-toned cards, gold accent.
+    await page.evaluate(() => localStorage.setItem("nodebook-theme", "dark"));
+    await page.reload();
+    await expect(page.locator("html")).toHaveClass(/dark/);
+    expect(await token("--background")).toBe("#1a1200");
+    expect(await token("--card")).toBe("#251a00");
+    expect(await token("--foreground")).toBe("#f5f0e8");
+    expect(await token("--muted-foreground")).toBe("#b8ac93");
+    expect(await token("--primary")).toBe("#ffd000");
+    expect(await token("--border")).toBe("#3a2c0a");
+    expect(await token("--input")).toBe("#5c4814");
+    expect(await token("--ring")).toBe("#ffd000");
+    expect(await token("--recess")).toBe("#120c00");
+    expect(await token("--success")).toBe("#4ade80");
+    expect(await token("--warning")).toBe("#fb923c");
+    expect(await token("--danger")).toBe("#f87171");
+    expect(await token("--type-epic")).toBe("#c9a4ff");
+    expect(await token("--type-bug")).toBe("#fb923c");
+    expect(await token("--type-incident")).toBe("#f87171");
+    expect(await token("--chip-bg")).toBe("#3a2c0a");
+    await page.evaluate(() => localStorage.removeItem("nodebook-theme"));
+  });
 });
