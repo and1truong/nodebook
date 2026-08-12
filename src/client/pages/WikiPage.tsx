@@ -42,24 +42,14 @@ export function WikiPage({ selectedRef }: { selectedRef?: string }) {
 
   return (
     <div className="wiki-workspace flex flex-col gap-5">
-      <header className="flex flex-wrap items-end justify-between gap-3 border-b border-border pb-4">
-        <div>
-          <div className="mb-1 flex items-center gap-2">
-            <BookOpen className="size-5 text-primary" aria-hidden="true" />
-            <h1 className="text-2xl font-semibold tracking-tight">Wiki</h1>
-          </div>
-          <p className="max-w-2xl text-sm text-muted-foreground">
-            Find shared knowledge by topic, then follow the pages nested beneath it.
-          </p>
-        </div>
-        <Link to="/wiki/new" className={buttonVariants({ size: "sm" })}>
-          <FilePlus2 aria-hidden="true" />
-          New page
-        </Link>
-      </header>
-
-      <div className="grid items-start gap-5 min-[1100px]:grid-cols-[minmax(0,1fr)_290px]">
-        <aside className="overflow-hidden rounded-xl border border-border bg-card shadow-sm min-[1100px]:sticky min-[1100px]:top-[72px] min-[1100px]:order-2" aria-label="Wiki pages">
+      <div
+        className={cn(
+          "grid items-start gap-5",
+          !selectedRef && "min-[1100px]:grid-cols-[minmax(0,1fr)_290px]",
+        )}
+      >
+        {!selectedRef && (
+          <aside className="overflow-hidden rounded-xl border border-border bg-card shadow-sm min-[1100px]:sticky min-[1100px]:top-[72px] min-[1100px]:order-2" aria-label="Wiki pages">
           <div className="flex items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2 font-semibold">
               <FolderTree className="size-4 text-primary" aria-hidden="true" />
@@ -106,7 +96,8 @@ export function WikiPage({ selectedRef }: { selectedRef?: string }) {
             <FilePlus2 className="size-3.5" aria-hidden="true" />
             Add a top-level page
           </Link>
-        </aside>
+          </aside>
+        )}
 
         <section className="min-w-0 min-[1100px]:order-1" aria-label="Wiki content">
           {selectedRef ? (
@@ -129,12 +120,13 @@ function WikiHome({ tree, pages }: { tree: WikiNodeDto[]; pages: IssueDto[] }) {
         <div className="mx-auto mb-4 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
           <BookOpen className="size-6" aria-hidden="true" />
         </div>
-        <h2 className="text-lg font-semibold">Start your knowledge base</h2>
+        <h1 className="text-lg font-semibold">Start your knowledge base</h1>
         <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
           Create a page for a project, process, or idea. Add child pages later to turn it into an easy-to-browse section.
         </p>
         <Link to="/wiki/new" className={cn(buttonVariants({ size: "sm" }), "mt-5")}>
-          Create the first page
+          <FilePlus2 aria-hidden="true" />
+          New page
         </Link>
       </section>
     );
@@ -145,11 +137,19 @@ function WikiHome({ tree, pages }: { tree: WikiNodeDto[]; pages: IssueDto[] }) {
   return (
     <div className="flex flex-col gap-6">
       <section className="rounded-xl border border-border bg-card p-5 shadow-sm">
-        <p className="text-xs font-semibold uppercase tracking-wider text-primary">Start here</p>
-        <h2 className="mt-1 text-xl font-semibold">Browse by topic</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Top-level pages are the main sections of your wiki. Open one to read it and explore its subpages.
-        </p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-primary">Start here</p>
+            <h1 className="mt-1 text-xl font-semibold">Browse by topic</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Top-level pages are the main sections of your wiki. Open one to read it and explore its subpages.
+            </p>
+          </div>
+          <Link to="/wiki/new" className={buttonVariants({ size: "sm" })}>
+            <FilePlus2 aria-hidden="true" />
+            New page
+          </Link>
+        </div>
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
           {tree.map((node) => (
             <Link
@@ -245,13 +245,25 @@ function WikiArticle({ issueRef, tree }: { issueRef: string; tree: WikiNodeDto[]
         )}
 
         <article className="rounded-xl border border-border bg-card px-6 py-7 shadow-sm sm:px-8">
-          <header className="border-b border-border pb-5">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <TypeBadge type={issue.type} />
-              <span className="text-xs text-muted-foreground">Page #{issue.number}</span>
+          <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
+            <div className="min-w-0 flex-1">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <TypeBadge type={issue.type} />
+                <span className="text-xs text-muted-foreground">Page #{issue.number}</span>
+              </div>
+              <h1 className="text-3xl font-semibold leading-tight tracking-tight">{issue.title}</h1>
+              <p className="mt-2 text-xs text-muted-foreground">Updated {relativeTime(issue.updated_at)}</p>
             </div>
-            <h2 className="text-3xl font-semibold leading-tight tracking-tight">{issue.title}</h2>
-            <p className="mt-2 text-xs text-muted-foreground">Updated {relativeTime(issue.updated_at)}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link to={`/issues/${issue.number}`} className={buttonVariants({ variant: "outline", size: "sm" })}>
+                <Settings2 aria-hidden="true" />
+                Edit &amp; manage
+              </Link>
+              <Link to="/wiki/new" className={buttonVariants({ size: "sm" })}>
+                <FilePlus2 aria-hidden="true" />
+                New page
+              </Link>
+            </div>
           </header>
           <div className="min-h-48 pt-5">
             {issue.body ? (
@@ -307,15 +319,6 @@ function WikiArticle({ issueRef, tree }: { issueRef: string; tree: WikiNodeDto[]
             </div>
           )}
         </dl>
-        <div className="mt-4 border-t border-border pt-4">
-          <Link to={`/issues/${issue.number}`} className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-full")}>
-            <Settings2 aria-hidden="true" />
-            Edit & manage
-          </Link>
-          <p className="mt-2 text-center text-[11px] leading-relaxed text-muted-foreground">
-            Comments, reminders, relationships, and history live in the issue view.
-          </p>
-        </div>
       </aside>
     </div>
   );

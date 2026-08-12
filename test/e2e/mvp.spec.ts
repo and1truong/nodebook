@@ -533,6 +533,7 @@ test.describe.serial("MVP acceptance", () => {
     await rootPage.click();
 
     await expect(page).toHaveURL(`/wiki/${issueNumber}`);
+    await expect(page.locator('aside[aria-label="Wiki pages"]')).toHaveCount(0);
     await expect(page.getByRole("heading", { name: "Set up the NodeBook workspace", exact: true })).toBeVisible();
     await expect(page.getByText("Bootstrap the wiki.")).toBeVisible();
     await expect(page.getByRole("link", { name: "Edit & manage" })).toHaveAttribute("href", `/issues/${issueNumber}`);
