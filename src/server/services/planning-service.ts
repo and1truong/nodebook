@@ -34,15 +34,13 @@ async function listAllOpenIssues(ctx: Ctx): Promise<IssueRecord[]> {
 }
 
 /**
- * Inbox: open items without start, due, or scheduled values.
+ * Inbox: open items without start, due, or scheduled values. By design this
+ * includes child issues (the plan defines Inbox by the absence of planning
+ * dates, not by tree position) and paginates through all open issues so the
+ * oldest items are never truncated.
  */
 export async function getInbox(ctx: Ctx): Promise<PlanningItemDto[]> {
-  const issues = await issueRepo.listIssues(ctx.env.DB, {
-    status: "open",
-    parent_id: undefined,
-    limit: 200,
-  });
-  const open = issues.filter((i) => i.status === "open");
+  const open = await listAllOpenIssues(ctx);
   const items = open.filter((i) => i.start_date === null && i.due_date === null && i.scheduled_date === null);
   const dtos = await toIssueDtos(ctx, items);
   return dtos.map((d) => ({ issue: d, matched: "", matched_kind: "due" as const }));

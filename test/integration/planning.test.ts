@@ -110,6 +110,44 @@ describe("recurring tasks", () => {
     expect(rows.results[0]!.occurred_on).toBeTruthy();
   });
 
+  it("advances a dateless recurring task into planning (scheduled_date)", async () => {
+    const issue = await createIssue({
+      title: "dateless daily",
+      type: "task",
+      recurrence_rule: "FREQ=DAILY;INTERVAL=1",
+      timezone: "UTC",
+    });
+    expect(issue.start_date).toBeNull();
+    expect(issue.due_date).toBeNull();
+    expect(issue.scheduled_date).toBeNull();
+
+    const res = await post(`/api/issues/${issue.number}/complete`, {});
+    const updated = res.body as { status: string; scheduled_date: string | null };
+    expect(updated.status).toBe("open");
+    expect(updated.scheduled_date).not.toBeNull(); // rolls forward into planning
+
+    // It now appears in Upcoming/Today on its cycle day rather than staying
+    // forever in Inbox.
+    const inbox = await api("/api/planning/inbox");
+    expect((inbox.body as { issue: { number: number } }[]).some((i) => i.issue.number === issue.number)).toBe(false);
+  });
+
+  it("keeps start_date aligned with the advanced due date (no start > due)", async () => {
+    // Complete long after the due date: start must not be set to "today".
+    const issue = await createIssue({
+      title: "late completion",
+      type: "task",
+      recurrence_rule: "FREQ=DAILY;INTERVAL=1",
+      start_date: "2020-01-01",
+      due_date: "2020-01-02",
+      timezone: "UTC",
+    });
+    const res = await post(`/api/issues/${issue.number}/complete`, {});
+    const updated = res.body as { start_date: string; due_date: string };
+    expect(updated.start_date).toBe(updated.due_date);
+    expect(updated.start_date).toBe("2020-01-03");
+  });
+
   it("closes non-recurring tasks on completion", async () => {
     const issue = await createIssue({ title: "one-off task" });
     const res = await post(`/api/issues/${issue.number}/complete`, {});

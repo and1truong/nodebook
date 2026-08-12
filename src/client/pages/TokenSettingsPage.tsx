@@ -138,8 +138,13 @@ export function TokenSettingsPage() {
                     <button
                       className="linklike danger"
                       onClick={async () => {
-                        await api.revokeToken(t.id).catch(() => undefined);
-                        load();
+                        setError(null);
+                        try {
+                          await api.revokeToken(t.id);
+                          load(); // only reflect success
+                        } catch (err) {
+                          setError(err);
+                        }
                       }}
                     >
                       revoke

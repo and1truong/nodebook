@@ -306,7 +306,9 @@ export const tools = [
       const issue = await graphService.getIssueByRefOrThrow(c, args.issue_id);
       const bytes = base64ToBytes(args.data);
       if (bytes.byteLength > mcpUploadLimitBytes(ctx.env)) {
-        throw new PayloadTooLargeError("File exceeds the 5 MB MCP upload limit");
+        throw new PayloadTooLargeError(
+          `File exceeds the ${Math.floor(mcpUploadLimitBytes(ctx.env) / (1024 * 1024))} MB MCP upload limit`,
+        );
       }
       return attachmentService.uploadAttachment(c, {
         ownerType: "issue",

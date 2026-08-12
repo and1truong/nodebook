@@ -183,6 +183,18 @@ describe("base64urlToString", () => {
 });
 
 describe("authenticateAccess fail-closed behavior", () => {
+  it("rejects requests when only one Access variable is configured", async () => {
+    const env = {
+      ACCESS_TEAM: TEAM,
+      ACCESS_AUD: "",
+      OWNER_EMAIL: "owner@example.com",
+      AUTH_DEV_EMAIL: "owner@example.com",
+    } as unknown as Parameters<typeof authenticateAccess>[0];
+    const request = new Request("https://nodebook.test/api/me");
+    // Partial Access config must not degrade into the dev identity.
+    await expect(authenticateAccess(env, request)).rejects.toThrow("Incomplete Cloudflare Access configuration");
+  });
+
   it("rejects every identity when Access is configured but OWNER_EMAIL is unset", async () => {
     const { pair, kid, fetchImpl } = await makeJwks();
     const team = uniqueTeam();

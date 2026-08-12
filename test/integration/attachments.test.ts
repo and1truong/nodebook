@@ -133,6 +133,37 @@ describe("attachments", () => {
     expect(objects.objects.length).toBe(0);
   });
 
+  it("repairs blobs re-uploaded after garbage collection (tombstone path)", async () => {
+    const issue = await createIssue({ title: "tombstone" });
+    const file = makeFile("rebirth.bin", "application/octet-stream", "identical bytes again");
+    const first = await upload(issue.number, file);
+    const id = (first.body as { id: string }).id;
+    const checksum = (first.body as { checksum: string }).checksum;
+
+    // Soft-delete, then GC with a clock past the grace period: blob is gone.
+    await api(`/api/attachments/${id}`, { method: "DELETE" });
+    const env = testEnv();
+    const ctx = systemCtx(env);
+    const gc = await runAttachmentGc(ctx, new Date(Date.now() + 25 * 60 * 60 * 1000));
+    expect(gc.deletedBlobs).toBe(1);
+    expect((await env.FILES.list({ prefix: "blobs/" })).objects.length).toBe(0);
+
+    // A new upload of identical content (same checksum) after GC: the blob is
+    // restored and the tombstone cleared; content serves normally.
+    const second = await upload(issue.number, file);
+    expect(second.status).toBe(201);
+    expect((second.body as { checksum: string }).checksum).toBe(checksum);
+    const objects = await env.FILES.list({ prefix: "blobs/" });
+    expect(objects.objects.length).toBe(1);
+
+    const content = await SELF.fetch(`https://nodebook.test/api/attachments/${(second.body as { id: string }).id}/content`);
+    expect(content.status).toBe(200);
+    expect(await content.text()).toBe("identical bytes again");
+
+    const tombstones = await env.DB.prepare("SELECT COUNT(*) AS n FROM gc_tombstones").first<{ n: number }>();
+    expect(Number(tombstones?.n ?? 0)).toBe(0);
+  });
+
   it("never deletes blobs still referenced by active attachments", async () => {
     const a = await createIssue({ title: "shared a" });
     const b = await createIssue({ title: "shared b" });

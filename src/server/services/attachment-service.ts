@@ -83,6 +83,20 @@ export async function uploadAttachment(ctx: Ctx, input: UploadInput): Promise<At
     uploadedBy: record.uploaded_by,
     now,
   });
+
+  // Close the GC race: if a garbage collector tombstoned and deleted this
+  // blob between our put and our row insert, restore the blob and clear the
+  // tombstone so the new row is never left dangling.
+  const tombstone = await ctx.env.DB.prepare("SELECT r2_key FROM gc_tombstones WHERE r2_key = ?")
+    .bind(r2Key)
+    .first();
+  if (tombstone) {
+    await ctx.env.FILES.put(r2Key, input.bytes, {
+      httpMetadata: { contentType: input.contentType },
+    });
+    await ctx.env.DB.prepare("DELETE FROM gc_tombstones WHERE r2_key = ?").bind(r2Key).run();
+  }
+
   await indexAttachment(ctx, record);
   await recordAudit(ctx, {
     action: "attachment.upload",
@@ -171,9 +185,11 @@ export async function softDeleteAttachment(ctx: Ctx, attachmentId: string): Prom
 }
 
 /**
- * Daily idempotent garbage collector: remove R2 blobs that no active
- * attachment row references and that have been soft-deleted past the grace
- * period. D1/R2 partial failures can never delete a referenced blob.
+ * Daily idempotent garbage collector. Soft-deleted rows past the grace period
+ * whose blob has no active references are tombstoned before the blob is
+ * deleted; uploads that land concurrently repair the blob via the tombstone
+ * (see uploadAttachment), so a referenced blob is never permanently lost to a
+ * D1/R2 partial ordering.
  */
 export async function runAttachmentGc(ctx: Ctx, now: Date = new Date()): Promise<{ scanned: number; deletedRows: number; deletedBlobs: number }> {
   const cutoff = new Date(now.getTime() - ATTACHMENT_GC_GRACE_MS).toISOString();
@@ -190,11 +206,22 @@ export async function runAttachmentGc(ctx: Ctx, now: Date = new Date()): Promise
   for (const [key, ids] of keysWithRows) {
     const active = await fileRepo.countActiveByR2Key(ctx.env.DB, key);
     if (active > 0) continue; // still referenced: keep blob and rows
+    // Tombstone first so a concurrent upload of identical content can detect
+    // the deletion and repair the blob.
+    await ctx.env.DB.prepare("INSERT OR IGNORE INTO gc_tombstones (r2_key, created_at) VALUES (?, ?)")
+      .bind(key, now.toISOString())
+      .run();
     await ctx.env.FILES.delete(key);
     deletedBlobs += 1;
     idsToDelete.push(...ids);
   }
   await fileRepo.deleteAttachmentRows(ctx.env.DB, idsToDelete);
+
+  // Tombstone housekeeping: drop entries older than twice the grace period
+  // whose rows are already gone (the blob is unreachable by design then).
+  const tombstoneCutoff = new Date(now.getTime() - ATTACHMENT_GC_GRACE_MS * 2).toISOString();
+  await ctx.env.DB.prepare("DELETE FROM gc_tombstones WHERE created_at < ?").bind(tombstoneCutoff).run();
+
   return { scanned: candidates.length, deletedRows: idsToDelete.length, deletedBlobs };
 }
 

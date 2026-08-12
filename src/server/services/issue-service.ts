@@ -365,8 +365,11 @@ async function advanceRecurringIssue(ctx: Ctx, issue: IssueRecord, rule: Recurre
   }
 
   const fields: issueRepo.IssueUpdateFields = { completed_at: now };
+  // Planning fields advance atomically to the next occurrence. start_date is
+  // aligned with the next cycle (never the completion instant) so start > due
+  // cannot be rendered even when completion runs late.
   if (issue.start_date) {
-    fields.start_date = civilDateString(new Date(now), tz);
+    fields.start_date = civilDateString(next, tz);
   }
   if (issue.due_date) {
     fields.due_date = civilDateString(next, tz);
@@ -375,7 +378,8 @@ async function advanceRecurringIssue(ctx: Ctx, issue: IssueRecord, rule: Recurre
     fields.scheduled_date = next.toISOString();
   }
   if (!issue.start_date && !issue.due_date && !issue.scheduled_date) {
-    // Recurring with no planning dates: leave dates alone.
+    // A dateless recurring task still rolls forward: the next occurrence is
+    // scheduled so the task surfaces in Today/Upcoming on its cycle day.
     fields.scheduled_date = next.toISOString();
   }
   await issueRepo.updateIssue(ctx.env.DB, issue.id, fields, now);

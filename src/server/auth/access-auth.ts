@@ -32,7 +32,13 @@ const JWKS_TTL_MS = 60 * 60 * 1000;
 const jwksCache = new Map<string, { keys: Jwk[]; fetchedAt: number }>();
 
 export async function authenticateAccess(env: Env, request: Request, fetchImpl?: typeof fetch): Promise<AccessIdentity> {
-  if (env.ACCESS_TEAM && env.ACCESS_AUD) {
+  if (env.ACCESS_TEAM || env.ACCESS_AUD) {
+    // Fail closed on partial configuration: setting only one of the two
+    // Access variables must never degrade into the development identity or a
+    // skipped owner check.
+    if (!env.ACCESS_TEAM || !env.ACCESS_AUD) {
+      throw new AuthError("Incomplete Cloudflare Access configuration (ACCESS_TEAM and ACCESS_AUD must both be set)");
+    }
     const header = request.headers.get("Cf-Access-Jwt-Assertion");
     if (!header) throw new AuthError("Missing Cloudflare Access JWT");
     const payload = await verifyAccessJwt(header, { team: env.ACCESS_TEAM, aud: env.ACCESS_AUD, fetchImpl });

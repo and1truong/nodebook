@@ -17,8 +17,12 @@ issuesRoutes.get("/", async (c) => {
   const status = c.req.query("status");
   const label = c.req.query("label");
   const query = c.req.query("q");
-  const limit = Math.min(Number(c.req.query("limit") ?? 100), 200);
-  const offset = Math.max(Number(c.req.query("offset") ?? 0), 0);
+  const limitParam = Number(c.req.query("limit") ?? 100);
+  const offsetParam = Number(c.req.query("offset") ?? 0);
+  // Clamp instead of trusting raw query params (non-numeric input → defaults,
+  // never NaN bind values).
+  const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 100;
+  const offset = Number.isFinite(offsetParam) ? Math.max(offsetParam, 0) : 0;
   const result = await issueService.listIssues(ctx(c), {
     type,
     status,
@@ -54,12 +58,6 @@ issuesRoutes.post("/", async (c) => {
 issuesRoutes.get("/me", async (c) => {
   const actor = c.get("actor");
   return c.json({ email: actor.id, actor_type: actor.type });
-});
-
-issuesRoutes.get("/search", async (c) => {
-  // Kept for API symmetry; the primary search endpoint is /api/search.
-  const q = c.req.query("q") ?? "";
-  return c.json({ q });
 });
 
 issuesRoutes.get("/:ref", async (c) => {

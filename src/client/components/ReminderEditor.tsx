@@ -47,8 +47,13 @@ export function ReminderEditor({ issueRef, issue }: { issueRef: string; issue: I
   };
 
   const update = async (id: string, input: Record<string, unknown>) => {
-    await api.updateReminder(id, input).catch(() => undefined);
-    load();
+    setError(null);
+    try {
+      await api.updateReminder(id, input);
+      load(); // only reflect success
+    } catch (err) {
+      setError(err);
+    }
   };
 
   return (

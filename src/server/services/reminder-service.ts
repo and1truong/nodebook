@@ -312,6 +312,12 @@ export async function recalculateBeforeDueRemindersForIssue(
   }
 }
 
+function toIsoOrThrow(value: string, field: string): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) throw new ValidationError(`${field} must be an ISO 8601 instant`);
+  return d.toISOString();
+}
+
 function beforeDueTrigger(dueDate: string, offsetMinutes: number, timezone: string): string {
   const due = parseDueDateEnd(dueDate, timezone);
   return new Date(due.getTime() - offsetMinutes * 60_000).toISOString();

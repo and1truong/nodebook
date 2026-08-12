@@ -95,6 +95,12 @@ export class McpSession {
         if (controllerRef) {
           this.streams = this.streams.filter((c) => c !== controllerRef);
         }
+        // Stop the keepalive timer once the last SSE stream closes so an
+        // abandoned session does not keep firing every 25 s.
+        if (this.streams.length === 0 && this.keepalive) {
+          clearInterval(this.keepalive);
+          this.keepalive = null;
+        }
       },
     });
     return new Response(stream, {

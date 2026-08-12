@@ -29,6 +29,14 @@ The MVP covers PRD features M1–M11 for a single-owner workspace. This document
 - **MCP transport** — Streamable HTTP only (no WebSocket/stdio transport); SSE is offered when a client requests it exclusively.
 - **Attachments** — 25 MB browser / 5 MB MCP caps; no client-side encryption, no virus scanning, no multi-file selection in the picker (drag/drop of one file at a time).
 
+## Reviewer-driven decisions and documented behaviors
+
+- **Inbox includes child issues by design.** The PRD defines Inbox as "open items without start, due, or scheduled values" — a capture list, not a root-only view. Tree position is not a filter; subtasks of projects appear until they are planned. If a roots-only Inbox is ever desired it is a one-line filter change in `planning-service.getInbox`.
+- **Dateless recurring tasks roll forward into planning.** Completing a recurring task with no start/due/scheduled dates sets `scheduled_date` to the next occurrence, so the task surfaces in Today/Upcoming on its cycle day instead of staying in Inbox forever. `start_date` advances to the next occurrence too (never the completion instant), so `start > due` cannot render even under very late completion.
+- **Attachment GC is tombstone-based.** `gc_tombstones` (migration 0007) is written before a blob delete; a concurrent upload of identical content that lands its row around the deletion detects the tombstone, re-puts the blob, and clears it. The documented claim — a referenced blob is never permanently lost to D1/R2 partial ordering — holds; tombstone rows are cleaned up after 2× the grace period.
+- **Known performance characteristics (MVP-acceptable, revisit before multi-user):** the wiki tree endpoint (`buildWikiNode`) and `getChildrenDtos` issue one `getIssueById` per child, and `searchIssues` runs one label query per result row. All are bounded by workspace size and were consciously traded against batch-query complexity; the wiki tree will degrade first as the graph grows.
+- **CI is enforced.** `.github/workflows/ci.yml` runs `npm ci` (frozen lockfile), lint, typecheck, unit tests, build, workerd integration tests, Playwright E2E, and `wrangler deploy --dry-run` on every PR and push to `main`. The review-time "no CI" gap is closed.
+
 ## PRD success criteria → checks
 
 | Criterion | Check |

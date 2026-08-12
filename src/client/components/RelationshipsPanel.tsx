@@ -42,8 +42,13 @@ export function RelationshipsPanel({ issueRef, issueId }: { issueRef: string; is
   };
 
   const remove = async (id: string) => {
-    await api.removeRelationship(id).catch(() => undefined);
-    load();
+    setError(null);
+    try {
+      await api.removeRelationship(id);
+      load(); // only reflect success
+    } catch (err) {
+      setError(err);
+    }
   };
 
   return (

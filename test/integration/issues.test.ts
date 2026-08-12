@@ -95,6 +95,13 @@ describe("issue lifecycle", () => {
     expect(missing.status).toBe(404);
   });
 
+  it("clamps non-numeric list params instead of 500ing", async () => {
+    const bad = await api("/api/issues?limit=abc&offset=xyz");
+    expect(bad.status).toBe(200);
+    const res = bad.body as { issues: unknown[] };
+    expect(Array.isArray(res.issues)).toBe(true);
+  });
+
   it("filters the issue list by type/status/label", async () => {
     await createIssue({ title: "bug one", type: "bug", labels: ["tagged"] });
     await createIssue({ title: "task one", type: "task" });

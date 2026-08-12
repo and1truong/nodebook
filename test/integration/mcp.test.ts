@@ -175,6 +175,18 @@ describe("MCP tools", () => {
     expect(create.after?.labels).toEqual(["parity"]);
   });
 
+  it("rejects invalid reminder dates as invalid params (-32602)", async () => {
+    const issue = await createIssue({ title: "bad date reminder" });
+    const { token, sessionId } = await setupToken(["write:reminder"]);
+    const res = await callTool(token, sessionId, "create_reminder", {
+      issue_id: issue.id,
+      kind: "absolute",
+      trigger_at: "not-a-date",
+    });
+    expect(res.error).toBeTruthy();
+    expect(res.error!.code).toBe(-32602);
+  });
+
   it("requires write:graph when create_issue/update_issue set parent_id", async () => {
     const parent = await createIssue({ title: "scope parent" });
     const { token, sessionId } = await setupToken(["write:issue"]);

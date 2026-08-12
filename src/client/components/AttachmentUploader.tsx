@@ -80,19 +80,24 @@ export function AttachmentUploader({
 }
 
 export function AttachmentList({ attachments, onDeleted }: { attachments: AttachmentDto[]; onDeleted?: (id: string) => void }) {
+  const [error, setError] = useState<string | null>(null);
   if (attachments.length === 0) return <EmptyState>No attachments.</EmptyState>;
+  const remove = async (id: string) => {
+    setError(null);
+    try {
+      await api.deleteAttachment(id);
+      onDeleted?.(id); // only reflect success in the UI
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Delete failed");
+    }
+  };
   return (
     <ul className="attachment-list">
+      {error && <li className="error-inline">{error}</li>}
       {attachments.map((a) => (
         <li key={a.id} className="attachment-item">
           <AttachmentPreview attachment={a} />
-          <button
-            className="linklike danger"
-            onClick={async () => {
-              await api.deleteAttachment(a.id).catch(() => undefined);
-              onDeleted?.(a.id);
-            }}
-          >
+          <button className="linklike danger" onClick={() => void remove(a.id)}>
             delete
           </button>
         </li>

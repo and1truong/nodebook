@@ -10,6 +10,8 @@ export const issueRefSchema = z.union([
   z.string().regex(/^\d+$/, "Issue id must be a UUID or a number").transform(Number).pipe(z.number().int().positive()),
 ]);
 
+const isoDateSchema = z.string().refine((s) => !Number.isNaN(new Date(s).getTime()), "Must be an ISO date");
+
 export const getIssueSchema = z.object({
   number: z.union([z.number().int().positive(), z.string().regex(/^\d+$/).transform(Number)]),
 });
@@ -73,7 +75,7 @@ export const linkIssuesSchema = z.object({
 export const createReminderSchema = z.object({
   issue_id: issueRefSchema,
   kind: z.enum(["absolute", "before_due", "recurring"]),
-  trigger_at: z.string().optional(),
+  trigger_at: isoDateSchema.optional(),
   offset_minutes: z.number().int().min(1).max(43_200).optional(),
   recurrence_rule: z.string().max(500).optional(),
   timezone: z.string().optional(),
@@ -82,8 +84,8 @@ export const createReminderSchema = z.object({
 export const updateReminderSchema = z.object({
   reminder_id: z.string().uuid(),
   status: z.enum(["active", "completed", "dismissed", "snoozed"]).optional(),
-  snooze_until: z.string().optional(),
-  trigger_at: z.string().optional(),
+  snooze_until: isoDateSchema.optional(),
+  trigger_at: isoDateSchema.optional(),
 });
 
 export const attachFileSchema = z.object({
