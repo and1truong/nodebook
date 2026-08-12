@@ -102,7 +102,7 @@ export function AppShell({
   }, []);
 
   return (
-    <div className="min-h-screen">
+    <div className="flex min-h-screen flex-col">
       <header className="sticky top-0 z-50 flex h-[52px] items-center gap-4 border-b border-border bg-card px-4">
         <Link to="/inbox" className="flex-none text-[15px] font-bold text-foreground hover:no-underline">
           <span className="text-primary">◈</span> NodeBook
@@ -152,7 +152,7 @@ export function AppShell({
           </span>
         </div>
       </header>
-      <div className="grid grid-cols-[190px_1fr]">
+      <div className="grid flex-1 grid-cols-[190px_1fr]">
         <nav
           className="sticky top-[52px] h-[calc(100vh-52px)] overflow-y-auto border-r border-border bg-card p-2"
           aria-label="Primary"
@@ -186,6 +186,29 @@ export function AppShell({
           {children}
         </main>
       </div>
+      {/* A floating status bar keeps global workspace context available without
+          consuming document space or duplicating the page-level controls. */}
+      <footer
+        aria-label="Application status"
+        className="fixed inset-x-0 bottom-0 z-40 grid h-7 grid-cols-[190px_1fr] border-t border-border bg-card/95 text-[11px] text-muted-foreground shadow-lg backdrop-blur"
+      >
+        <div className="flex items-center gap-1.5 border-r border-border px-2.5 font-semibold tracking-wide">
+          <span className="text-primary">◈</span>
+          <span>NODEBOOK</span>
+        </div>
+        <div className="flex min-w-0 items-center gap-2.5 px-4">
+          <span className="font-semibold text-foreground">WORKSPACE</span>
+          <span className="opacity-50">•</span>
+          <span className="truncate">Issue-native wiki and planning</span>
+          <div className="ml-auto flex shrink-0 items-center gap-2.5">
+            <Link to="/settings/tokens" className="text-muted-foreground hover:text-primary hover:no-underline">
+              MCP tokens
+            </Link>
+            <span className="opacity-50">•</span>
+            <span>v0.1.0</span>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
