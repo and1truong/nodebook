@@ -295,60 +295,203 @@
 /* ---------------------------------------------------------------- markdown */
 
 .markdown {
+  min-width: 0;
+  max-width: 100%;
+  color: var(--foreground);
+  line-height: 1.65;
   overflow-wrap: anywhere;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown > * + * {
+  margin-top: 1em;
 }
 .markdown h1,
 .markdown h2,
-.markdown h3 {
-  margin: 0.9em 0 0.4em;
-  line-height: 1.3;
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  margin-bottom: 0;
+  color: var(--foreground);
+  font-weight: 650;
+  line-height: 1.25;
 }
 .markdown h1 {
-  font-size: 20px;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+  font-size: 2em;
 }
 .markdown h2 {
-  font-size: 17px;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--border);
+  font-size: 1.5em;
 }
 .markdown h3 {
-  font-size: 15px;
+  font-size: 1.25em;
 }
-.markdown p {
-  margin: 0.55em 0;
+.markdown h4 {
+  font-size: 1em;
+}
+.markdown h5 {
+  font-size: 0.875em;
+}
+.markdown h6 {
+  color: var(--muted-foreground);
+  font-size: 0.85em;
+}
+.markdown :is(h1, h2, h3, h4, h5, h6) + * {
+  margin-top: 0.5em;
+}
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown pre,
+.markdown hr,
+.markdown .markdown-table-wrap {
+  margin-bottom: 0;
 }
 .markdown ul,
 .markdown ol {
-  margin: 0.4em 0;
-  padding-left: 1.6em;
+  padding-left: 1.75em;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown :is(ul, ol) :is(ul, ol) {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+.markdown ul ul {
+  list-style-type: circle;
+}
+.markdown ul ul ul {
+  list-style-type: square;
+}
+.markdown li + li {
+  margin-top: 0.25em;
+}
+.markdown .task-list-item {
+  list-style: none;
+}
+.markdown .task-list-item input[type="checkbox"] {
+  width: 1em;
+  height: 1em;
+  margin: 0 0.45em 0 -1.4em;
+  vertical-align: -0.12em;
+  accent-color: var(--primary);
 }
 .markdown blockquote {
-  border-left: 3px solid var(--border);
-  margin: 0.6em 0;
-  padding-left: 12px;
+  border-left: 0.25em solid var(--border);
+  padding: 0.15em 1em;
   color: var(--muted-foreground);
+}
+.markdown blockquote > :first-child {
+  margin-top: 0;
+}
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+.markdown hr {
+  height: 1px;
+  border: 0;
+  background: var(--border);
+}
+.markdown strong {
+  color: var(--foreground);
+  font-weight: 650;
+}
+.markdown del {
+  color: var(--muted-foreground);
+}
+.markdown :not(pre) > code {
+  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  background: var(--recess);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .markdown pre {
   background: var(--recess);
   border: 1px solid var(--border);
   border-radius: 6px;
-  padding: 10px 12px;
+  max-width: 100%;
+  padding: 0.85em 1em;
   overflow-x: auto;
+  line-height: 1.5;
+  white-space: pre;
 }
 .markdown pre code {
   background: none;
+  border: 0;
   padding: 0;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.markdown .markdown-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.markdown .markdown-table-wrap:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 .markdown table {
+  width: max-content;
+  min-width: 100%;
   border-collapse: collapse;
 }
 .markdown th,
 .markdown td {
-  border: 1px solid var(--border);
-  padding: 5px 9px;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  padding: 0.55em 0.8em;
+  text-align: left;
+  vertical-align: top;
+}
+.markdown :is(th, td):last-child {
+  border-right: 0;
+}
+.markdown tbody tr:last-child td {
+  border-bottom: 0;
+}
+.markdown th {
+  background: var(--recess);
+  font-weight: 650;
+}
+.markdown tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--recess) 55%, transparent);
+}
+.markdown tbody tr:hover {
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
 }
 .markdown img {
+  display: block;
   max-width: 100%;
+  height: auto;
+  margin: 1em 0;
   border-radius: 6px;
 }
-.markdown a:hover {
+.markdown a {
+  color: var(--primary);
   text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--primary) 45%, transparent);
+  text-underline-offset: 0.15em;
+}
+.markdown a:hover {
+  text-decoration-color: currentColor;
+}
+.markdown a:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
