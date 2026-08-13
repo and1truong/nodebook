@@ -9,7 +9,9 @@ Cloudflare Access ──▶ nodebook.<your-domain> ──▶ Worker (Hono + asse
                                                      ├── DO  "McpSession"
                                                      └── Cron: * * * * *  (reminders)
                                                           0 3 * * *  (attachment GC)
-MCP clients ──▶ https://nodebook.<your-domain>/mcp   (PAT-protected; bypasses Access)
+MCP clients ──▶ https://nodebook.<your-domain>/mcp   (PAT or OAuth; bypasses Access)
+OAuth clients ──▶ /.well-known/oauth-*, /oauth/register, /oauth/token   (public)
+Owner browser ──▶ /oauth/authorize   (behind Access: consent for OAuth connections)
 ```
 
 ## 1. Provision resources
@@ -19,13 +21,31 @@ npm ci
 
 # D1 database
 npx wrangler d1 create nodebook              # note the database_id
-npx wrangler d1 migrations apply nodebook --remote
 
 # R2 bucket
 npx wrangler r2 bucket create nodebook-files
 ```
 
-Put the D1 `database_id` and the R2 `bucket_name` into `wrangler.jsonc` (the checked-in file uses placeholders `local` / `nodebook-files`). For Git-integration deploys (§5), the real `database_id` must be in the file — the deploy runs `wrangler deploy` with this repo's config, and wrangler treats the config file as the source of truth over dashboard-side bindings.
+For a personal deployment, keep the checked-in `wrangler.jsonc` unchanged. It
+contains the `database_id: "local"` placeholder so it is safe for forks. Make a
+private copy instead (it is gitignored), replace the `DB` binding's
+`database_id` with the UUID printed by `d1 create`, and change `bucket_name` if
+you chose a different R2 bucket:
+
+```bash
+cp wrangler.jsonc wrangler.personal.jsonc
+# Edit wrangler.personal.jsonc: set d1_databases[0].database_id to your UUID.
+npx wrangler d1 migrations apply DB --remote --config wrangler.personal.jsonc
+```
+
+A D1 database ID is not a credential, but it is deployment-specific: committing
+yours to this public repo would make its default Worker binding point to your
+personal database. Do not add a second D1 entry with the same
+`database_name`; replace the `database_id` on the existing `DB` binding.
+
+For Git-integration deploys (§5), the real `database_id` must be in the config
+file used by that build. Use a private fork/repository with your personal config
+committed, or deploy from your machine with `--config wrangler.personal.jsonc`.
 
 ## 2. Configure the Worker
 
@@ -41,6 +61,7 @@ Set these variables (dashboard → Workers → nodebook → Settings → Variabl
 | `MAX_UPLOAD_BYTES` | no | Browser upload limit (default 26214400 = 25 MB) |
 | `MCP_MAX_UPLOAD_BYTES` | no | MCP attach_file limit (default 5242880 = 5 MB) |
 | `MCP_CORS_ORIGINS` | no | Comma-separated origins allowed on `/mcp` (default `*`) |
+| `OAUTH_ISSUER` | **yes in prod** | Public HTTPS origin of the OAuth authorization server, e.g. `https://nb.phucam.tv`. Must be the stable custom domain — never `workers.dev`. Changing it after OAuth clients have connected breaks discovery and redirect validation. |
 
 ## 3. Cloudflare Access (web + API)
 
@@ -52,14 +73,30 @@ Set these variables (dashboard → Workers → nodebook → Settings → Variabl
 
 The Worker verifies each request's `Cf-Access-Jwt-Assertion` (RS256, JWKS fetched from `https://<team>/cdn-cgi/access/certs`, cached 1 h), checks the audience, expiry, issuer, and that the asserted email equals `OWNER_EMAIL`.
 
-> **MCP route.** `/mcp` deliberately bypasses Access. It must still reject every request without a valid `nbk_…` token (it does — verified per request against D1). Do **not** protect `/mcp` with an Access policy, or MCP clients cannot connect.
+> **MCP and OAuth routes.** `/mcp`, `/.well-known/oauth-*`, `/oauth/register`, and `/oauth/token` deliberately bypass Access — ChatGPT and other OAuth clients cannot send a Cloudflare Access JWT. They still reject every request without valid credentials (bearer PAT/OAuth token at `/mcp`; registered redirect URI + PKCE at the OAuth endpoints). Do **not** protect them with an Access policy.
+>
+> `/oauth/authorize` **must** stay behind Access: it is the owner-facing consent page. In the Access application policy, add exclude rules (Bypass) for these paths, or scope a second application to `/oauth/authorize`:
+>
+> ```text
+> Exclude (Bypass):
+>   /mcp
+>   /.well-known/oauth-authorization-server
+>   /.well-known/oauth-protected-resource/mcp
+>   /oauth/register
+>   /oauth/token
+> ```
+>
+> With `OAUTH_ISSUER` set to the same custom domain, every authorization request is anchored to the configured origin, so a spoofed Host header cannot redirect codes or mint tokens for a different resource.
 
 ## 4. Security checklist
 
 - [ ] `workers.dev` disabled or left unexposed; production uses a custom domain under Access.
 - [ ] `AUTH_DEV_EMAIL` empty in production.
 - [ ] `ACCESS_TEAM` + `ACCESS_AUD` set (fail-closed otherwise).
+- [ ] `OAUTH_ISSUER` set to the stable custom domain (never `workers.dev`); unchanged after clients connect.
+- [ ] Access policy excludes `/mcp`, `/.well-known/oauth-*`, `/oauth/register`, `/oauth/token`; `/oauth/authorize` and `/api/*` remain protected.
 - [ ] MCP tokens created with the minimal scopes needed; expired or unused tokens revoked.
+- [ ] OAuth redirect URIs are exact HTTPS URLs (no wildcards, no fragments); consent is required per client, and connections are revoked when no longer used.
 - [ ] Attachment upload limits set to something reasonable for your plan (R2 egress is metered).
 
 ## 5. CI/CD
@@ -101,13 +138,12 @@ push to main ──▶ GitHub Actions: validate (above)
 ### Dashboard setup (one-time; cannot live in the repo)
 
 Before connecting the repository, everything the deploy references must exist
-on the account (§1–§3): D1 `nodebook` and R2 `nodebook-files` created, the
-custom domain and Access application in place, and the real D1 `database_id`
-in `wrangler.jsonc` (replace the `"local"` placeholder — a database ID is not
-a credential). The Git-integration deploy runs `npx wrangler deploy` with this
-repo's config, and wrangler overwrites dashboard-side bindings from the config
-file, so a dashboard binding override is not a reliable way to supply the D1
-ID — edit the file instead.
+on the account (§1–§3): D1 `nodebook` and R2 `nodebook-files` created, and the
+custom domain and Access application in place. Git integration reads the
+repository's `wrangler.jsonc`, so configure it only in a private fork/repository
+for a personal deployment: replace the `"local"` placeholder with that account's
+D1 ID. Wrangler treats the config as the source of truth, so a dashboard binding
+override is not a reliable way to supply the ID.
 
 Then connect and configure (Workers → nodebook → Settings → Builds):
 
@@ -149,15 +185,15 @@ commands the Git integration runs, but from your machine.
 
 ```bash
 npm run build                          # client bundle → dist/
-npx wrangler d1 migrations apply nodebook --remote   # apply schema first
-npm run deploy                         # vite build + wrangler deploy
-npx wrangler deploy --dry-run          # pre-flight packaging check
+npx wrangler d1 migrations apply DB --remote --config wrangler.personal.jsonc
+npm run deploy -- --config wrangler.personal.jsonc
+npx wrangler deploy --dry-run --config wrangler.personal.jsonc
 ```
 
 Deploying to staging first is strongly recommended: apply migrations there, smoke-test, then promote. D1 rollback is not assumed — **back up before migrating**:
 
 ```bash
-npx wrangler d1 export nodebook --remote --output backup-$(date +%F).sql
+npx wrangler d1 export DB --remote --config wrangler.personal.jsonc --output backup-$(date +%F).sql
 ```
 
 ## 7. Cron & scheduled behavior
@@ -172,7 +208,10 @@ npx wrangler d1 export nodebook --remote --output backup-$(date +%F).sql
 ```bash
 curl -s https://nodebook.<domain>/healthz                    # {"ok":true}
 curl -s https://nodebook.<domain>/api/me                     # 401 without Access; owner email through Access
-# MCP:
+# OAuth discovery:
+curl -s https://nodebook.<domain>/.well-known/oauth-authorization-server
+curl -s https://nodebook.<domain>/.well-known/oauth-protected-resource/mcp
+# MCP (personal access token):
 TOKEN=$(… create via Settings → MCP tokens …)
 curl -s -X POST https://nodebook.<domain>/mcp \
   -H "Content-Type: application/json" -H "Authorization: Bearer $TOKEN" \
@@ -181,9 +220,30 @@ curl -s -X POST https://nodebook.<domain>/mcp \
 
 Then: create an issue with a due date, add a before-due reminder, wait for the minute tick, and confirm the notification appears in the inbox. Revoke the MCP token and confirm the next MCP call returns 401. Upload a private file and confirm the content URL returns 401 to an unauthenticated curl.
 
-## 9. Operations
+## 9. ChatGPT connector setup (OAuth)
+
+ChatGPT’s connector UI cannot send a user-entered bearer PAT, so it uses the built-in OAuth flow. No tunnel is required — the Worker is the authorization server.
+
+1. **Settings → MCP tokens** (or just connect — the consent page appears automatically).
+2. In ChatGPT, **Add connector → MCP server**, and set only:
+   ```text
+   MCP URL:  https://nb.phucam.tv/mcp
+   OAuth:    ✓ (the default; do not paste a bearer token)
+   ```
+   ChatGPT discovers the authorization server from the `401` challenge (`resource_metadata`) and/or the well-known metadata, and registers itself as an OAuth client.
+3. ChatGPT opens the authorization page in your browser. Complete the **Cloudflare Access** login, then review the **NodeBook consent page** (client name, resource `https://nb.phucam.tv/mcp`, requested scopes) and click **Approve**.
+4. Back in ChatGPT, the connector connects with the short-lived access token; refresh tokens rotate automatically. Tools are listed after approval — invoke a read tool to confirm.
+5. To cut off the connector at any time: **Settings → MCP tokens → OAuth connections → revoke**. Revocation invalidates the access token and all refresh tokens immediately; ChatGPT’s next tool call fails until it re-authorizes.
+
+Manual verification checklist:
+- [ ] Tools are listed after approval (no tunnel, no PAT).
+- [ ] Revoking the OAuth connection breaks subsequent tool calls immediately.
+- [ ] The connection appears in Settings with its approved scopes and last-use time.
+- [ ] `oauth_grant.approve` / `oauth_grant.revoke` audit events are recorded for the grant.
+
+## 10. Operations
 
 - **Search index repair:** `DELETE FROM search_docs; UPDATE meta SET value='' WHERE key='search_rebuilt_at';` then trigger a rebuild — or call `rebuildSearchIndex` via a one-off script. The index is also maintained incrementally on every mutation.
 - **Monitoring:** enable `observability` (already in `wrangler.jsonc`) for Workers Logs/Metrics; alarm on 5xx and on `reminder_occurrences.status='failed'` rows.
-- **Backups:** nightly `wrangler d1 export` to R2 or your object store; R2 blobs are content-addressed and immutable (`blobs/<sha256>`), so they never need backing up as a set — only the attachment rows do.
+- **Backups:** nightly `wrangler d1 export` (with your private `--config`) to R2 or your object store; R2 blobs are content-addressed and immutable (`blobs/<sha256>`), so they never need backing up as a set — only the attachment rows do.
 - **Schema changes:** forward-compatible migrations only (additive tables/columns). Apply to staging first, back up, then apply to production.

@@ -9,7 +9,10 @@ import type { McpScope } from "../../shared/limits";
 
 export interface McpIdentity {
   type: "mcp";
+  /** Stable identity for audit attribution: PAT id, or OAuth grant id. */
   tokenId: string;
+  /** Credential kind: personal access token vs. OAuth access token. */
+  kind: "pat" | "oauth";
   name: string;
   scopes: McpScope[];
 }
@@ -41,7 +44,7 @@ export async function authenticateMcpToken(env: Env, token: string): Promise<Mcp
     scopes = [];
   }
 
-  return { type: "mcp", tokenId: row.id, name: row.name, scopes };
+  return { type: "mcp", kind: "pat", tokenId: row.id, name: row.name, scopes };
 }
 
 export async function sha256Hex(input: string): Promise<string> {

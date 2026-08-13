@@ -76,7 +76,18 @@ secrets) is documented in [docs/deployment.md](docs/deployment.md) §5.
 
 ## MCP
 
-Create a scoped token in **Settings → MCP tokens**, then point any MCP client at:
+NodeBook speaks Streamable HTTP MCP at `/mcp` with two credential types:
+
+**OAuth 2.1 (recommended for ChatGPT and other OAuth-capable clients).** NodeBook is its own authorization server — no tunnel or third-party identity provider needed:
+
+```
+URL:   https://<your-worker>/mcp
+Auth:  OAuth (authorization-code flow with PKCE) — select OAuth in the client
+```
+
+Clients discover the authorization server from the `WWW-Authenticate: Bearer resource_metadata=…` challenge (or `/.well-known/oauth-authorization-server`), register dynamically, and redirect you to the Cloudflare Access login + NodeBook consent page. Access tokens are short-lived (10 min); refresh tokens rotate on every use; scopes never expand beyond what you approved. Manage connections under **Settings → MCP tokens → OAuth connections**.
+
+**Personal access tokens (any MCP client).** Create a scoped token in **Settings → MCP tokens**, then point the client at:
 
 ```
 URL:   https://<your-worker>/mcp
@@ -87,10 +98,11 @@ Tokens are stored as SHA-256 hashes with display prefixes, support expiration, a
 
 ## Production notes
 
-- The web/API hostname **must** be protected with Cloudflare Access (`ACCESS_TEAM` + `ACCESS_AUD`); only `/mcp` bypasses Access, and it still rejects every request without a valid scoped token.
+- The web/API hostname **must** be protected with Cloudflare Access (`ACCESS_TEAM` + `ACCESS_AUD`); `/mcp`, the OAuth discovery/registration/token endpoints bypass Access, and `/oauth/authorize` (the consent page) stays behind it. Every request without valid credentials is still rejected.
+- Set `OAUTH_ISSUER` to the stable custom domain (e.g. `https://nb.phucam.tv`) — never `workers.dev`.
 - Disable `workers.dev` access or keep `AUTH_DEV_EMAIL` unset in production.
 - Back up D1 before applying migrations (`wrangler d1 export`), and deploy migrations to staging first.
-- See [docs/deployment.md](docs/deployment.md) for the full runbook.
+- See [docs/deployment.md](docs/deployment.md) for the full runbook and ChatGPT setup.
 
 ## License
 

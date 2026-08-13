@@ -1,7 +1,7 @@
-/** MCP token settings: create scoped tokens, revoke, view usage. */
+/** MCP token settings: create scoped tokens, revoke, view usage; manage OAuth connections. */
 import { useEffect, useState } from "react";
 import { api, formatInstant } from "../api";
-import type { McpTokenDto } from "../../shared/contracts/issues";
+import type { McpTokenDto, OauthGrantDto } from "../../shared/contracts/issues";
 import { MCP_SCOPES } from "../../shared/limits";
 import { PageHeader, Loading, ErrorState, EmptyState } from "../components/ui";
 import { Badge } from "../components/ui/badge";
@@ -11,6 +11,7 @@ import { Label } from "../components/ui/label";
 
 export function TokenSettingsPage() {
   const [tokens, setTokens] = useState<McpTokenDto[] | null>(null);
+  const [grants, setGrants] = useState<OauthGrantDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<string[]>(["read:issue", "read:search", "read:graph", "read:planning"]);
@@ -20,11 +21,16 @@ export function TokenSettingsPage() {
 
   const load = () => {
     setTokens(null);
+    setGrants(null);
     setError(null);
     api
       .tokens()
       .then(setTokens)
       .catch(setError);
+    api
+      .oauthGrants()
+      .then(setGrants)
+      .catch((e) => setError((prev: unknown) => prev ?? e));
   };
 
   useEffect(load, []);
@@ -57,8 +63,9 @@ export function TokenSettingsPage() {
     <>
       <PageHeader title="MCP tokens" />
       <p className="mb-4 text-sm text-muted-foreground">
-        Personal access tokens authenticate MCP clients against <code>/mcp</code>. Only the SHA-256 hash is stored;
-        scopes are enforced per tool call. Revoking a token takes effect immediately.
+        Personal access tokens authenticate MCP clients against <code>/mcp</code>; OAuth connections authenticate
+        clients like ChatGPT through the authorization-code flow. Only SHA-256 hashes of secrets are stored; scopes
+        are enforced per tool call. Revoking a credential takes effect immediately.
       </p>
 
       {created && (
@@ -112,6 +119,63 @@ export function TokenSettingsPage() {
           {creating ? "Creating…" : "Create token"}
         </Button>
       </form>
+
+      <h2 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-muted-foreground">OAuth connections</h2>
+      <p className="mb-2 text-sm text-muted-foreground">
+        OAuth clients (e.g. ChatGPT) authenticate via the authorization-code flow with PKCE. Each connection is a
+        revocable grant; revoking it invalidates its access and refresh tokens immediately.
+      </p>
+      {!error && !grants && <Loading />}
+      {grants && grants.length === 0 && <EmptyState>No OAuth connections yet.</EmptyState>}
+      {grants && grants.length > 0 && (
+        <table className="oauth-grants-table token-table">
+          <thead>
+            <tr>
+              <th>Client</th>
+              <th>Scopes</th>
+              <th>Created</th>
+              <th>Last used</th>
+              <th>Status</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {grants.map((g) => (
+              <tr key={g.id} className={g.revoked_at ? "opacity-60" : ""}>
+                <td>{g.client_name}</td>
+                <td className="scope-cell max-w-[260px]">{g.scopes.join(", ")}</td>
+                <td>{formatInstant(g.created_at)}</td>
+                <td>{g.last_used_at ? formatInstant(g.last_used_at) : "—"}</td>
+                <td>
+                  <Badge variant="outline" className={g.revoked_at ? "text-muted-foreground" : "border-success text-success"}>
+                    {g.revoked_at ? "revoked" : "active"}
+                  </Badge>
+                </td>
+                <td>
+                  {!g.revoked_at && (
+                    <Button
+                      variant="link"
+                      size="sm"
+                      className="h-auto px-0 text-xs text-destructive"
+                      onClick={async () => {
+                        setError(null);
+                        try {
+                          await api.revokeOauthGrant(g.id);
+                          load(); // only reflect success
+                        } catch (err) {
+                          setError(err);
+                        }
+                      }}
+                    >
+                      revoke
+                    </Button>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <h2 className="mb-2 mt-6 text-xs font-semibold uppercase tracking-wider text-muted-foreground">Existing tokens</h2>
       {error ? <ErrorState error={error} /> : null}

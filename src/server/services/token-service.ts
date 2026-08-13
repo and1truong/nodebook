@@ -2,11 +2,13 @@
 import type { Ctx } from "../ctx";
 import { NotFoundError, ValidationError } from "../../domain/errors";
 import type { McpTokenRecord } from "../../domain/models";
-import type { McpTokenCreatedDto, McpTokenDto } from "../../shared/contracts/issues";
+import type { McpTokenCreatedDto, McpTokenDto, OauthGrantDto } from "../../shared/contracts/issues";
 import { MCP_SCOPES, type McpScope } from "../../shared/limits";
 import { recordAudit } from "./audit-service";
 import { generateMcpToken, sha256Hex } from "../auth/token-auth";
 import * as tokenRepo from "../repositories/auth";
+import * as oauthRepo from "../repositories/oauth";
+import { parseScopesJson } from "./oauth-service";
 
 export async function createToken(
   ctx: Ctx,
@@ -93,5 +95,52 @@ function toDto(record: McpTokenRecord): McpTokenDto {
     expires_at: record.expires_at,
     last_used_at: record.last_used_at,
     revoked_at: record.revoked_at,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// OAuth connections (owner-approved grants)
+// ---------------------------------------------------------------------------
+
+export async function listOauthGrants(ctx: Ctx): Promise<OauthGrantDto[]> {
+  const rows = await oauthRepo.listGrantsWithClients(ctx.env.DB);
+  return rows.map((row) => ({
+    id: row.grant.id,
+    client_id: row.client_id,
+    client_name: row.client_name,
+    scopes: parseScopesJson(row.grant.scopes_json),
+    created_at: row.grant.created_at,
+    last_used_at: row.grant.last_used_at,
+    revoked_at: row.grant.revoked_at,
+  }));
+}
+
+export async function revokeOauthGrant(ctx: Ctx, grantId: string): Promise<OauthGrantDto> {
+  const row = await oauthRepo.getGrantWithClient(ctx.env.DB, grantId);
+  if (!row) throw new NotFoundError("OAuth connection not found");
+  const { grant, client_id, client_name } = row;
+  if (!grant.revoked_at) {
+    const now = new Date().toISOString();
+    await oauthRepo.revokeGrant(ctx.env.DB, grantId, now);
+    // Invalidate every access and refresh token of the grant immediately.
+    await oauthRepo.revokeTokensForGrant(ctx.env.DB, grantId, now);
+    await recordAudit(ctx, {
+      action: "oauth_grant.revoke",
+      entityType: "oauth_grant",
+      entityId: grantId,
+      before: { client_id, client_name, scopes: parseScopesJson(grant.scopes_json) },
+      after: { revoked_at: now },
+    });
+  }
+  const updated = await oauthRepo.getGrantWithClient(ctx.env.DB, grantId);
+  if (!updated) throw new NotFoundError("OAuth connection not found");
+  return {
+    id: updated.grant.id,
+    client_id: updated.client_id,
+    client_name: updated.client_name,
+    scopes: parseScopesJson(updated.grant.scopes_json),
+    created_at: updated.grant.created_at,
+    last_used_at: updated.grant.last_used_at,
+    revoked_at: updated.grant.revoked_at,
   };
 }

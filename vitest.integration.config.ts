@@ -36,6 +36,7 @@ export default defineWorkersConfig(async () => {
               MAX_UPLOAD_BYTES: "26214400",
               MCP_MAX_UPLOAD_BYTES: "5242880",
               MCP_CORS_ORIGINS: "",
+              OAUTH_ISSUER: "https://nodebook.test",
               __TEST_MIGRATIONS: migrations,
             },
           },

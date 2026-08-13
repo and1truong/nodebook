@@ -20,6 +20,7 @@ import { remindersRoutes } from "./server/routes/reminders";
 import { notificationsRoutes } from "./server/routes/notifications";
 import { attachmentsRoutes } from "./server/routes/attachments";
 import { tokensRoutes } from "./server/routes/tokens";
+import { oauthRoutes } from "./server/routes/oauth";
 import { runScheduledReminders } from "./server/scheduled/reminders";
 import { runScheduledAttachmentGc } from "./server/scheduled/attachment-gc";
 
@@ -41,6 +42,9 @@ app.route("/api/reminders", remindersRoutes);
 app.route("/api/notifications", notificationsRoutes);
 app.route("/api/attachments", attachmentsRoutes);
 app.route("/api/tokens", tokensRoutes);
+
+// OAuth 2.1 authorization server: discovery, registration, authorize, token.
+app.route("/", oauthRoutes);
 
 // Me endpoint: current identity for the web UI.
 app.get("/api/me", (c) => {

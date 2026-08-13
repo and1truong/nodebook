@@ -13,11 +13,28 @@
 | Path | Auth | Handler |
 | --- | --- | --- |
 | `/api/*` | Cloudflare Access JWT, email must equal `OWNER_EMAIL` | Hono REST routes |
-| `/mcp` | `Authorization: Bearer nbk_…` (SHA-256 lookup per request) | Streamable HTTP MCP → session Durable Object |
+| `/mcp` | `Authorization: Bearer nbk_…` (PAT, SHA-256 lookup per request) **or** `nbo_…` OAuth access token (resolved to its owner-approved grant) | Streamable HTTP MCP → session Durable Object |
+| `/.well-known/oauth-authorization-server` | — (public) | OAuth authorization-server metadata (RFC 8414) |
+| `/.well-known/oauth-protected-resource/mcp` | — (public) | OAuth protected-resource metadata for `/mcp` (RFC 9728) |
+| `/oauth/register` | — (public; dynamic client registration, RFC 7591) | Register a public PKCE client with an exact HTTPS redirect-URI allowlist |
+| `/oauth/authorize` | Cloudflare Access JWT, email must equal `OWNER_EMAIL` | Owner consent page; issues one-time authorization codes (PKCE S256) |
+| `/oauth/token` | — (public; client_id + PKCE/refresh token prove possession) | Authorization-code and rotating refresh-token exchanges |
 | everything else | — | `ASSETS` binding (SPA with history fallback) |
 | `scheduled()` | — | Cron: `* * * * *` reminders, `0 3 * * *` attachment GC |
 
-Auth is fail-closed: with neither `ACCESS_TEAM`/`ACCESS_AUD` nor `AUTH_DEV_EMAIL` configured, all API requests are rejected. `AUTH_DEV_EMAIL` must never be set in production.
+Auth is fail-closed: with neither `ACCESS_TEAM`/`ACCESS_AUD` nor `AUTH_DEV_EMAIL` configured, all API requests are rejected. `AUTH_DEV_EMAIL` must never be set in production. `/mcp` rejects requests without a valid bearer credential with a `401` + `WWW-Authenticate: Bearer resource_metadata="…"` challenge so OAuth-capable clients can discover the authorization server.
+
+## OAuth authorization server
+
+NodeBook is its own OAuth 2.1 authorization server (`src/server/services/oauth-service.ts`, `src/server/routes/oauth.ts`), so ChatGPT-style connectors can authenticate without a manually pasted PAT:
+
+- **Clients** are dynamically registered (`POST /oauth/register`) as public clients; only exact HTTPS redirect-URI matches are accepted (loopback `http://localhost` allowed for local development). No client secrets exist.
+- **Consent** (`/oauth/authorize`) reuses the Cloudflare Access owner check and renders a server-side page listing the requesting client, resource (`<OAUTH_ISSUER>/mcp`), and scopes. The owner explicitly approves or denies; approval records an `oauth_grant.approve` audit event.
+- **Codes and tokens** are one-time/opaque high-entropy strings; only SHA-256 hashes are stored. Authorization codes expire after 10 minutes and are consumed atomically; access tokens live 10 minutes; refresh tokens live 180 days and rotate on every use. Scopes can never expand beyond the owner-approved grant.
+- **Grants** (`oauth_grants`) are stable owner-approved connections: refresh rotation and repeated approvals keep the same grant id, so audit attribution never changes with the credential. Revoking a grant in Settings invalidates every associated access and refresh token immediately (`oauth_grant.revoke` audit event).
+- All discovery, registration, token, and `/mcp` endpoints are reachable without a Cloudflare Access header; only `/oauth/authorize` (and the web UI/API) sit behind Access.
+
+The OAuth `issuer` is the configured `OAUTH_ISSUER` variable (production) or the request origin (development), so metadata and resource validation never depend on an untrusted request host in production.
 
 ## Data model (D1 migrations)
 
@@ -27,6 +44,7 @@ Auth is fail-closed: with neither `ACCESS_TEAM`/`ACCESS_AUD` nor `AUTH_DEV_EMAIL
 - `0004_planning.sql` — `occurrences` (recurring-task completions, unique per issue+instant).
 - `0005_reminders.sql` — `reminders`, `reminder_occurrences` (materialized deliveries with expiring claim locks), `notifications`, `notification_deliveries` (idempotency keys).
 - `0006_attachments.sql` — `attachments` metadata (soft-delete + R2 key = blob checksum).
+- `0008_oauth.sql` — `oauth_clients` (public clients + exact redirect-URI allowlists), `oauth_grants` (stable owner-approved connections, scopes, usage, revocation), `oauth_codes` (one-time hashed codes with PKCE challenges, resource, expiry, consumed state), `oauth_tokens` (hashed access/refresh tokens, kind, grant ownership, expiry, rotation/revocation state). Grant revocation cascades to every token via `revokeTokensForGrant`.
 
 ## Key algorithms
 

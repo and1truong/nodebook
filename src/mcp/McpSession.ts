@@ -157,7 +157,9 @@ function parseIdentity(request: Request): McpIdentity | null {
   if (!header) return null;
   try {
     const parsed = JSON.parse(header) as McpIdentity;
-    if (parsed.type === "mcp" && typeof parsed.tokenId === "string") return parsed;
+    if (parsed.type === "mcp" && typeof parsed.tokenId === "string" && (parsed.kind === "pat" || parsed.kind === "oauth")) {
+      return parsed;
+    }
     return null;
   } catch {
     return null;
