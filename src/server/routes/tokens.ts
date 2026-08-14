@@ -31,3 +31,15 @@ tokensRoutes.post("/:id/revoke", async (c) => {
   const token = await tokenService.revokeToken(ctx, c.req.param("id"));
   return c.json(token);
 });
+
+// OAuth connections (owner-approved grants) — listed and revoked alongside
+// MCP personal access tokens.
+tokensRoutes.get("/oauth-grants", async (c) => {
+  const ctx = { env: c.env, actor: c.get("actor"), requestId: crypto.randomUUID() };
+  return c.json(await tokenService.listOauthGrants(ctx));
+});
+
+tokensRoutes.post("/oauth-grants/:id/revoke", async (c) => {
+  const ctx = { env: c.env, actor: c.get("actor"), requestId: crypto.randomUUID() };
+  return c.json(await tokenService.revokeOauthGrant(ctx, c.req.param("id")));
+});

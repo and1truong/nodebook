@@ -10,6 +10,7 @@ import type {
   McpTokenCreatedDto,
   McpTokenDto,
   NotificationDto,
+  OauthGrantDto,
   PlanningItemDto,
   RelationshipDto,
   ReminderDto,
@@ -170,6 +171,11 @@ export const api = {
   createToken: (input: { name: string; scopes: string[]; expires_in_days?: number | null }) =>
     request<McpTokenCreatedDto>("/api/tokens", { method: "POST", body: JSON.stringify(input) }),
   revokeToken: (id: string) => request<McpTokenDto>(`/api/tokens/${id}/revoke`, { method: "POST" }),
+
+  // OAuth connections
+  oauthGrants: () => request<OauthGrantDto[]>("/api/tokens/oauth-grants"),
+  revokeOauthGrant: (id: string) =>
+    request<OauthGrantDto>(`/api/tokens/oauth-grants/${id}/revoke`, { method: "POST" }),
 };
 
 export function formatInstant(iso: string | null | undefined): string {

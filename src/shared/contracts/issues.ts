@@ -345,6 +345,17 @@ export interface McpTokenCreatedDto extends McpTokenDto {
   token: string;
 }
 
+/** An owner-approved OAuth connection (grant) for an MCP client. */
+export interface OauthGrantDto {
+  id: string;
+  client_id: string;
+  client_name: string;
+  scopes: string[];
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
 export interface PlanningItemDto {
   issue: IssueDto;
   /** For Today/Upcoming: the instant that matched, or the due date string. */

@@ -2,6 +2,7 @@ node_modules/
 dist/
 .wrangler/
 .dev.vars
+wrangler.personal.jsonc
 test-results/
 playwright-report/
 coverage/

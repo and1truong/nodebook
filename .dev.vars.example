@@ -13,6 +13,11 @@ AUTH_DEV_EMAIL=owner@nodebook.local
 # OWNER_EMAIL=you@example.com
 # OWNER_TIMEZONE=America/Los_Angeles
 
+# Public HTTPS origin of the OAuth authorization server (production only, e.g.
+# https://nodebook.example.com). Leave unset for local development, where the
+# request origin is used instead. Must be the stable custom domain, never workers.dev.
+# OAUTH_ISSUER=https://nodebook.example.com
+
 # Initial calendar view: day, week, or month (missing/invalid values fall back to week).
 # CALENDAR_DEFAULT_VIEW=week
 

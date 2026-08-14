@@ -99,6 +99,50 @@ export interface McpTokenRecord {
   revoked_at: string | null;
 }
 
+export interface OauthClientRecord {
+  id: string;
+  client_id: string;
+  client_name: string;
+  redirect_uris_json: string;
+  created_at: string;
+}
+
+export interface OauthGrantRecord {
+  id: string;
+  client_id: string;
+  scopes_json: string;
+  created_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+}
+
+export interface OauthCodeRecord {
+  code_hash: string;
+  client_id: string;
+  grant_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  scopes_json: string;
+  resource: string;
+  expires_at: string;
+  consumed_at: string | null;
+  created_at: string;
+}
+
+export interface OauthTokenRecord {
+  token_hash: string;
+  kind: "access" | "refresh";
+  grant_id: string;
+  client_id: string;
+  scopes_json: string;
+  resource: string;
+  expires_at: string;
+  rotated_from_hash: string | null;
+  revoked_at: string | null;
+  created_at: string;
+  last_used_at: string | null;
+}
+
 export interface ReminderRecord {
   id: string;
   issue_id: string;

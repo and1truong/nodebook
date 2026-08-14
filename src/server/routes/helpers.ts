@@ -3,11 +3,13 @@ import { Hono, type MiddlewareHandler } from "hono";
 import { ZodError } from "zod";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
 import type { Env } from "../../env";
+import { oauthIssuer } from "../../env";
 import type { Actor } from "../ctx";
 import type { McpIdentity } from "../auth/token-auth";
-import { AppError } from "../../domain/errors";
+import { AppError, AuthError } from "../../domain/errors";
 import { authenticateAccess } from "../auth/access-auth";
 import { authenticateMcpToken } from "../auth/token-auth";
+import { authenticateOauthAccessToken } from "../auth/oauth-token-auth";
 
 export interface AppEnv {
   Bindings: Env;
@@ -44,15 +46,41 @@ export const accessAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next) =
   await next();
 };
 
-/** Bearer token auth for /mcp; verified identity (with scopes) is stored for the route. */
+/**
+ * Bearer token auth for /mcp. Accepts personal access tokens (`nbk_…`) and
+ * OAuth access tokens (`nbo_…`, resolved to their owning grant); verified
+ * identity (with scopes) is stored for the route. Credentials are revalidated
+ * against D1 on every request.
+ *
+ * Failures return 401 with a standards-compliant challenge that advertises
+ * the OAuth protected-resource metadata URL, so OAuth-capable MCP clients
+ * (e.g. ChatGPT) can discover the authorization server.
+ */
 export const mcpAuthMiddleware: MiddlewareHandler<AppEnv> = async (c, next) => {
   // CORS preflights carry no Authorization header; let the /mcp OPTIONS
   // handler (worker.ts app.all("/mcp", ...)) answer with the CORS headers.
   if (c.req.method === "OPTIONS") return next();
   const header = c.req.header("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice("Bearer ".length).trim() : "";
-  if (!token) return c.json({ error: { code: "unauthorized", message: "Missing bearer token" } }, 401);
-  const identity = await authenticateMcpToken(c.env, token);
+  const resourceMetadata = `${oauthIssuer(c.env, c.req.raw)}/.well-known/oauth-protected-resource/mcp`;
+  if (!token) {
+    return c.json({ error: { code: "unauthorized", message: "Missing bearer token" } }, 401, {
+      "WWW-Authenticate": `Bearer resource_metadata="${resourceMetadata}"`,
+    });
+  }
+  let identity: McpIdentity;
+  try {
+    identity = token.startsWith("nbk_")
+      ? await authenticateMcpToken(c.env, token)
+      : await authenticateOauthAccessToken(c.env, token, c.req.raw);
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return c.json({ error: { code: "unauthorized", message: e.message } }, 401, {
+        "WWW-Authenticate": `Bearer error="invalid_token", resource_metadata="${resourceMetadata}"`,
+      });
+    }
+    throw e;
+  }
   c.set("actor", { type: "mcp", id: identity.tokenId });
   c.set("mcpIdentity", identity);
   await next();
