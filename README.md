@@ -36,15 +36,13 @@ One TypeScript project, one deployable Worker. No Node.js runtime (`nodejs_compa
 npm ci
 cp .dev.vars.example .dev.vars        # local identity (owner@nodebook.local)
 
-# Terminal 1 — the Worker (API + MCP + UI on :8787)
+# Terminal 1 — the Worker (API + MCP + a fresh UI build on :8787)
 npm run db:migrate:local
 npm run dev:worker
 
-# Terminal 2 — the Vite dev server with API proxy (optional, hot reload on :5173)
+# Terminal 2 — the Vite dev server with API proxy (recommended for client
+# development and hot reload; open http://localhost:5173)
 npm run dev:web
-
-# Or run the built SPA directly through the Worker:
-npm run build                          # then just use http://localhost:8787
 ```
 
 ## Quality gates

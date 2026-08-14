@@ -6,7 +6,7 @@
   "description": "Issue-native wiki, planning, reminders, attachments, and MCP workspace on Cloudflare Workers",
   "scripts": {
     "dev:web": "vite",
-    "dev:worker": "wrangler dev",
+    "dev:worker": "npm run build && wrangler dev",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
