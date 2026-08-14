@@ -309,6 +309,64 @@ test.describe.serial("Calendar workspace", () => {
     await expect(allDay.getByRole("link", { name: /Day scheduled issue/ })).toHaveCount(0);
   });
 
+  test("creates issues by clicking month, week, and day views", async ({ page, request }) => {
+    const today = todayUtc();
+    const weekDate = weekTarget(today);
+
+    await page.goto("/calendar");
+    await page.getByRole("button", { name: "Month", exact: true }).click();
+    const todayCell = page.locator(`.calendar-day-cell[data-date="${today}"]`);
+    await todayCell.locator(":scope > button").click();
+    let dialog = page.getByRole("dialog", { name: "Create issue" });
+    await expect(dialog).toContainText(`Due`);
+    await dialog.getByLabel("Title").fill("Created from month click");
+    let responsePromise = page.waitForResponse(
+      (response) => response.url().endsWith("/api/issues") && response.request().method() === "POST",
+    );
+    await dialog.getByRole("button", { name: "Create issue" }).click();
+    const monthCreated = (await (await responsePromise).json()) as { number: number };
+    await expect(todayCell.getByRole("link", { name: /Created from month click/ })).toBeVisible();
+
+    await page.getByRole("button", { name: "Week", exact: true }).click();
+    const weekColumn = page.locator(`.calendar-week-col[data-date="${weekDate}"]`);
+    await weekColumn.locator(":scope > button").click();
+    dialog = page.getByRole("dialog", { name: "Create issue" });
+    await dialog.getByLabel("Title").fill("Created from week click");
+    responsePromise = page.waitForResponse(
+      (response) => response.url().endsWith("/api/issues") && response.request().method() === "POST",
+    );
+    await dialog.getByRole("button", { name: "Create issue" }).click();
+    const weekCreated = (await (await responsePromise).json()) as { number: number };
+    await expect(weekColumn.getByRole("link", { name: /Created from week click/ })).toBeVisible();
+
+    await page.getByRole("button", { name: "Day", exact: true }).click();
+    const slot = page.locator('.calendar-time-slot[data-time="11:45"]');
+    await slot.scrollIntoViewIfNeeded();
+    await slot.click();
+    dialog = page.getByRole("dialog", { name: "Create issue" });
+    await expect(dialog).toContainText("at 11:45 AM");
+    await dialog.getByLabel("Title").fill("Created from day click");
+    responsePromise = page.waitForResponse(
+      (response) => response.url().endsWith("/api/issues") && response.request().method() === "POST",
+    );
+    await dialog.getByRole("button", { name: "Create issue" }).click();
+    const created = (await (await responsePromise).json()) as { number: number };
+    await expect(page.getByRole("link", { name: new RegExp(`Created from day click`) })).toBeVisible();
+
+    const monthIssue = await getIssue(request, monthCreated.number);
+    const weekIssue = await getIssue(request, weekCreated.number);
+    expect(monthIssue.due_date).toBe(today);
+    expect(weekIssue.due_date).toBe(weekDate);
+    const dayIssue = await getIssue(request, created.number);
+    expect(dayIssue.scheduled_date).toBe(`${today}T11:45:00.000Z`);
+
+    // Keep the serial calendar fixture set sparse for the drag tests below.
+    for (const number of [monthCreated.number, weekCreated.number, created.number]) {
+      const closed = await apiJson(request, "POST", `/api/issues/${number}/close`);
+      expect(closed.status).toBe(200);
+    }
+  });
+
   test("drags a scheduled entry in day view to set its time", async ({ page, request }) => {
     const today = todayUtc();
     const scheduled = await createIssue(request, {

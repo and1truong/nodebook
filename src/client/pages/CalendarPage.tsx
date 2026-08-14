@@ -4,10 +4,11 @@
  * view (CALENDAR_DEFAULT_VIEW, resolved through /api/me; fallback "week") —
  * the first range fetch waits for configuration so a temporary Week request
  * never fires when another view is configured. View switches stay
- * session-local. Entries can be dragged between dates, while scheduled
- * entries can also be dragged to a time in the day view; moves update
- * optimistically, are reconciled
- * with the PATCH response, and roll back with a non-destructive alert on
+ * session-local. Clicking a month/week date or day timeline slot opens a
+ * quick-create popup with its planning value prefilled. Entries can be dragged
+ * between dates, while scheduled entries can also be dragged to a time in the
+ * day view; moves update optimistically, are reconciled with the PATCH
+ * response, and roll back with a non-destructive alert on
  * failure.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -18,6 +19,7 @@ import type { CalendarItemDto, IssueDto } from "../../shared/contracts/issues";
 import type { CalendarView, WeekStartDay } from "../calendar";
 import { navigate, reconcileCalendarItems, reschedulePatch, viewLabel, viewRange } from "../calendar";
 import { CalendarViewRenderer } from "../components/CalendarView";
+import { CalendarIssueDialog, type CalendarCreateTarget } from "../components/CalendarIssueDialog";
 import { IssueLinkPreview } from "../components/IssueLinkPreview";
 import { ErrorState, Loading, PageHeader } from "../components/ui";
 import { Button } from "../components/ui/button";
@@ -45,6 +47,7 @@ export function CalendarPage({
   const [error, setError] = useState<unknown>(null);
   const [reloadKey, setReloadKey] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
+  const [createTarget, setCreateTarget] = useState<CalendarCreateTarget | null>(null);
   const [busyIssueIds, setBusyIssueIds] = useState<ReadonlySet<string>>(new Set());
   const fetchSeq = useRef(0);
 
@@ -155,7 +158,7 @@ export function CalendarPage({
       <p className="mb-3 text-sm font-medium text-muted-foreground" aria-live="polite">
         {view && weekStartDay ? viewLabel(view, selected, weekStartDay) : ""}
         <span className="ml-2 hidden text-xs font-normal sm:inline">
-          Open work planned in <code>{tz}</code>. Drag entries to reschedule dates and times.
+          Open work planned in <code>{tz}</code>. Click to create; drag entries to reschedule.
         </span>
       </p>
       {notice && (
@@ -186,13 +189,25 @@ export function CalendarPage({
             busyIssueIds={busyIssueIds}
             weekStartDay={weekStartDay}
             timezone={tz}
-            onSelectDay={(date) => {
-              setSelected(date);
-              setSessionView("day");
-            }}
+            onCreate={(date, time) => setCreateTarget({ date, time })}
             onMove={moveEntry}
           />
         </IssueLinkPreview>
+      )}
+      {createTarget && (
+        <CalendarIssueDialog
+          key={`${createTarget.date}:${createTarget.time ?? "all-day"}`}
+          target={createTarget}
+          timezone={tz}
+          onClose={() => setCreateTarget(null)}
+          onCreated={(issue) => {
+            const visibleRange = rangeRef.current;
+            setItems((current) =>
+              current && visibleRange ? reconcileCalendarItems(current, issue, visibleRange, tz) : current,
+            );
+            setCreateTarget(null);
+          }}
+        />
       )}
     </>
   );

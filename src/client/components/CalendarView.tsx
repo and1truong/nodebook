@@ -5,8 +5,10 @@
  * keys include issue, kind, and occurrence so dual due/scheduled entries of
  * the same issue never collide.
  *
- * Dragging: entries (pointer with a movement threshold, delayed touch, and
- * keyboard) are draggable onto month cells and week columns. In the day view,
+ * Creation: clicking a month/week date or a 15-minute day slot opens quick
+ * create with that date/time. Dragging: entries (pointer with a movement
+ * threshold, delayed touch, and keyboard) are draggable onto month cells and
+ * week columns. In the day view,
  * scheduled entries are draggable onto 15-minute slots to set their time; a
  * "Move date…" picker remains available per entry. Drags only start after the
  * activation threshold, so ordinary link clicks still
@@ -124,10 +126,12 @@ function EntryLink({ item, compact = false }: { item: CalendarItemDto; compact?:
 function DroppableDate({
   date,
   className,
+  onCreate,
   children,
 }: {
   date: string;
   className?: string;
+  onCreate?: (date: string) => void;
   children: ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: `date:${date}`, data: { date } });
@@ -135,7 +139,19 @@ function DroppableDate({
     <div
       ref={setNodeRef}
       data-date={date}
-      className={cn(className, isOver && "calendar-drop-target bg-accent/50 ring-2 ring-inset ring-primary/60")}
+      className={cn(
+        className,
+        onCreate && "cursor-pointer",
+        isOver && "calendar-drop-target bg-accent/50 ring-2 ring-inset ring-primary/60",
+      )}
+      onClick={(event) => {
+        if (!onCreate) return;
+        const target = event.target as HTMLElement;
+        // Links, date-header buttons, and drag handles own their clicks. Blank
+        // calendar-cell space opens quick create.
+        if (target.closest("a, button, input, [role='button'], .calendar-drag-handle")) return;
+        onCreate(date);
+      }}
     >
       {children}
     </div>
@@ -143,7 +159,15 @@ function DroppableDate({
 }
 
 /** A 15-minute target in the day timeline. */
-function DroppableTime({ date, minutes }: { date: string; minutes: number }) {
+function DroppableTime({
+  date,
+  minutes,
+  onCreate,
+}: {
+  date: string;
+  minutes: number;
+  onCreate: (date: string, time: string) => void;
+}) {
   const time = timeValue(minutes);
   const { setNodeRef, isOver } = useDroppable({
     id: `time:${date}:${time}`,
@@ -154,8 +178,10 @@ function DroppableTime({ date, minutes }: { date: string; minutes: number }) {
       ref={setNodeRef}
       data-time={time}
       aria-label={`${timeLabel(minutes)} time slot`}
+      title={`Create an issue at ${timeLabel(minutes)}`}
+      onClick={() => onCreate(date, time)}
       className={cn(
-        "calendar-time-slot absolute left-16 right-0 border-t border-border/30",
+        "calendar-time-slot absolute left-16 right-0 cursor-pointer border-t border-border/30 hover:bg-accent/40",
         minutes % 60 === 0 && "border-border/70",
         isOver && "calendar-time-drop-target z-10 bg-primary/15 ring-2 ring-inset ring-primary/60",
       )}
@@ -312,20 +338,26 @@ function MonthGrid({
   items,
   busyIssueIds,
   weekStartDay,
-  onSelectDay,
+  onCreate,
 }: {
   selected: string;
   today: string;
   items: CalendarItemDto[];
   busyIssueIds: ReadonlySet<string>;
   weekStartDay: WeekStartDay;
-  onSelectDay: (date: string) => void;
+  onCreate: (date: string) => void;
 }) {
   const grid = monthGrid(selected, weekStartDay);
   const byDate = groupByDate(items);
   return (
-    <div className="overflow-x-auto">
-      <div className="calendar-grid grid min-w-[560px] grid-cols-7 gap-px overflow-hidden rounded-lg border border-border bg-border">
+    <div>
+      {items.length === 0 && (
+        <p className="mb-2 text-sm text-muted-foreground">
+          No planned work in this month. Click a date to create an issue.
+        </p>
+      )}
+      <div className="overflow-x-auto">
+        <div className="calendar-grid grid min-w-[560px] grid-cols-7 gap-px overflow-hidden rounded-lg border border-border bg-border">
         {weekdayHeaders(weekStartDay).map((w) => (
           <div key={w} className="bg-card px-1 py-1.5 text-center text-[11px] font-medium text-muted-foreground">
             {w}
@@ -339,6 +371,7 @@ function MonthGrid({
             <DroppableDate
               key={date}
               date={date}
+              onCreate={onCreate}
               className={cn(
                 "calendar-day-cell flex min-h-[76px] flex-col items-stretch gap-0.5 bg-card p-1",
                 !inMonth && "opacity-45",
@@ -346,7 +379,8 @@ function MonthGrid({
             >
               <button
                 type="button"
-                onClick={() => onSelectDay(date)}
+                onClick={() => onCreate(date)}
+                title="Create an issue on this date"
                 aria-label={`${fullDateLabel(date)}${dayItems.length ? `, ${dayItems.length} item${dayItems.length === 1 ? "" : "s"}` : ""}`}
                 className={cn(
                   "self-start rounded px-1 text-xs font-medium transition-colors hover:bg-accent hover:text-accent-foreground",
@@ -364,6 +398,7 @@ function MonthGrid({
             </DroppableDate>
           );
         })}
+        </div>
       </div>
     </div>
   );
@@ -375,20 +410,26 @@ function WeekView({
   items,
   busyIssueIds,
   weekStartDay,
-  onSelectDay,
+  onCreate,
 }: {
   selected: string;
   today: string;
   items: CalendarItemDto[];
   busyIssueIds: ReadonlySet<string>;
   weekStartDay: WeekStartDay;
-  onSelectDay: (date: string) => void;
+  onCreate: (date: string) => void;
 }) {
   const days = weekDays(selected, weekStartDay);
   const byDate = groupByDate(items);
   return (
-    <div className="overflow-x-auto">
-      <div className="calendar-week grid min-w-[640px] grid-cols-7 gap-px overflow-hidden rounded-lg border border-border bg-border">
+    <div>
+      {items.length === 0 && (
+        <p className="mb-2 text-sm text-muted-foreground">
+          No planned work this week. Click a date to create an issue.
+        </p>
+      )}
+      <div className="overflow-x-auto">
+        <div className="calendar-week grid min-w-[640px] grid-cols-7 gap-px overflow-hidden rounded-lg border border-border bg-border">
         {days.map((date) => {
           const isToday = date === today;
           const dayItems = byDate.get(date) ?? [];
@@ -396,11 +437,13 @@ function WeekView({
             <DroppableDate
               key={date}
               date={date}
+              onCreate={onCreate}
               className="calendar-week-col flex min-h-[160px] flex-col bg-card"
             >
               <button
                 type="button"
-                onClick={() => onSelectDay(date)}
+                onClick={() => onCreate(date)}
+                title="Create an issue on this date"
                 aria-label={fullDateLabel(date)}
                 className="flex w-full flex-col items-center gap-0.5 px-1 pb-1 pt-1.5 transition-colors hover:bg-accent hover:text-accent-foreground"
               >
@@ -424,6 +467,7 @@ function WeekView({
             </DroppableDate>
           );
         })}
+        </div>
       </div>
     </div>
   );
@@ -437,6 +481,7 @@ function DayAgenda({
   weekStartDay,
   timezone,
   onMove,
+  onCreate,
 }: {
   selected: string;
   today: string;
@@ -445,6 +490,7 @@ function DayAgenda({
   weekStartDay: WeekStartDay;
   timezone: string;
   onMove: (item: CalendarItemDto, date: string, time?: string) => void;
+  onCreate: (date: string, time?: string) => void;
 }) {
   const timelineRef = useRef<HTMLDivElement>(null);
   const dayItems = groupByDate(items).get(selected) ?? [];
@@ -467,7 +513,12 @@ function DayAgenda({
   return (
     <div>
       <section aria-label="All day">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">All day</h2>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">All day</h2>
+          <Button variant="ghost" size="xs" onClick={() => onCreate(selected)}>
+            + Add issue
+          </Button>
+        </div>
         {allDay.length === 0 ? (
           <EmptyState>Nothing is due on this day.</EmptyState>
         ) : (
@@ -507,7 +558,12 @@ function DayAgenda({
               </span>
             ))}
             {Array.from({ length: (24 * 60) / DAY_SLOT_MINUTES }, (_, index) => (
-              <DroppableTime key={index} date={selected} minutes={index * DAY_SLOT_MINUTES} />
+              <DroppableTime
+                key={index}
+                date={selected}
+                minutes={index * DAY_SLOT_MINUTES}
+                onCreate={(date, time) => onCreate(date, time)}
+              />
             ))}
             {scheduled.map(({ item, minutes }, index) => (
               <div
@@ -545,7 +601,7 @@ export function CalendarViewRenderer({
   busyIssueIds,
   weekStartDay,
   timezone,
-  onSelectDay,
+  onCreate,
   onMove,
 }: {
   view: CalendarView;
@@ -557,7 +613,7 @@ export function CalendarViewRenderer({
   weekStartDay: WeekStartDay;
   /** IANA timezone used by the calendar range and day timeline. */
   timezone: string;
-  onSelectDay: (date: string) => void;
+  onCreate: (date: string, time?: string) => void;
   onMove: (item: CalendarItemDto, date: string, time?: string) => void;
 }) {
   const [activeItem, setActiveItem] = useState<CalendarItemDto | null>(null);
@@ -586,13 +642,6 @@ export function CalendarViewRenderer({
     const minutes = t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : null;
     return `${fullDateLabel(d)}${minutes !== null && Number.isFinite(minutes) ? ` at ${timeLabel(minutes)}` : ""}`;
   };
-
-  if (view === "month" && items.length === 0) {
-    return <EmptyState>No planned work in this month.</EmptyState>;
-  }
-  if (view === "week" && items.length === 0) {
-    return <EmptyState>No planned work this week.</EmptyState>;
-  }
 
   return (
     <DndContext
@@ -630,6 +679,7 @@ export function CalendarViewRenderer({
             weekStartDay={weekStartDay}
             timezone={timezone}
             onMove={onMove}
+            onCreate={onCreate}
           />
         ) : view === "month" ? (
           <MonthGrid
@@ -638,7 +688,7 @@ export function CalendarViewRenderer({
             items={items}
             busyIssueIds={busyIssueIds}
             weekStartDay={weekStartDay}
-            onSelectDay={onSelectDay}
+            onCreate={onCreate}
           />
         ) : (
           <WeekView
@@ -647,7 +697,7 @@ export function CalendarViewRenderer({
             items={items}
             busyIssueIds={busyIssueIds}
             weekStartDay={weekStartDay}
-            onSelectDay={onSelectDay}
+            onCreate={onCreate}
           />
         )}
       <DragOverlay dropAnimation={null}>
