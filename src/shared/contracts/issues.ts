@@ -403,8 +403,23 @@ export interface OccurrenceDto {
   created_at: string;
 }
 
+/**
+ * Lightweight issue projection used by the wiki tree. Bodies, planning data,
+ * counts, and creator attribution are intentionally omitted so opening the
+ * wiki does not serialize every full issue in the workspace.
+ */
+export interface WikiIssueDto {
+  id: string;
+  number: number;
+  type: IssueType;
+  title: string;
+  status: IssueStatus;
+  labels: string[];
+  updated_at: string;
+}
+
 export interface WikiNodeDto {
-  issue: IssueDto;
+  issue: WikiIssueDto;
   children: WikiNodeDto[];
 }
 

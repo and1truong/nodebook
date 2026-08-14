@@ -11,7 +11,7 @@ import {
   Settings2,
 } from "lucide-react";
 import { api, relativeTime } from "../api";
-import type { IssueDto, WikiNodeDto } from "../../shared/contracts/issues";
+import type { IssueDto, WikiIssueDto, WikiNodeDto } from "../../shared/contracts/issues";
 import { HierarchyTree } from "../components/HierarchyTree";
 import { Markdown } from "../components/Markdown";
 import { ErrorState, LabelChip, Loading, TypeBadge } from "../components/ui";
@@ -113,7 +113,7 @@ export function WikiPage({ selectedRef }: { selectedRef?: string }) {
   );
 }
 
-function WikiHome({ tree, pages }: { tree: WikiNodeDto[]; pages: IssueDto[] }) {
+function WikiHome({ tree, pages }: { tree: WikiNodeDto[]; pages: WikiIssueDto[] }) {
   if (tree.length === 0) {
     return (
       <section className="rounded-xl border border-dashed border-border bg-card px-6 py-14 text-center">
@@ -211,13 +211,11 @@ function WikiArticle({ issueRef, tree }: { issueRef: string; tree: WikiNodeDto[]
     setIssue(null);
     setCrumbs([]);
     setError(null);
-    api
-      .getIssue(issueRef)
-      .then((nextIssue) => {
+    Promise.all([api.getIssue(issueRef), api.breadcrumbs(issueRef)])
+      .then(([nextIssue, nextCrumbs]) => {
         setIssue(nextIssue);
-        return api.breadcrumbs(String(nextIssue.number));
+        setCrumbs(nextCrumbs);
       })
-      .then(setCrumbs)
       .catch(setError);
   }, [issueRef]);
 
@@ -324,7 +322,7 @@ function WikiArticle({ issueRef, tree }: { issueRef: string; tree: WikiNodeDto[]
   );
 }
 
-function flattenTree(nodes: WikiNodeDto[]): IssueDto[] {
+function flattenTree(nodes: WikiNodeDto[]): WikiIssueDto[] {
   return nodes.flatMap((node) => [node.issue, ...flattenTree(node.children)]);
 }
 
@@ -338,7 +336,7 @@ function findNode(nodes: WikiNodeDto[], issueId: string): WikiNodeDto | undefine
 }
 
 function filterTree(nodes: WikiNodeDto[], query: string): WikiNodeDto[] {
-  const matches = (issue: IssueDto) =>
+  const matches = (issue: WikiIssueDto) =>
     String(issue.number) === query.replace(/^#/, "") ||
     issue.title.toLowerCase().includes(query) ||
     issue.labels.some((label) => label.toLowerCase().includes(query));

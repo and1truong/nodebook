@@ -1,7 +1,7 @@
 /** D1 data access for the issue graph: hierarchy, relationships, references. */
 import type { D1Database } from "@cloudflare/workers-types";
 import type { ReferenceRecord, RelationshipRecord } from "../../domain/models";
-import type { ReferenceSourceType } from "../../shared/limits";
+import type { IssueStatus, IssueType, ReferenceSourceType } from "../../shared/limits";
 
 // ---------------------------------------------------------------------------
 // Hierarchy
@@ -41,6 +41,95 @@ export async function getChildren(db: D1Database, issueId: string): Promise<{ id
     .bind(issueId)
     .all<{ id: string; number: number; title: string; status: string; type: string; due_date: string | null }>();
   return res.results;
+}
+
+export interface WikiIssueRow {
+  id: string;
+  number: number;
+  type: IssueType;
+  title: string;
+  status: IssueStatus;
+  parent_id: string | null;
+  updated_at: string;
+  labels: string[];
+}
+
+/**
+ * Every issue under a top-level wiki root, with only the fields needed by the
+ * navigation tree. The recursive CTE and label join replace the previous
+ * per-node child, issue, label, count, and attribution query waterfall.
+ */
+export async function listWikiIssues(db: D1Database): Promise<WikiIssueRow[]> {
+  const res = await db
+    .prepare(
+      `WITH RECURSIVE wiki_issues(id, number, type, title, status, parent_id, updated_at) AS (
+         SELECT id, number, type, title, status, parent_id, updated_at
+         FROM issues
+         WHERE parent_id IS NULL AND type = 'wiki'
+         UNION ALL
+         SELECT i.id, i.number, i.type, i.title, i.status, i.parent_id, i.updated_at
+         FROM issues i
+         JOIN wiki_issues parent ON i.parent_id = parent.id
+       )
+       SELECT w.id, w.number, w.type, w.title, w.status, w.parent_id, w.updated_at,
+              l.name AS label_name
+       FROM wiki_issues w
+       LEFT JOIN issue_labels il ON il.issue_id = w.id
+       LEFT JOIN labels l ON l.id = il.label_id
+       ORDER BY w.number ASC, l.name COLLATE NOCASE`,
+    )
+    .all<{
+      id: string;
+      number: number;
+      type: IssueType;
+      title: string;
+      status: IssueStatus;
+      parent_id: string | null;
+      updated_at: string;
+      label_name: string | null;
+    }>();
+
+  const byId = new Map<string, WikiIssueRow>();
+  for (const row of res.results) {
+    let issue = byId.get(row.id);
+    if (!issue) {
+      issue = {
+        id: row.id,
+        number: Number(row.number),
+        type: row.type,
+        title: row.title,
+        status: row.status,
+        parent_id: row.parent_id,
+        updated_at: row.updated_at,
+        labels: [],
+      };
+      byId.set(row.id, issue);
+    }
+    if (row.label_name !== null) issue.labels.push(row.label_name);
+  }
+  return [...byId.values()];
+}
+
+/** Resolve root-to-issue breadcrumbs in one recursive query. */
+export async function listBreadcrumbs(
+  db: D1Database,
+  issueId: string,
+): Promise<{ id: string; number: number; title: string }[]> {
+  const res = await db
+    .prepare(
+      `WITH RECURSIVE ancestors(id, number, title, parent_id, depth) AS (
+         SELECT id, number, title, parent_id, 0 FROM issues WHERE id = ?
+         UNION ALL
+         SELECT i.id, i.number, i.title, i.parent_id, ancestors.depth + 1
+         FROM issues i
+         JOIN ancestors ON i.id = ancestors.parent_id
+         WHERE ancestors.depth < 99
+       )
+       SELECT id, number, title FROM ancestors ORDER BY depth DESC`,
+    )
+    .bind(issueId)
+    .all<{ id: string; number: number; title: string }>();
+  return res.results.map((row) => ({ ...row, number: Number(row.number) }));
 }
 
 export interface SubIssueRow {

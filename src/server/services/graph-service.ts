@@ -22,13 +22,15 @@ import {
   isInSubtree,
   listAncestors,
   listBacklinks,
+  listBreadcrumbs,
   listDirectChildren,
   listLinkCandidates,
   listRelatedIssues,
   listRelationships,
+  listWikiIssues,
 } from "../repositories/graph";
-import { getIssueById, getIssueByNumber, getIssueByRef, getIssueLabels, getIssuesByIds, getNumbersByIds, listIssues } from "../repositories/issues";
-import { toIssueDto, toIssueDtos } from "./dto";
+import { getIssueById, getIssueByNumber, getIssueByRef, getIssueLabels, getIssuesByIds, getNumbersByIds } from "../repositories/issues";
+import { toIssueDtos } from "./dto";
 import { creationAttribution, inferStoredActor, resolveAttribution } from "./attribution-service";
 
 // ---------------------------------------------------------------------------
@@ -346,36 +348,43 @@ async function toBacklinkDto(ctx: Ctx, record: ReferenceRecord): Promise<Backlin
  * issue type. Branches beneath excluded (non-wiki) roots are not promoted.
  */
 export async function getWikiTree(ctx: Ctx): Promise<WikiNodeDto[]> {
-  const roots = await listIssues(ctx.env.DB, { parent_id: null, type: "wiki", limit: 500 });
-  const nodes = await Promise.all(roots.map((root) => buildWikiNode(ctx, root)));
-  return nodes;
-}
+  const issues = await listWikiIssues(ctx.env.DB);
+  const nodes = new Map<string, WikiNodeDto>();
 
-async function buildWikiNode(ctx: Ctx, issue: IssueRecord): Promise<WikiNodeDto> {
-  const dto = await toIssueDto(ctx, issue);
-  const children = await getChildren(ctx.env.DB, issue.id);
-  const childIssues: IssueRecord[] = [];
-  for (const c of children) {
-    const full = await getIssueById(ctx.env.DB, c.id);
-    if (full) childIssues.push(full);
+  for (const issue of issues) {
+    nodes.set(issue.id, {
+      issue: {
+        id: issue.id,
+        number: issue.number,
+        type: issue.type,
+        title: issue.title,
+        status: issue.status,
+        labels: issue.labels,
+        updated_at: issue.updated_at,
+      },
+      children: [],
+    });
   }
-  const childNodes = await Promise.all(childIssues.map((c) => buildWikiNode(ctx, c)));
-  return { issue: dto, children: childNodes };
+
+  const roots: WikiNodeDto[] = [];
+  for (const issue of issues) {
+    const node = nodes.get(issue.id)!;
+    if (issue.parent_id === null) roots.push(node);
+    else nodes.get(issue.parent_id)?.children.push(node);
+  }
+
+  // Preserve the existing API ordering: newest roots first, children oldest
+  // first. Sorting each node once avoids recursive database queries.
+  roots.sort((a, b) => b.issue.number - a.issue.number);
+  for (const node of nodes.values()) {
+    node.children.sort((a, b) => a.issue.number - b.issue.number);
+  }
+  return roots;
 }
 
 /** Breadcrumbs: root → … → issue. */
 export async function getBreadcrumbs(ctx: Ctx, issueId: string): Promise<{ id: string; number: number; title: string }[]> {
-  const chain: { id: string; number: number; title: string }[] = [];
-  let current: string | null = issueId;
-  let guard = 0;
-  while (current && guard < 100) {
-    const issue = await getIssueById(ctx.env.DB, current);
-    if (!issue) break;
-    chain.unshift({ id: issue.id, number: issue.number, title: issue.title });
-    current = issue.parent_id;
-    guard += 1;
-  }
-  return chain;
+  return listBreadcrumbs(ctx.env.DB, issueId);
 }
 
 /** Resolve a `ref` (uuid or number) to a full issue or throw. */
