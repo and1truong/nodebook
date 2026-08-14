@@ -1,7 +1,8 @@
-.PHONY: dev dev\:web dev\:worker db\:migrate deploy free-ports setup
+.PHONY: backup db\:migrate deploy dev dev\:web dev\:worker free-ports migrate setup
 
 PORTS ?= 5173 8787
 DEPLOY_URL ?= https://nodebook.v3knet.workers.dev
+BACKUP_DIR ?= /tmp/nodebook-backups
 
 # Kill whatever is already listening on the dev ports (5173, 8787) so a
 # stale/crashed session never causes EADDRINUSE on startup.
@@ -37,9 +38,24 @@ dev\:worker: free-ports
 db\:migrate:
 	npm run db:migrate:local
 
+# Capture a remote D1 Time Travel restore bookmark before a production change.
+# `d1 export` cannot back up NodeBook because its FTS5 virtual tables are not
+# exportable. This checkpoint is retained according to D1 Time Travel policy.
+backup:
+	@test -f wrangler.personal.jsonc || { echo "Missing wrangler.personal.jsonc" >&2; exit 1; }
+	@mkdir -p "$(BACKUP_DIR)"
+	@file="$(BACKUP_DIR)/nodebook-$$(date -u +%Y%m%dT%H%M%SZ).json"; \
+	npx wrangler d1 time-travel info nodebook --config wrangler.personal.jsonc --json > "$$file"; \
+	echo "D1 Time Travel bookmark saved to $$file"
+
+# Snapshot, show pending migrations, and apply them to remote D1. Wrangler
+# captures an additional D1 backup immediately before applying a migration.
+migrate: backup
+	npx wrangler d1 migrations list nodebook --remote --config wrangler.personal.jsonc
+	npx wrangler d1 migrations apply nodebook --remote --config wrangler.personal.jsonc
+
 # Build and deploy using the machine-local production bindings, then verify the
 # health endpoint is reachable. Cloudflare Access returns 302 without a session.
-# Apply remote D1 migrations separately (after a backup) when a schema migration is pending.
 deploy:
 	@test -f wrangler.personal.jsonc || { echo "Missing wrangler.personal.jsonc" >&2; exit 1; }
 	npm run build
