@@ -12,7 +12,7 @@ export function IssuesPage() {
   const [issues, setIssues] = useState<IssueDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [type, setType] = useState("");
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState("open");
   const [label, setLabel] = useState("");
   const [allLabels, setAllLabels] = useState<string[]>([]);
 
