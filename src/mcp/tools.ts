@@ -174,18 +174,19 @@ export const tools = [
 
   defineTool({
     name: "update_issue",
-    description: "Update issue fields (title, body, type, priority, labels, planning dates, recurrence, parent).",
+    description: "Update issue fields using optimistic locking. First read the issue, then pass its version as expected_version; refetch after a version conflict.",
     inputSchema: updateIssueSchema,
     scope: "write:issue",
     handler: withScope("write:issue", async (ctx: ToolContext, args) => {
       const c = toCtx(ctx);
       const issue = await graphService.getIssueByRefOrThrow(c, requireIssueId(args.issue_id));
-      const { issue_id: _id, ...rest } = args;
+      const { issue_id: _id, expected_version, ...rest } = args;
       // Changing the parent mutates the graph: require the graph scope as well.
       if ("parent_id" in rest && rest.parent_id !== undefined) {
         assertScope(ctx.identity.scopes, "write:graph");
       }
       return issueService.updateIssue(c, issue.id, {
+        expected_version,
         type: rest.type,
         title: rest.title,
         body: rest.body,

@@ -1,7 +1,7 @@
 /** MCP: protocol tests, one test per tool family, scopes, parity with HTTP. */
 import { describe, expect, it } from "vitest";
 import { SELF } from "cloudflare:test";
-import { api, createIssue, createMcpToken, mcpCall, mcpInitialize, post } from "./helpers";
+import { api, createIssue, createMcpToken, mcpCall, mcpInitialize, patch, post } from "./helpers";
 
 async function callTool(
   token: string,
@@ -65,10 +65,14 @@ describe("MCP tools", () => {
     const { token, sessionId } = await setupToken(["write:issue"]);
 
     const created = await callTool(token, sessionId, "create_issue", { title: "mcp created", type: "task" });
-    const issue = created.result as { id: string; number: number; status: string };
+    const issue = created.result as { id: string; number: number; status: string; version: number };
     expect(issue.status).toBe("open");
 
-    const updated = await callTool(token, sessionId, "update_issue", { issue_id: issue.id, priority: "high" });
+    const updated = await callTool(token, sessionId, "update_issue", {
+      issue_id: issue.id,
+      expected_version: issue.version,
+      priority: "high",
+    });
     expect((updated.result as { priority: string }).priority).toBe("high");
 
     const closed = await callTool(token, sessionId, "close_issue", { issue_id: issue.id });
@@ -79,6 +83,63 @@ describe("MCP tools", () => {
     const freshIssue = fresh.result as { id: string };
     const completed = await callTool(token, sessionId, "complete_task", { issue_id: freshIssue.id });
     expect((completed.result as { status: string }).status).toBe("closed");
+  });
+
+  it("prevents stale edits across HTTP and MCP in both directions", async () => {
+    const issue = await createIssue({ title: "shared editor" });
+    const { token, sessionId } = await setupToken(["read:issue", "write:issue"]);
+
+    const read = await callTool(token, sessionId, "get_issue", { number: issue.number });
+    const mcpSnapshot = read.result as { id: string; version: number };
+    const human = await patch(`/api/issues/${issue.number}`, {
+      expected_version: issue.version,
+      title: "human won",
+    });
+    expect(human.status).toBe(200);
+
+    const staleMcp = await callTool(token, sessionId, "update_issue", {
+      issue_id: mcpSnapshot.id,
+      expected_version: mcpSnapshot.version,
+      title: "stale MCP",
+    });
+    expect(staleMcp.error).toMatchObject({ code: -32009 });
+
+    const latest = await callTool(token, sessionId, "get_issue", { number: issue.number });
+    const current = latest.result as { id: string; version: number };
+    const mcpWinner = await callTool(token, sessionId, "update_issue", {
+      issue_id: current.id,
+      expected_version: current.version,
+      title: "MCP won",
+    });
+    expect((mcpWinner.result as { title: string }).title).toBe("MCP won");
+
+    const staleHuman = await patch(`/api/issues/${issue.number}`, {
+      expected_version: current.version,
+      title: "stale human",
+    });
+    expect(staleHuman.status).toBe(409);
+    const final = (await api(`/api/issues/${issue.number}`)).body as { title: string };
+    expect(final.title).toBe("MCP won");
+  });
+
+  it("requires expected_version for MCP issue updates", async () => {
+    const issue = await createIssue({ title: "MCP version required" });
+    const { token, sessionId } = await setupToken(["write:issue"]);
+    const result = await callTool(token, sessionId, "update_issue", {
+      issue_id: issue.id,
+      title: "not accepted",
+    });
+    expect(result.error?.code).toBe(-32602);
+  });
+
+  it("rejects MCP issue updates with no fields to change", async () => {
+    const issue = await createIssue({ title: "MCP no-op" });
+    const { token, sessionId } = await setupToken(["write:issue"]);
+    const result = await callTool(token, sessionId, "update_issue", {
+      issue_id: issue.id,
+      expected_version: issue.version,
+    });
+    expect(result.error?.code).toBe(-32602);
   });
 
   it("add_comment, add_child, link_issues (write comment/graph)", async () => {
@@ -202,6 +263,7 @@ describe("MCP tools", () => {
     const child = await createIssue({ title: "scope child" });
     const update = await callTool(token, sessionId, "update_issue", {
       issue_id: child.id,
+      expected_version: child.version,
       parent_id: parent.id,
     });
     expect(update.error).toBeTruthy();

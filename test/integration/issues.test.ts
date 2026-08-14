@@ -79,13 +79,19 @@ describe("issue lifecycle", () => {
     const issue = await createIssue({ title: "states" });
     const closed = await post(`/api/issues/${issue.number}/close`, {});
     expect(closed.status).toBe(200);
-    expect((closed.body as { status: string }).status).toBe("closed");
+    expect((closed.body as { status: string; version: number })).toMatchObject({
+      status: "closed",
+      version: Number(issue.version) + 1,
+    });
 
     const again = await post(`/api/issues/${issue.number}/close`, {});
     expect(again.status).toBe(409);
 
     const reopened = await post(`/api/issues/${issue.number}/reopen`, {});
-    expect((reopened.body as { status: string }).status).toBe("open");
+    expect((reopened.body as { status: string; version: number })).toMatchObject({
+      status: "open",
+      version: Number(issue.version) + 2,
+    });
 
     const reopenAgain = await post(`/api/issues/${issue.number}/reopen`, {});
     expect(reopenAgain.status).toBe(409);
@@ -93,11 +99,17 @@ describe("issue lifecycle", () => {
 
   it("updates fields and records before/after audit payloads", async () => {
     const issue = await createIssue({ title: "before", body: "original" });
-    const res = await patch(`/api/issues/${issue.number}`, { title: "after", body: "edited", labels: ["x"] });
+    const res = await patch(`/api/issues/${issue.number}`, {
+      expected_version: issue.version,
+      title: "after",
+      body: "edited",
+      labels: ["x"],
+    });
     expect(res.status).toBe(200);
-    const updated = res.body as { title: string; body: string; labels: string[] };
+    const updated = res.body as { title: string; body: string; labels: string[]; version: number };
     expect(updated.title).toBe("after");
     expect(updated.labels).toEqual(["x"]);
+    expect(updated.version).toBe(Number(issue.version) + 1);
 
     const history = (await api(`/api/issues/${issue.number}/history`)).body as {
       action: string;
@@ -107,6 +119,79 @@ describe("issue lifecycle", () => {
     const update = history.find((e) => e.action === "issue.update")!;
     expect(update.before?.title).toBe("before");
     expect(update.after?.title).toBe("after");
+  });
+
+  it("rejects stale edits before changing fields, labels, references, or audit history", async () => {
+    const target = await createIssue({ title: "conflict target" });
+    const issue = await createIssue({ title: "original", body: "original body", labels: ["original"] });
+
+    const winner = await patch(`/api/issues/${issue.number}`, {
+      expected_version: issue.version,
+      title: "winner",
+    });
+    expect(winner.status).toBe(200);
+
+    const stale = await patch(`/api/issues/${issue.number}`, {
+      expected_version: issue.version,
+      body: `stale reference #${target.number}`,
+      labels: ["stale"],
+    });
+    expect(stale.status).toBe(409);
+    expect(stale.body).toMatchObject({
+      error: {
+        code: "version_conflict",
+        details: { expected_version: issue.version, current_version: Number(issue.version) + 1 },
+      },
+    });
+
+    const current = (await api(`/api/issues/${issue.number}`)).body as {
+      title: string;
+      body: string;
+      labels: string[];
+      backlink_count: number;
+      version: number;
+    };
+    expect(current).toMatchObject({
+      title: "winner",
+      body: "original body",
+      labels: ["original"],
+      version: Number(issue.version) + 1,
+    });
+
+    const history = (await api(`/api/issues/${issue.number}/history`)).body as { action: string }[];
+    expect(history.filter((event) => event.action === "issue.update")).toHaveLength(1);
+    const backlinks = (await api(`/api/graph/${target.number}/backlinks`)).body as unknown[];
+    expect(backlinks).toHaveLength(0);
+  });
+
+  it("allows only one concurrent edit for the same expected version", async () => {
+    const issue = await createIssue({ title: "race" });
+    const [a, b] = await Promise.all([
+      patch(`/api/issues/${issue.number}`, { expected_version: issue.version, title: "racer a" }),
+      patch(`/api/issues/${issue.number}`, { expected_version: issue.version, title: "racer b" }),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([200, 409]);
+
+    const current = (await api(`/api/issues/${issue.number}`)).body as { title: string; version: number };
+    expect(["racer a", "racer b"]).toContain(current.title);
+    expect(current.version).toBe(Number(issue.version) + 1);
+  });
+
+  it("requires an optimistic-lock version for edits", async () => {
+    const issue = await createIssue({ title: "needs version" });
+    const missing = await patch(`/api/issues/${issue.number}`, { title: "not accepted" });
+    expect(missing.status).toBe(400);
+  });
+
+  it("rejects an empty edit without advancing its version or audit history", async () => {
+    const issue = await createIssue({ title: "no-op edit" });
+    const empty = await patch(`/api/issues/${issue.number}`, { expected_version: issue.version });
+    expect(empty.status).toBe(400);
+
+    const current = (await api(`/api/issues/${issue.number}`)).body as { version: number };
+    expect(current.version).toBe(issue.version);
+    const history = (await api(`/api/issues/${issue.number}/history`)).body as { action: string }[];
+    expect(history.filter((event) => event.action === "issue.update")).toHaveLength(0);
   });
 
   it("looks up issues by number and by uuid", async () => {
@@ -124,6 +209,7 @@ describe("issue lifecycle", () => {
     expect(bad.status).toBe(200);
     const res = bad.body as { issues: unknown[] };
     expect(Array.isArray(res.issues)).toBe(true);
+    expect(res.issues.length).toBeLessThanOrEqual(100);
   });
 
   it("filters the issue list by type/status/label", async () => {
@@ -135,6 +221,29 @@ describe("issue lifecycle", () => {
     expect((tagged.body as { issues: { labels: string[] }[] }).issues.every((i) => i.labels.includes("tagged"))).toBe(true);
     const closed = await api("/api/issues?status=closed");
     expect((closed.body as { issues: unknown[] }).issues).toHaveLength(0);
+  });
+
+  it("supports multiple types, multiple labels, and keyword filters", async () => {
+    const marker = `multi-${crypto.randomUUID().slice(0, 8)}`;
+    const red = `${marker}-red`;
+    const blue = `${marker}-blue`;
+    await createIssue({ title: `${marker} bug needle`, body: "first searchable body", type: "bug", labels: [red] });
+    await createIssue({ title: `${marker} wiki`, body: "second searchable needle", type: "wiki", labels: [blue] });
+    await createIssue({ title: `${marker} task needle`, type: "task", labels: [`${marker}-other`] });
+
+    const types = await api(`/api/issues?q=${marker}&type=bug&type=wiki`);
+    const typedBody = types.body as { issues: { type: string }[]; total: number };
+    expect(typedBody.issues.map((issue) => issue.type).sort()).toEqual(["bug", "wiki"]);
+    expect(typedBody.total).toBe(2);
+
+    const labels = await api(`/api/issues?q=${marker}&label=${red}&label=${blue}`);
+    const labelledBody = labels.body as { issues: { labels: string[] }[]; total: number };
+    expect(labelledBody.issues).toHaveLength(2);
+    expect(labelledBody.issues.every((issue) => issue.labels.includes(red) || issue.labels.includes(blue))).toBe(true);
+    expect(labelledBody.total).toBe(2);
+
+    const keyword = await api(`/api/issues?q=${encodeURIComponent("second searchable needle")}`);
+    expect((keyword.body as { issues: { type: string }[] }).issues.map((issue) => issue.type)).toContain("wiki");
   });
 });
 

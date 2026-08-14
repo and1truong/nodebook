@@ -3,12 +3,14 @@
 export class AppError extends Error {
   readonly status: number;
   readonly code: string;
+  readonly details?: unknown;
 
-  constructor(message: string, status: number, code: string) {
+  constructor(message: string, status: number, code: string, details?: unknown) {
     super(message);
     this.name = new.target.name;
     this.status = status;
     this.code = code;
+    this.details = details;
   }
 }
 
@@ -42,6 +44,22 @@ export class ConflictError extends AppError {
   }
 }
 
+export class VersionConflictError extends AppError {
+  readonly expectedVersion: number;
+  readonly currentVersion: number;
+
+  constructor(expectedVersion: number, currentVersion: number) {
+    super(
+      "Issue changed since it was loaded. Refresh the issue and reapply your changes.",
+      409,
+      "version_conflict",
+      { expected_version: expectedVersion, current_version: currentVersion },
+    );
+    this.expectedVersion = expectedVersion;
+    this.currentVersion = currentVersion;
+  }
+}
+
 export class PayloadTooLargeError extends AppError {
   constructor(message = "Payload too large") {
     super(message, 413, "payload_too_large");
@@ -56,3 +74,4 @@ export const JSONRPC_INVALID_PARAMS = -32602;
 export const JSONRPC_INTERNAL_ERROR = -32603;
 export const JSONRPC_SESSION_NOT_INITIALIZED = -32002;
 export const JSONRPC_INSUFFICIENT_SCOPE = -32003;
+export const JSONRPC_VERSION_CONFLICT = -32009;

@@ -66,7 +66,7 @@ export function AppShell({
   const navItems = [
     { to: "/inbox", label: "Inbox", icon: "📥" },
     { to: "/today", label: "Today", icon: "☀️" },
-    { to: "/upcoming", label: "Upcoming", icon: "📅" },
+    { to: "/calendar", label: "Calendar", icon: "📅" },
     { to: "/issues", label: "Issues", icon: "🗂️" },
     { to: "/wiki", label: "Wiki", icon: "📖" },
     { to: "/search", label: "Search", icon: "🔍" },
@@ -183,9 +183,11 @@ export function AppShell({
         <main
           className={cn(
             "w-full min-w-0 px-4 pb-8 pt-5 md:px-7 md:pb-20 md:pt-6",
-            // The Wiki workspace owns its internal reading/tree columns, so
-            // let it use all space left by the application navigation.
-            path === "/wiki" || (path !== "/wiki/new" && matchPath("/wiki/:ref", path) !== null)
+            // The Wiki workspace owns its internal reading/tree columns, and
+            // the Calendar workspace owns its grids, so let them use all
+            // space left by the application navigation.
+            path === "/wiki" || (path !== "/wiki/new" && matchPath("/wiki/:ref", path) !== null) ||
+              path === "/calendar" || path === "/upcoming"
               ? "max-w-none"
               : !matchPath("/issues/new", path) && matchPath("/issues/:ref", path) !== null
                 ? "max-w-[1280px]"

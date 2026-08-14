@@ -1,36 +1,81 @@
+
+
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { AppShell } from "./components/AppShell";
-import { useRouter, matchPath, Link } from "./router";
+import { useRouter, matchPath, Link, navigateReplace } from "./router";
 import { InboxPage } from "./pages/InboxPage";
 import { TodayPage } from "./pages/TodayPage";
-import { UpcomingPage } from "./pages/UpcomingPage";
+import { CalendarPage } from "./pages/CalendarPage";
 import { IssuesPage } from "./pages/IssuesPage";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { WikiPage } from "./pages/WikiPage";
 import { SearchPage } from "./pages/SearchPage";
 import { TokenSettingsPage } from "./pages/TokenSettingsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import type { AppConfigDto } from "../shared/contracts/config";
+import type { CalendarView, IssuePageLimit, WeekStartDay } from "../shared/contracts/config";
+import { DEFAULT_ISSUES_PAGE_LIMIT, DEFAULT_WEEK_START_DAY } from "../shared/contracts/config";
 
 export function App() {
   const { path, navigate } = useRouter();
   const [email, setEmail] = useState<string>("");
+  // undefined = still loading; null = config fetch failed (fall back to week).
+  const [config, setConfig] = useState<AppConfigDto | null | undefined>(undefined);
 
   useEffect(() => {
-    api.me().then((me) => setEmail(me.email)).catch(() => setEmail(""));
+    let cancelled = false;
+    api
+      .me()
+      .then((me) => {
+        if (!cancelled) {
+          setEmail(me.email);
+          setConfig(me);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setEmail("");
+          setConfig(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
+  // While the config is still loading the default view is unknown; pass
+  // undefined so CalendarPage waits before fetching its first range.
+  const calendarDefaultView: CalendarView | undefined =
+    config === undefined ? undefined : (config?.calendar_default_view ?? "week");
+
+  // Same gating for the week start: undefined while loading, the deployment
+  // value once resolved, and the Sunday default after /api/me failure.
+  const weekStartDay: WeekStartDay | undefined =
+    config === undefined ? undefined : (config?.week_start_day ?? DEFAULT_WEEK_START_DAY);
+
+  // Delay the Issues list's first request until its deployment default is
+  // known, avoiding an unnecessary request with the wrong page size.
+  const issuesDefaultLimit: IssuePageLimit | undefined =
+    config === undefined ? undefined : (config?.issues_default_limit ?? DEFAULT_ISSUES_PAGE_LIMIT);
+
+  // /upcoming is a compatibility alias: replace the URL in place so the
+  // canonical /calendar route is what the address bar and history hold.
+  useEffect(() => {
+    if (path === "/upcoming") navigateReplace("/calendar");
+  }, [path]);
+
   let content: React.ReactNode;
-  if (path === "/" || path === "/inbox") content = <InboxPage />;
+  if (path === "/" || path === "/inbox") content = <InboxPage weekStartDay={weekStartDay} />;
   else if (path === "/today") content = <TodayPage />;
-  else if (path === "/upcoming") content = <UpcomingPage />;
-  else if (path === "/issues") content = <IssuesPage />;
-  else if (matchPath("/issues/new", path)) content = <IssueDetailPage mode="create" />;
+  else if (path === "/calendar" || path === "/upcoming") content = <CalendarPage defaultView={calendarDefaultView} weekStartDay={weekStartDay} />;
+  else if (path === "/issues") content = <IssuesPage defaultLimit={issuesDefaultLimit} />;
+  else if (matchPath("/issues/new", path)) content = <IssueDetailPage mode="create" weekStartDay={weekStartDay} />;
   else if (matchPath("/issues/:ref", path)) {
     const { ref } = matchPath("/issues/:ref", path)!;
-    content = <IssueDetailPage mode="view" issueRef={ref} />;
+    content = <IssueDetailPage mode="view" issueRef={ref} weekStartDay={weekStartDay} />;
   } else if (path === "/wiki") content = <WikiPage />;
-  else if (path === "/wiki/new") content = <IssueDetailPage mode="create" createType="wiki" />;
+  else if (path === "/wiki/new") content = <IssueDetailPage mode="create" createType="wiki" weekStartDay={weekStartDay} />;
   else if (matchPath("/wiki/:ref", path)) {
     const { ref } = matchPath("/wiki/:ref", path)!;
     content = <WikiPage selectedRef={ref} />;

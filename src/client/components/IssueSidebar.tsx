@@ -2,12 +2,14 @@
  * Right-hand issue sidebar: compact properties and relationships.
  * Attachments, backlinks, and reminders live in the main issue content tabs.
  */
-import type { ReactNode } from "react";
-import { formatInstant } from "../api";
+import { useState, type ReactNode } from "react";
+import { formatInstant, api } from "../api";
 import type { IssueDto } from "../../shared/contracts/issues";
+import { ISSUE_TYPES, PRIORITIES } from "../../shared/limits";
 import { Link } from "../router";
 import { RelationshipsPanel } from "./RelationshipsPanel";
 import { TypeBadge, PriorityBadge, LabelChip } from "./ui";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 function SidebarSection({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -27,16 +29,22 @@ function PropertyRow({ label, children }: { label: string; children: ReactNode }
   );
 }
 
-export function IssueSidebar({ issue }: { issue: IssueDto }) {
+export function IssueSidebar({
+  issue,
+  onIssueUpdated,
+}: {
+  issue: IssueDto;
+  onIssueUpdated: (issue: IssueDto) => void;
+}) {
   const dueOverdue = issue.status === "open" && issue.due_date !== null && issue.due_date < today();
   return (
     <aside aria-label="Issue details" className="issue-sidebar min-w-0">
       <SidebarSection title="Properties">
         <PropertyRow label="Type">
-          <TypeBadge type={issue.type} />
+          <TypeSelect issue={issue} onIssueUpdated={onIssueUpdated} />
         </PropertyRow>
         <PropertyRow label="Priority">
-          {issue.priority ? <PriorityBadge priority={issue.priority} /> : <span className="dim">None</span>}
+          <PrioritySelect issue={issue} onIssueUpdated={onIssueUpdated} />
         </PropertyRow>
         <PropertyRow label="Labels">
           {issue.labels.length > 0 ? (
@@ -92,6 +100,127 @@ export function IssueSidebar({ issue }: { issue: IssueDto }) {
       </SidebarSection>
     </aside>
   );
+}
+
+function TypeSelect({
+  issue,
+  onIssueUpdated,
+}: {
+  issue: IssueDto;
+  onIssueUpdated: (issue: IssueDto) => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const updateType = async (type: string) => {
+    if (issue.type === type) return;
+    setPending(true);
+    setError(null);
+    try {
+      const updated = await api.updateIssue(String(issue.number), issue.version, { type });
+      onIssueUpdated(updated);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not update type");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <span className="flex flex-col items-end gap-1">
+      <Select value={issue.type} disabled={pending} onValueChange={(type) => void updateType(type)}>
+        <SelectTrigger
+          size="sm"
+          className="h-7 max-w-full border-0 px-1.5 shadow-none hover:bg-accent"
+          aria-label={`Type for #${issue.number}`}
+          aria-busy={pending}
+          aria-invalid={Boolean(error)}
+        >
+          <SelectValue>
+            <TypeBadge type={issue.type} />
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent align="end">
+          {ISSUE_TYPES.map((type) => (
+            <SelectItem key={type} value={type}>
+              <TypeBadge type={type} />
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {error && (
+        <span className="max-w-44 text-right text-xs text-destructive" role="alert">
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function PrioritySelect({
+  issue,
+  onIssueUpdated,
+}: {
+  issue: IssueDto;
+  onIssueUpdated: (issue: IssueDto) => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const updatePriority = async (value: string) => {
+    if ((issue.priority ?? "none") === value) return;
+    setPending(true);
+    setError(null);
+    try {
+      const updated = await api.updateIssue(String(issue.number), issue.version, {
+        priority: value === "none" ? null : value,
+      });
+      onIssueUpdated(updated);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not update priority");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  return (
+    <span className="flex flex-col items-end gap-1">
+      <Select
+        value={issue.priority ?? "none"}
+        disabled={pending}
+        onValueChange={(value) => void updatePriority(value)}
+      >
+        <SelectTrigger
+          size="sm"
+          className="h-7 max-w-full border-0 px-1.5 shadow-none hover:bg-accent"
+          aria-label={`Priority for #${issue.number}`}
+          aria-busy={pending}
+          aria-invalid={Boolean(error)}
+        >
+          <SelectValue>
+            {issue.priority ? <PriorityBadge priority={issue.priority} /> : <span className="dim">None</span>}
+          </SelectValue>
+        </SelectTrigger>
+        <SelectContent align="end">
+          <SelectItem value="none">No priority</SelectItem>
+          {PRIORITIES.map((priority) => (
+            <SelectItem key={priority} value={priority}>
+              {capitalize(priority)}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {error && (
+        <span className="max-w-44 text-right text-xs text-destructive" role="alert">
+          {error}
+        </span>
+      )}
+    </span>
+  );
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
 function today(): string {

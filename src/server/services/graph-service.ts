@@ -34,26 +34,8 @@ import { toIssueDto, toIssueDtos } from "./dto";
 // Hierarchy
 // ---------------------------------------------------------------------------
 
-export async function setParent(ctx: Ctx, issueId: string, parentId: string | null): Promise<void> {
-  const issue = await getIssueById(ctx.env.DB, issueId);
-  if (!issue) throw new NotFoundError("Issue not found");
-
-  if (parentId === null) {
-    if (issue.parent_id !== null) {
-      await ctx.env.DB.prepare("UPDATE issues SET parent_id = NULL, updated_at = ? WHERE id = ?")
-        .bind(new Date().toISOString(), issueId)
-        .run();
-      await recordAudit(ctx, {
-        action: "issue.set_parent",
-        entityType: "issue",
-        entityId: issueId,
-        before: { parent_id: issue.parent_id },
-        after: { parent_id: null },
-      });
-    }
-    return;
-  }
-
+export async function validateParentChange(ctx: Ctx, issueId: string, parentId: string | null): Promise<void> {
+  if (parentId === null) return;
   if (parentId === issueId) throw new ValidationError("An issue cannot be its own parent");
   const parent = await getIssueById(ctx.env.DB, parentId);
   if (!parent) throw new NotFoundError("Parent issue not found");
@@ -64,8 +46,17 @@ export async function setParent(ctx: Ctx, issueId: string, parentId: string | nu
   if (ancestors.includes(issueId)) {
     throw new ConflictError("Setting this parent would create a cycle");
   }
+}
 
-  await ctx.env.DB.prepare("UPDATE issues SET parent_id = ?, updated_at = ? WHERE id = ?")
+export async function setParent(ctx: Ctx, issueId: string, parentId: string | null): Promise<void> {
+  const issue = await getIssueById(ctx.env.DB, issueId);
+  if (!issue) throw new NotFoundError("Issue not found");
+  if (issue.parent_id === parentId) return;
+
+  await validateParentChange(ctx, issueId, parentId);
+  await ctx.env.DB.prepare(
+    "UPDATE issues SET parent_id = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+  )
     .bind(parentId, new Date().toISOString(), issueId)
     .run();
   await recordAudit(ctx, {
@@ -331,9 +322,13 @@ async function toBacklinkDto(ctx: Ctx, record: ReferenceRecord): Promise<Backlin
 // Wiki tree
 // ---------------------------------------------------------------------------
 
-/** Full hierarchy tree of root issues (used by the wiki navigation). */
+/**
+ * Full hierarchy tree of wiki pages (used by the wiki navigation). Only
+ * root issues of type `wiki` are top-level entries; descendants may keep any
+ * issue type. Branches beneath excluded (non-wiki) roots are not promoted.
+ */
 export async function getWikiTree(ctx: Ctx): Promise<WikiNodeDto[]> {
-  const roots = await listIssues(ctx.env.DB, { parent_id: null, limit: 500 });
+  const roots = await listIssues(ctx.env.DB, { parent_id: null, type: "wiki", limit: 500 });
   const nodes = await Promise.all(roots.map((root) => buildWikiNode(ctx, root)));
   return nodes;
 }
