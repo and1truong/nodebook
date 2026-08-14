@@ -343,6 +343,20 @@ export interface PlanningItemDto {
   matched_kind: "due" | "scheduled" | "overdue";
 }
 
+/**
+ * One calendar occurrence of an open issue: a due date (all-day) or a
+ * scheduled instant (timed). An issue with both planning values expands into
+ * two entries so neither signal is hidden. `date` is the viewer-local civil
+ * date (YYYY-MM-DD) the entry is shown on; the timed instant is available on
+ * the embedded issue DTO (`scheduled_date`) for scheduled entries.
+ */
+export interface CalendarItemDto {
+  issue: IssueDto;
+  /** Viewer-local occurrence date (YYYY-MM-DD). */
+  date: string;
+  kind: "due" | "scheduled";
+}
+
 export interface OccurrenceDto {
   id: string;
   issue_id: string;

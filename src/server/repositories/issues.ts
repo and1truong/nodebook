@@ -179,6 +179,42 @@ export async function countIssues(db: D1Database, filters: IssueFilters = {}): P
   return Number(row?.n ?? 0);
 }
 
+// ---------------------------------------------------------------------------
+// Calendar range
+// ---------------------------------------------------------------------------
+
+/**
+ * Bounds for the calendar range query. Due dates are civil strings compared
+ * against `startDate`/`endDate`; scheduled instants are UTC ISO strings
+ * compared against the timezone-derived instant bounds of the same civil
+ * window, so an instant belongs to the range exactly when its civil date in
+ * the viewer's timezone does (correct across DST transitions; see
+ * shared/time.ts instantFromCivil).
+ */
+export interface CalendarIssueFilter {
+  startDate: string;
+  endDate: string;
+  startInstant: string;
+  endInstant: string;
+}
+
+/** Open issues whose due date or scheduled instant intersects [start, end). */
+export async function listCalendarIssues(db: D1Database, f: CalendarIssueFilter): Promise<IssueRecord[]> {
+  const res = await db
+    .prepare(
+      `SELECT ${ISSUE_COLUMNS} FROM issues
+       WHERE status = 'open'
+         AND (
+           (due_date IS NOT NULL AND due_date >= ? AND due_date < ?)
+           OR (scheduled_date IS NOT NULL AND scheduled_date >= ? AND scheduled_date < ?)
+         )
+       ORDER BY number`,
+    )
+    .bind(f.startDate, f.endDate, f.startInstant, f.endInstant)
+    .all<Record<string, unknown>>();
+  return res.results.map(rowToIssue);
+}
+
 export type IssueUpdateFields = Partial<
   Pick<
     IssueRecord,

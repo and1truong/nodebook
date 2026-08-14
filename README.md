@@ -12,7 +12,7 @@ NodeBook is a single-owner workspace where every issue is a first-class node in 
 - **Graph** — parent/child hierarchy, typed relationships (`related`, `depends_on`, `blocks`, `supersedes`, `duplicates`), and `#123` references that resolve even when the target is created later.
 - **Wiki** — hierarchy tree navigation, breadcrumbs, backlinks, and related-content panels.
 - **Search** — FTS5 full-text search over titles, bodies, comments, labels, and attachment metadata, with type/state/label filters and PRD `search_knowledge` semantics.
-- **Planning** — Inbox / Today / Upcoming / Overdue views in the owner's timezone; recurring tasks (RFC 5545 rules) record occurrences and advance planning dates instead of closing.
+- **Planning** — Inbox / Today / Calendar / Overdue views in the owner's timezone; recurring tasks (RFC 5545 rules) record occurrences and advance planning dates instead of closing. The Calendar workspace (`/calendar`, day/week/month views, Sunday-first) shows due dates and scheduled instants in the viewer's timezone via a bounded range API; `/upcoming` redirects to it for compatibility.
 - **Reminders & notifications** — absolute, before-due, and recurring reminders delivered to an in-app notification inbox by a one-minute Cron Trigger, with idempotent delivery and expiring claim locks.
 - **Attachments** — private R2 blobs with checksum deduplication, inline previews or forced downloads, range support, soft deletion, and daily garbage collection.
 - **Theming** — light, dark, and system themes (Tailwind CSS v4 + CSS-variable tokens on shadcn/ui components) with a topbar switcher, localStorage persistence, no flash-of-wrong-theme on load, and live following of the OS preference in system mode. The palette is derived from TabTerm's warm parchment/brown/gold theme (light `#f5f0e8`/`#fffcf6`/`#7a5c00`, dark `#1a1200`/`#251a00`/`#ffd000`), with light-mode text tokens darkened to stay ≥ 4.5:1 (WCAG AA).
@@ -83,7 +83,7 @@ URL:   https://<your-worker>/mcp
 Auth:  Authorization: Bearer nbk_…
 ```
 
-Tokens are stored as SHA-256 hashes with display prefixes, support expiration, and revoke immediately. Every tool call is re-checked against the database on each request. `get_today`/`get_upcoming` accept an optional `timezone` argument (IANA).
+Tokens are stored as SHA-256 hashes with display prefixes, support expiration, and revoke immediately. Every tool call is re-checked against the database on each request. `get_today`/`get_upcoming` accept an optional `timezone` argument (IANA); `get_upcoming` is retained unchanged for compatibility with the retired Upcoming browser page.
 
 ## Production notes
 

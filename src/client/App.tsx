@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import { AppShell } from "./components/AppShell";
-import { useRouter, matchPath, Link } from "./router";
+import { useRouter, matchPath, Link, navigateReplace } from "./router";
 import { InboxPage } from "./pages/InboxPage";
 import { TodayPage } from "./pages/TodayPage";
-import { UpcomingPage } from "./pages/UpcomingPage";
+import { CalendarPage } from "./pages/CalendarPage";
 import { IssuesPage } from "./pages/IssuesPage";
 import { IssueDetailPage } from "./pages/IssueDetailPage";
 import { WikiPage } from "./pages/WikiPage";
@@ -20,10 +20,16 @@ export function App() {
     api.me().then((me) => setEmail(me.email)).catch(() => setEmail(""));
   }, []);
 
+  // /upcoming is a compatibility alias: replace the URL in place so the
+  // canonical /calendar route is what the address bar and history hold.
+  useEffect(() => {
+    if (path === "/upcoming") navigateReplace("/calendar");
+  }, [path]);
+
   let content: React.ReactNode;
   if (path === "/" || path === "/inbox") content = <InboxPage />;
   else if (path === "/today") content = <TodayPage />;
-  else if (path === "/upcoming") content = <UpcomingPage />;
+  else if (path === "/calendar" || path === "/upcoming") content = <CalendarPage />;
   else if (path === "/issues") content = <IssuesPage />;
   else if (matchPath("/issues/new", path)) content = <IssueDetailPage mode="create" />;
   else if (matchPath("/issues/:ref", path)) {

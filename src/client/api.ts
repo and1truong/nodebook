@@ -3,6 +3,7 @@ import type {
   AttachmentDto,
   AuditEventDto,
   BacklinkDto,
+  CalendarItemDto,
   CommentDto,
   IssueDto,
   IssueListResult,
@@ -116,6 +117,11 @@ export const api = {
   today: (tz?: string) => request<PlanningItemDto[]>(`/api/planning/today${tz ? `?tz=${encodeURIComponent(tz)}` : ""}`),
   upcoming: (tz?: string) =>
     request<PlanningItemDto[]>(`/api/planning/upcoming${tz ? `?tz=${encodeURIComponent(tz)}` : ""}`),
+  calendar: (start: string, end: string, tz?: string) => {
+    const qs = new URLSearchParams({ start, end });
+    if (tz) qs.set("tz", tz);
+    return request<CalendarItemDto[]>(`/api/planning/calendar?${qs.toString()}`);
+  },
 
   // Reminders
   reminders: (ref: string) => request<ReminderDto[]>(`/api/reminders/issue/${ref}`),

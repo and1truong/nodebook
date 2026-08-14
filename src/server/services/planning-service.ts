@@ -1,8 +1,8 @@
-/** Planning views: Inbox, Today, Upcoming, Overdue. */
+/** Planning views: Inbox, Today, Calendar, Overdue. */
 import type { Ctx } from "../ctx";
 import type { IssueRecord } from "../../domain/models";
-import type { PlanningItemDto } from "../../shared/contracts/issues";
-import { isValidTimezone, parseCivilDate, todayCivil } from "../../shared/time";
+import type { CalendarItemDto, PlanningItemDto } from "../../shared/contracts/issues";
+import { civilDateString, daysBetween, instantFromCivil, isValidTimezone, parseCivilDate, todayCivil } from "../../shared/time";
 import { ValidationError } from "../../domain/errors";
 import { toIssueDtos } from "./dto";
 import { issueRepo } from "./issue-service";
@@ -79,6 +79,8 @@ export async function getToday(ctx: Ctx, tzParam?: string | null): Promise<Plann
 
 /**
  * Upcoming: open work scheduled or due after the owner's local day.
+ * Kept for API/MCP compatibility; the browser planning surface is the
+ * Calendar workspace (getCalendar).
  */
 export async function getUpcoming(ctx: Ctx, tzParam?: string | null): Promise<PlanningItemDto[]> {
   const { timezone, now } = planningQuery(ctx, tzParam);
@@ -116,6 +118,68 @@ export async function getOverdue(ctx: Ctx, tzParam?: string | null): Promise<Pla
     .sort((a, b) => (a.due_date! < b.due_date! ? -1 : 1));
   const dtos = await toIssueDtos(ctx, overdue);
   return dtos.map((d) => ({ issue: d, matched: d.due_date ?? "", matched_kind: "overdue" as const }));
+}
+
+/** Maximum calendar range span in days: a six-week month grid (42) plus slack. */
+export const MAX_CALENDAR_SPAN_DAYS = 62;
+
+/**
+ * Calendar: open work whose due date or scheduled instant falls in the
+ * end-exclusive civil range [start, end) in the viewer's timezone. Due dates
+ * are all-day entries on their civil date; scheduled instants are converted
+ * to the viewer's local date. An issue with both values yields two entries,
+ * deterministically ordered by (date, kind, issue number).
+ */
+export async function getCalendar(
+  ctx: Ctx,
+  startParam: string | null | undefined,
+  endParam: string | null | undefined,
+  tzParam?: string | null,
+): Promise<CalendarItemDto[]> {
+  const { timezone } = planningQuery(ctx, tzParam);
+  const start = startParam ?? "";
+  const end = endParam ?? "";
+  if (!parseCivilDate(start)) throw new ValidationError("start must be a valid YYYY-MM-DD date");
+  if (!parseCivilDate(end)) throw new ValidationError("end must be a valid YYYY-MM-DD date");
+  if (end <= start) throw new ValidationError("end must be after start");
+  if (daysBetween(start, end) > MAX_CALENDAR_SPAN_DAYS) {
+    throw new ValidationError(`Calendar range too large (max ${MAX_CALENDAR_SPAN_DAYS} days)`);
+  }
+
+  // The scheduled-instant bounds of the same civil window: an instant is in
+  // [start, end) exactly when its civil date in the viewer's timezone is.
+  const startInstant = instantFromCivil(timezone, parseCivilDate(start)!);
+  const endInstant = instantFromCivil(timezone, parseCivilDate(end)!);
+  const issues = await issueRepo.listCalendarIssues(ctx.env.DB, {
+    startDate: start,
+    endDate: end,
+    startInstant: startInstant.toISOString(),
+    endInstant: endInstant.toISOString(),
+  });
+  if (issues.length === 0) return [];
+
+  const dtos = await toIssueDtos(ctx, issues);
+  const dtoById = new Map(dtos.map((d) => [d.id, d]));
+  const entries: CalendarItemDto[] = [];
+  for (const issue of issues) {
+    const dto = dtoById.get(issue.id);
+    if (!dto) continue;
+    if (issue.due_date && issue.due_date >= start && issue.due_date < end) {
+      entries.push({ issue: dto, date: issue.due_date, kind: "due" });
+    }
+    if (issue.scheduled_date) {
+      const date = civilDateString(new Date(issue.scheduled_date), timezone);
+      if (date >= start && date < end) {
+        entries.push({ issue: dto, date, kind: "scheduled" });
+      }
+    }
+  }
+  entries.sort((a, b) => {
+    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+    if (a.kind !== b.kind) return a.kind === "due" ? -1 : 1;
+    return a.issue.number - b.issue.number;
+  });
+  return entries;
 }
 
 function matchDay(issue: IssueRecord, timezone: string, now: Date, today: string): "today" | "overdue" | null {
