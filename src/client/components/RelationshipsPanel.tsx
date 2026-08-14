@@ -2,11 +2,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { Link } from "../router";
-import type { RelationshipDto } from "../../shared/contracts/issues";
+import type { IssueDto, RelationshipDto } from "../../shared/contracts/issues";
 import { RELATIONSHIP_TYPES } from "../../shared/limits";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
-import { Input } from "./ui/input";
+import { IssueFinder } from "./IssueFinder";
 import { Loading, ErrorState, EmptyState } from "./ui";
 import { cn } from "@/lib/utils";
 
@@ -26,6 +26,7 @@ export function RelationshipsPanel({
   const [items, setItems] = useState<RelationshipDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [targetRef, setTargetRef] = useState("");
+  const [selectedIssue, setSelectedIssue] = useState<IssueDto | null>(null);
   const [type, setType] = useState<string>("related");
   const [adding, setAdding] = useState(false);
 
@@ -46,9 +47,12 @@ export function RelationshipsPanel({
     setAdding(true);
     setError(null);
     try {
-      const target = await api.getIssue(targetRef.trim().replace(/^#/, ""));
+      // Keep direct #number / UUID submission working, while finder selections
+      // skip the extra lookup because they already carry the target id.
+      const target = selectedIssue ?? (await api.getIssue(targetRef.trim().replace(/^#/, "")));
       await api.addRelationship(issueRef, target.id, type);
       setTargetRef("");
+      setSelectedIssue(null);
       load();
     } catch (err) {
       setError(err);
@@ -71,12 +75,13 @@ export function RelationshipsPanel({
     <section className={cn("flex flex-col gap-3", !embedded && "rounded-lg border border-border bg-card p-4")}>
       {!embedded && <h3 className="text-sm font-semibold">Relationships</h3>}
       <form className={cn("flex gap-2", embedded ? "flex-col" : "flex-wrap items-center")} onSubmit={add}>
-        <Input
-          className={embedded ? "w-full" : "w-48"}
+        <IssueFinder
+          currentIssueId={issueId}
           value={targetRef}
-          onChange={(e) => setTargetRef(e.target.value)}
-          placeholder="Issue # or UUID"
-          aria-label="Target issue"
+          selectedIssue={selectedIssue}
+          disabled={adding}
+          onValueChange={setTargetRef}
+          onSelect={setSelectedIssue}
         />
         <select
           value={type}

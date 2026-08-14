@@ -213,8 +213,13 @@ test.describe.serial("MVP acceptance", () => {
     const issues = list.json.issues as { number: number; title: string }[];
     childNumber = issues.find((i) => i.title === "Write deployment guide")!.number;
 
-    // Link the child as a dependency.
-    await page.getByLabel("Target issue").fill(String(childNumber));
+    // Find the child by title and link it as a dependency.
+    await page.getByLabel("Target issue").fill("Write deployment guide");
+    const relationshipCandidate = page.locator(".issue-finder-result", { hasText: "Write deployment guide" });
+    await expect(relationshipCandidate).toBeVisible();
+    await expect(relationshipCandidate).toContainText(`#${childNumber}`);
+    await relationshipCandidate.click();
+    await expect(page.getByText(`Selected: Write deployment guide #${childNumber}`)).toBeVisible();
     await page.getByLabel("Relationship type").selectOption("depends_on");
     await page.getByRole("button", { name: "Link" }).click();
     await expect(page.locator(".rel-item", { hasText: "#" + childNumber })).toBeVisible();
