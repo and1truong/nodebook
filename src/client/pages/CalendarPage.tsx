@@ -18,6 +18,7 @@ import type { CalendarItemDto, IssueDto } from "../../shared/contracts/issues";
 import type { CalendarView, WeekStartDay } from "../calendar";
 import { navigate, reconcileCalendarItems, reschedulePatch, viewLabel, viewRange } from "../calendar";
 import { CalendarViewRenderer } from "../components/CalendarView";
+import { IssueLinkPreview } from "../components/IssueLinkPreview";
 import { ErrorState, Loading, PageHeader } from "../components/ui";
 import { Button } from "../components/ui/button";
 import { cn } from "@/lib/utils";
@@ -176,20 +177,22 @@ export function CalendarPage({
       {error ? <ErrorState error={error} onRetry={() => setReloadKey((k) => k + 1)} /> : null}
       {!error && !items && <Loading label="Loading calendar…" />}
       {!error && items && view && weekStartDay && (
-        <CalendarViewRenderer
-          view={view}
-          selected={selected}
-          today={today}
-          items={items}
-          busyIssueIds={busyIssueIds}
-          weekStartDay={weekStartDay}
-          timezone={tz}
-          onSelectDay={(date) => {
-            setSelected(date);
-            setSessionView("day");
-          }}
-          onMove={moveEntry}
-        />
+        <IssueLinkPreview>
+          <CalendarViewRenderer
+            view={view}
+            selected={selected}
+            today={today}
+            items={items}
+            busyIssueIds={busyIssueIds}
+            weekStartDay={weekStartDay}
+            timezone={tz}
+            onSelectDay={(date) => {
+              setSelected(date);
+              setSessionView("day");
+            }}
+            onMove={moveEntry}
+          />
+        </IssueLinkPreview>
       )}
     </>
   );

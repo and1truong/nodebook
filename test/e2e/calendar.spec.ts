@@ -351,6 +351,27 @@ test.describe.serial("Calendar workspace", () => {
     await expect(targetCol.getByText("2:30 PM")).toBeVisible();
   });
 
+  test("previews a calendar entry on hover", async ({ page, request }) => {
+    const today = todayUtc();
+    const previewed = await createIssue(request, {
+      title: "Calendar hover preview",
+      body: "Details shown from the calendar hover card.",
+      type: "decision",
+      labels: ["calendar-preview"],
+      due_date: today,
+    });
+
+    await page.goto("/calendar");
+    await page.getByRole("link", { name: `Due — #${previewed.number} Calendar hover preview` }).hover();
+
+    const card = page.locator(".issue-hover-card");
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("Calendar hover preview");
+    await expect(card).toContainText(`#${previewed.number}`);
+    await expect(card).toContainText("Details shown from the calendar hover card.");
+    await expect(card.locator(".chip", { hasText: "calendar-preview" })).toBeVisible();
+  });
+
   test("previous/next/today navigation moves across months and empty ranges", async ({ page, request }) => {
     const today = todayUtc();
     const [y, m] = today.split("-").map(Number);
