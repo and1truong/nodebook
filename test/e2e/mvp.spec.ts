@@ -559,9 +559,9 @@ test.describe.serial("MVP acceptance", () => {
     // backlinks now live in the main-column tab set.
     await expect(aside).toBeVisible();
     await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
-    await expect(aside.getByText("due 2099-01-01")).toBeVisible();
+    await expect(aside.getByRole("textbox", { name: `Due date for #${issueNumber}` })).toHaveValue("2099-01-01");
 
-    // Type and priority can be changed in place without opening the full edit form.
+    // Type, priority, and planning dates can be changed in place without opening the full edit form.
     const typeSelect = aside.getByLabel(`Type for #${issueNumber}`);
     await expect(typeSelect).toContainText(/wiki/i);
     await typeSelect.click();
@@ -615,7 +615,7 @@ test.describe.serial("MVP acceptance", () => {
     await expect(page.locator("html")).toHaveClass(/dark/);
     await expect(aside).toBeVisible();
     await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
-    await expect(aside.getByText("due 2099-01-01")).toBeVisible();
+    await expect(aside.getByRole("textbox", { name: `Due date for #${issueNumber}` })).toHaveValue("2099-01-01");
     const darkTokens = await page.evaluate(() => {
       const s = getComputedStyle(document.documentElement);
       return { bg: s.getPropertyValue("--background").trim(), card: s.getPropertyValue("--card").trim() };
@@ -642,7 +642,7 @@ test.describe.serial("MVP acceptance", () => {
 
     await page.goto(`/issues/${recurring.number}`);
     await page.getByRole("button", { name: "✓ Complete" }).click();
-    await expect(page.getByText("due 2099-01-08")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: `Due date for #${recurring.number}` })).toHaveValue("2099-01-08");
 
     // Non-recurring close still works.
     await page.goto(`/issues/${issueNumber}`);
