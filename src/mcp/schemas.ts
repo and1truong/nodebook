@@ -36,7 +36,7 @@ export const createIssueSchema = z.object({
   type: z.enum(["task", "bug", "epic", "story", "decision", "finding", "incident", "learning", "wiki", "note"]).optional(),
   title: z.string().min(1).max(500),
   body: z.string().max(100_000).optional(),
-  priority: z.enum(["low", "medium", "high", "urgent"]).optional(),
+  priority: z.enum(["low", "medium", "high", "urgent"]).nullable().optional(),
   labels: z.array(z.string().max(32)).max(20).optional(),
   due_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
   scheduled_date: z.string().nullable().optional(),

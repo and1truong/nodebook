@@ -245,7 +245,7 @@ export async function updateIssue(
   fields: IssueUpdateFields,
   now: string,
   expectedVersion?: number,
-): Promise<number | null> {
+): Promise<IssueRecord | null> {
   const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
   const sets = entries.map(([key]) => `${key} = ?`);
   const args = entries.map(([, v]) => (v === null ? null : String(v)));
@@ -254,10 +254,13 @@ export async function updateIssue(
 
   const guarded = expectedVersion !== undefined;
   const row = await db
-    .prepare(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?${guarded ? " AND version = ?" : ""} RETURNING version`)
+    .prepare(
+      `UPDATE issues SET ${sets.join(", ")} WHERE id = ?${guarded ? " AND version = ?" : ""}
+       RETURNING ${ISSUE_COLUMNS}`,
+    )
     .bind(...args, id, ...(guarded ? [expectedVersion] : []))
-    .first<{ version: number }>();
-  return row ? Number(row.version) : null;
+    .first<Record<string, unknown>>();
+  return row ? rowToIssue(row) : null;
 }
 
 // ---------------------------------------------------------------------------

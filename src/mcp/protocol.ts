@@ -7,6 +7,7 @@ import {
   JSONRPC_INTERNAL_ERROR,
   JSONRPC_INVALID_REQUEST,
   JSONRPC_METHOD_NOT_FOUND,
+  JSONRPC_NOT_FOUND,
   JSONRPC_SESSION_NOT_INITIALIZED,
   JSONRPC_VERSION_CONFLICT,
 } from "../domain/errors";
@@ -94,11 +95,15 @@ export async function handleMessage(
     try {
       const args = parseToolArgs(tool, params.arguments ?? {});
       const result = await tool.handler(ctx, args);
+      const structuredContent = typeof result === "object" && result !== null && !Array.isArray(result)
+        ? { structuredContent: result }
+        : {};
       return {
         jsonrpc: "2.0",
         id: message.id,
         result: {
           content: [{ type: "text", text: JSON.stringify(result, null, 2) }],
+          ...structuredContent,
         },
       };
     } catch (e) {
@@ -108,6 +113,9 @@ export async function handleMessage(
       if (isAppError(e)) {
         if (e.code === "version_conflict") {
           return errorResponse(message.id, JSONRPC_VERSION_CONFLICT, e.message, e.details);
+        }
+        if (e.code === "not_found") {
+          return errorResponse(message.id, JSONRPC_NOT_FOUND, e.message);
         }
         return errorResponse(message.id, JSONRPC_INTERNAL_ERROR, `${e.code}: ${e.message}`);
       }

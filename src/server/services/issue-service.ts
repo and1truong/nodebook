@@ -219,12 +219,20 @@ export async function updateIssue(ctx: Ctx, ref: string, input: IssueUpdateInput
     fields.parent_id = input.parent_id;
   }
 
-  const now = nowIso();
-  const nextVersion = await issueRepo.updateIssue(ctx.env.DB, issue.id, fields, now, input.expected_version);
-  if (nextVersion === null) {
+  // Keep updated_at observably monotonic even when create and update happen in
+  // the same millisecond. The guarded UPDATE is the mutation's atomic commit.
+  const clockNow = nowIso();
+  const now = clockNow > issue.updated_at
+    ? clockNow
+    : new Date(new Date(issue.updated_at).getTime() + 1).toISOString();
+  const persisted = await issueRepo.updateIssue(ctx.env.DB, issue.id, fields, now, input.expected_version);
+  if (persisted === null) {
     const current = await issueRepo.getIssueById(ctx.env.DB, issue.id);
     if (!current) throw new NotFoundError("Issue not found");
     throw new VersionConflictError(input.expected_version, current.version);
+  }
+  if (persisted.version !== input.expected_version + 1) {
+    throw new Error(`Issue update returned unexpected version ${persisted.version}`);
   }
 
   if (input.labels !== undefined) {
@@ -245,8 +253,10 @@ export async function updateIssue(ctx: Ctx, ref: string, input: IssueUpdateInput
     });
   }
 
-  const updated = await issueRepo.getIssueById(ctx.env.DB, issue.id);
-  if (!updated) throw new NotFoundError("Issue not found");
+  // Use the row returned by UPDATE ... RETURNING. This is both proof that the
+  // compare-and-swap changed one row and the exact persisted state returned to
+  // MCP/HTTP callers; a separate post-write read could observe a stale replica.
+  const updated = persisted;
 
   await indexIssue(ctx, updated, input.labels !== undefined ? input.labels : undefined);
 

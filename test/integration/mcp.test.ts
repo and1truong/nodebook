@@ -1,6 +1,6 @@
 /** MCP: protocol tests, one test per tool family, scopes, parity with HTTP. */
 import { describe, expect, it } from "vitest";
-import { SELF } from "cloudflare:test";
+import { env, SELF } from "cloudflare:test";
 import { api, createIssue, createMcpToken, mcpCall, mcpInitialize, patch, post } from "./helpers";
 
 async function callTool(
@@ -8,11 +8,16 @@ async function callTool(
   sessionId: string,
   name: string,
   args: Record<string, unknown>,
-): Promise<{ result?: unknown; error?: { code: number; message: string } }> {
+): Promise<{
+  result?: unknown;
+  structuredResult?: unknown;
+  error?: { code: number; message: string; data?: unknown };
+}> {
   const res = await mcpCall(token, "tools/call", { name, arguments: args }, sessionId);
-  if (res.body.error) return { error: res.body.error as { code: number; message: string } };
-  const content = (res.body.result as { content: { text: string }[] }).content[0]!.text;
-  return { result: JSON.parse(content) as unknown };
+  if (res.body.error) return { error: res.body.error as { code: number; message: string; data?: unknown } };
+  const toolResult = res.body.result as { content: { text: string }[]; structuredContent?: unknown };
+  const content = toolResult.content[0]!.text;
+  return { result: JSON.parse(content) as unknown, structuredResult: toolResult.structuredContent };
 }
 
 async function setupToken(scopes: string[]): Promise<{ token: string; sessionId: string }> {
@@ -85,6 +90,127 @@ describe("MCP tools", () => {
     expect((completed.result as { status: string }).status).toBe("closed");
   });
 
+  it("persists partial issue updates by number and UUID and returns the persisted state", async () => {
+    const issue = await createIssue({ title: "learn - temporal", body: "" });
+    const { token, sessionId } = await setupToken(["read:issue", "write:issue"]);
+
+    const before = await callTool(token, sessionId, "get_issue", { number: issue.number });
+    const snapshot = before.result as { id: string; body: string; updated_at: string; version: number };
+    expect(snapshot.body).toBe("");
+
+    // Original regression: a number identifier and a body-only patch from
+    // empty to non-empty must survive schema parsing and reach the UUID CAS.
+    const byNumber = await callTool(token, sessionId, "update_issue", {
+      issue_id: issue.number,
+      expected_version: snapshot.version,
+      body: "some non-empty markdown content",
+    });
+    const firstUpdate = byNumber.result as { id: string; body: string; updated_at: string; version: number };
+    expect(byNumber.error).toBeUndefined();
+    expect(firstUpdate).toMatchObject({
+      id: snapshot.id,
+      body: "some non-empty markdown content",
+      version: snapshot.version + 1,
+    });
+    expect(firstUpdate.updated_at).not.toBe(snapshot.updated_at);
+    expect(byNumber.structuredResult).toEqual(byNumber.result);
+
+    const fetched = await callTool(token, sessionId, "get_issue", { number: issue.number });
+    expect(fetched.result).toMatchObject({
+      body: "some non-empty markdown content",
+      version: snapshot.version + 1,
+    });
+
+    // UUID resolution, title/multi-field updates, and a non-empty to empty
+    // body transition. Empty strings must not be lost to a truthiness check.
+    const byUuid = await callTool(token, sessionId, "update_issue", {
+      issue_id: snapshot.id,
+      expected_version: firstUpdate.version,
+      title: "learn - temporal updated",
+      body: "",
+      priority: "high",
+    });
+    const secondUpdate = byUuid.result as { title: string; body: string; priority: string | null; version: number };
+    expect(secondUpdate).toMatchObject({
+      title: "learn - temporal updated",
+      body: "",
+      priority: "high",
+      version: firstUpdate.version + 1,
+    });
+
+    // Explicit null is supported for nullable fields and is also a real patch.
+    const nullable = await callTool(token, sessionId, "update_issue", {
+      issue_id: snapshot.id,
+      expected_version: secondUpdate.version,
+      priority: null,
+    });
+    expect(nullable.result).toMatchObject({ priority: null, version: secondUpdate.version + 1 });
+  });
+
+  it("reports nonexistent issues and database write failures through MCP", async () => {
+    const { token, sessionId } = await setupToken(["write:issue"]);
+
+    for (const issueId of [2_000_000_000, crypto.randomUUID()]) {
+      const missing = await callTool(token, sessionId, "update_issue", {
+        issue_id: issueId,
+        expected_version: 1,
+        body: "cannot be written",
+      });
+      expect(missing.error).toMatchObject({ code: -32004 });
+      expect(missing.error?.message).toContain("not found");
+    }
+
+    const issue = await createIssue({ title: "forced MCP database failure", body: "before" });
+    await env.DB.prepare(
+      `CREATE TRIGGER fail_mcp_issue_update
+       BEFORE UPDATE OF body ON issues
+       WHEN OLD.id = '${issue.id}'
+       BEGIN SELECT RAISE(FAIL, 'forced MCP update failure'); END`,
+    ).run();
+    try {
+      const failed = await callTool(token, sessionId, "update_issue", {
+        issue_id: issue.number,
+        expected_version: issue.version,
+        body: "after",
+      });
+      expect(failed.error).toMatchObject({ code: -32603 });
+      expect(failed.result).toBeUndefined();
+
+      const persisted = (await api(`/api/issues/${issue.number}`)).body as { body: string; version: number };
+      expect(persisted).toMatchObject({ body: "before", version: issue.version });
+    } finally {
+      await env.DB.prepare("DROP TRIGGER fail_mcp_issue_update").run();
+    }
+  });
+
+  it("allows only one of two concurrent updates at the same expected version", async () => {
+    const issue = await createIssue({ title: "MCP compare and swap" });
+    const { token, sessionId } = await setupToken(["write:issue"]);
+
+    const results = await Promise.all([
+      callTool(token, sessionId, "update_issue", {
+        issue_id: issue.number,
+        expected_version: issue.version,
+        title: "number won",
+      }),
+      callTool(token, sessionId, "update_issue", {
+        issue_id: issue.id,
+        expected_version: issue.version,
+        title: "UUID won",
+      }),
+    ]);
+
+    const successes = results.filter((result) => result.result !== undefined);
+    const conflicts = results.filter((result) => result.error?.code === -32009);
+    expect(successes).toHaveLength(1);
+    expect(conflicts).toHaveLength(1);
+    expect(successes[0]!.result).toMatchObject({ version: Number(issue.version) + 1 });
+
+    const persisted = (await api(`/api/issues/${issue.number}`)).body as { title: string; version: number };
+    expect(["number won", "UUID won"]).toContain(persisted.title);
+    expect(persisted.version).toBe(Number(issue.version) + 1);
+  });
+
   it("prevents stale edits across HTTP and MCP in both directions", async () => {
     const issue = await createIssue({ title: "shared editor" });
     const { token, sessionId } = await setupToken(["read:issue", "write:issue"]);
@@ -102,7 +228,13 @@ describe("MCP tools", () => {
       expected_version: mcpSnapshot.version,
       title: "stale MCP",
     });
-    expect(staleMcp.error).toMatchObject({ code: -32009 });
+    expect(staleMcp.error).toMatchObject({
+      code: -32009,
+      data: {
+        expected_version: mcpSnapshot.version,
+        current_version: mcpSnapshot.version + 1,
+      },
+    });
 
     const latest = await callTool(token, sessionId, "get_issue", { number: issue.number });
     const current = latest.result as { id: string; version: number };
