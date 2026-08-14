@@ -3,6 +3,7 @@ import type {
   AttachmentDto,
   AuditEventDto,
   BacklinkDto,
+  CalendarItemDto,
   CommentDto,
   IssueDto,
   IssueListResult,
@@ -16,6 +17,7 @@ import type {
   SubIssueSummaryDto,
   WikiNodeDto,
 } from "../shared/contracts/issues";
+import type { AppConfigDto } from "../shared/contracts/config";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -50,19 +52,25 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  me: () => request<{ email: string; actor_type: string }>("/api/me"),
+  me: () => request<AppConfigDto>("/api/me"),
 
   // Issues
-  listIssues: (params: Record<string, string | undefined> = {}) => {
+  listIssues: (params: Record<string, string | string[] | undefined> = {}) => {
     const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(params)) if (v) qs.set(k, v);
+    for (const [key, value] of Object.entries(params)) {
+      if (Array.isArray(value)) value.forEach((item) => qs.append(key, item));
+      else if (value) qs.set(key, value);
+    }
     return request<IssueListResult>(`/api/issues?${qs.toString()}`);
   },
   getIssue: (ref: string) => request<IssueDto>(`/api/issues/${ref}`),
   createIssue: (input: Record<string, unknown>) =>
     request<IssueDto>("/api/issues", { method: "POST", body: JSON.stringify(input) }),
-  updateIssue: (ref: string, input: Record<string, unknown>) =>
-    request<IssueDto>(`/api/issues/${ref}`, { method: "PATCH", body: JSON.stringify(input) }),
+  updateIssue: (ref: string, expectedVersion: number, input: Record<string, unknown>) =>
+    request<IssueDto>(`/api/issues/${ref}`, {
+      method: "PATCH",
+      body: JSON.stringify({ ...input, expected_version: expectedVersion }),
+    }),
   closeIssue: (ref: string) => request<IssueDto>(`/api/issues/${ref}/close`, { method: "POST" }),
   reopenIssue: (ref: string) => request<IssueDto>(`/api/issues/${ref}/reopen`, { method: "POST" }),
   completeTask: (ref: string) => request<IssueDto>(`/api/issues/${ref}/complete`, { method: "POST" }),
@@ -116,6 +124,11 @@ export const api = {
   today: (tz?: string) => request<PlanningItemDto[]>(`/api/planning/today${tz ? `?tz=${encodeURIComponent(tz)}` : ""}`),
   upcoming: (tz?: string) =>
     request<PlanningItemDto[]>(`/api/planning/upcoming${tz ? `?tz=${encodeURIComponent(tz)}` : ""}`),
+  calendar: (start: string, end: string, tz?: string) => {
+    const qs = new URLSearchParams({ start, end });
+    if (tz) qs.set("tz", tz);
+    return request<CalendarItemDto[]>(`/api/planning/calendar?${qs.toString()}`);
+  },
 
   // Reminders
   reminders: (ref: string) => request<ReminderDto[]>(`/api/reminders/issue/${ref}`),

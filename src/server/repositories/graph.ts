@@ -301,7 +301,9 @@ export async function getBacklinkCounts(db: D1Database, issueIds: string[]): Pro
     .all<{ id: string; number: number }>();
   const numberById = new Map(numbers.results.map((r) => [r.id, Number(r.number)]));
   const counts = new Map(issueIds.map((id) => [id, 0]));
-  const chunks = chunk(issueIds, 90);
+  // The count query binds each issue twice (UUID and number). Keep each
+  // statement below D1's 100-variable SQLite limit.
+  const chunks = chunk(issueIds, 45);
   for (const chunkIds of chunks) {
     const res = await db
       .prepare(

@@ -44,7 +44,7 @@ export function TodayPage() {
           </h2>
           <PlanningList
             items={due}
-            empty={<>Nothing due today. Enjoy the calm — or plan something in Upcoming.</>}
+            empty={<>Nothing due today. Enjoy the calm — or plan something in Calendar.</>}
           />
         </>
       )}

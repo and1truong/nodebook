@@ -1,7 +1,7 @@
-/** Planning routes: Inbox, Today, Upcoming, Overdue. */
+/** Planning routes: Inbox, Today, Calendar, Overdue (Upcoming kept for API/MCP compatibility). */
 import { Hono } from "hono";
 import type { AppEnv } from "./helpers";
-import { getInbox, getToday, getUpcoming, getOverdue } from "../services/planning-service";
+import { getInbox, getToday, getUpcoming, getOverdue, getCalendar } from "../services/planning-service";
 
 export const planningRoutes = new Hono<AppEnv>();
 
@@ -18,6 +18,11 @@ planningRoutes.get("/today", async (c) => {
 planningRoutes.get("/upcoming", async (c) => {
   const ctx = { env: c.env, actor: c.get("actor"), requestId: crypto.randomUUID() };
   return c.json(await getUpcoming(ctx, c.req.query("tz")));
+});
+
+planningRoutes.get("/calendar", async (c) => {
+  const ctx = { env: c.env, actor: c.get("actor"), requestId: crypto.randomUUID() };
+  return c.json(await getCalendar(ctx, c.req.query("start"), c.req.query("end"), c.req.query("tz")));
 });
 
 planningRoutes.get("/overdue", async (c) => {

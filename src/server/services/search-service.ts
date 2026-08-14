@@ -80,7 +80,7 @@ export async function rebuildSearchIndex(ctx: Ctx): Promise<{ issues: number; co
   await searchRepo.clearSearchDocs(ctx.env.DB);
 
   const issues = await ctx.env.DB.prepare(
-    "SELECT id, number, type, title, body, status, priority, start_date, due_date, scheduled_date, timezone, recurrence_rule, parent_id, created_by, created_at, updated_at, closed_at, completed_at FROM issues",
+    "SELECT id, number, type, title, body, status, priority, start_date, due_date, scheduled_date, timezone, recurrence_rule, parent_id, created_by, created_at, updated_at, version, closed_at, completed_at FROM issues",
   ).all<Record<string, unknown>>();
   const issueRecords = issues.results.map((row) => ({
     id: String(row.id),
@@ -99,6 +99,7 @@ export async function rebuildSearchIndex(ctx: Ctx): Promise<{ issues: number; co
     created_by: String(row.created_by),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+    version: Number(row.version),
     closed_at: (row.closed_at as string | null) ?? null,
     completed_at: (row.completed_at as string | null) ?? null,
   }));

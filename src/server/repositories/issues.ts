@@ -25,7 +25,7 @@ export async function allocateIssueNumber(db: D1Database): Promise<number> {
 export const ISSUE_COLUMNS = `
   id, number, type, title, body, status, priority, start_date, due_date,
   scheduled_date, timezone, recurrence_rule, parent_id, created_by, created_at,
-  updated_at, closed_at, completed_at
+  updated_at, version, closed_at, completed_at
 `;
 
 export function rowToIssue(row: Record<string, unknown>): IssueRecord {
@@ -46,6 +46,7 @@ export function rowToIssue(row: Record<string, unknown>): IssueRecord {
     created_by: String(row.created_by),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+    version: Number(row.version),
     closed_at: (row.closed_at as string | null) ?? null,
     completed_at: (row.completed_at as string | null) ?? null,
   };
@@ -119,21 +120,24 @@ export async function getIssueByRef(db: D1Database, ref: string): Promise<IssueR
 }
 
 export interface IssueFilters {
-  type?: string;
+  type?: string | string[];
   status?: string;
-  label?: string;
+  label?: string | string[];
   parent_id?: string | null;
   query?: string;
   limit?: number;
   offset?: number;
 }
 
-export async function listIssues(db: D1Database, filters: IssueFilters = {}): Promise<IssueRecord[]> {
+function issueFilterSql(filters: IssueFilters): { where: string[]; args: string[] } {
   const where: string[] = [];
   const args: string[] = [];
-  if (filters.type) {
-    where.push("type = ?");
-    args.push(filters.type);
+  const types = Array.isArray(filters.type) ? filters.type : filters.type ? [filters.type] : [];
+  const labels = Array.isArray(filters.label) ? filters.label : filters.label ? [filters.label] : [];
+
+  if (types.length > 0) {
+    where.push(`type IN (${types.map(() => "?").join(", ")})`);
+    args.push(...types);
   }
   if (filters.status) {
     where.push("status = ?");
@@ -146,16 +150,26 @@ export async function listIssues(db: D1Database, filters: IssueFilters = {}): Pr
       args.push(filters.parent_id);
     }
   }
-  if (filters.label) {
+  if (labels.length > 0) {
     where.push(
-      "id IN (SELECT il.issue_id FROM issue_labels il JOIN labels l ON l.id = il.label_id WHERE l.name = ? COLLATE NOCASE)",
+      `id IN (
+        SELECT il.issue_id FROM issue_labels il
+        JOIN labels l ON l.id = il.label_id
+        WHERE ${labels.map(() => "l.name = ? COLLATE NOCASE").join(" OR ")}
+      )`,
     );
-    args.push(filters.label);
+    args.push(...labels);
   }
   if (filters.query) {
     where.push("(title LIKE ? OR body LIKE ?)");
     args.push(`%${filters.query}%`, `%${filters.query}%`);
   }
+
+  return { where, args };
+}
+
+export async function listIssues(db: D1Database, filters: IssueFilters = {}): Promise<IssueRecord[]> {
+  const { where, args } = issueFilterSql(filters);
   const sql = `SELECT ${ISSUE_COLUMNS} FROM issues ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY number DESC LIMIT ? OFFSET ?`;
   const limit = filters.limit ?? 100;
   const offset = filters.offset ?? 0;
@@ -164,19 +178,46 @@ export async function listIssues(db: D1Database, filters: IssueFilters = {}): Pr
 }
 
 export async function countIssues(db: D1Database, filters: IssueFilters = {}): Promise<number> {
-  const where: string[] = [];
-  const args: string[] = [];
-  if (filters.type) {
-    where.push("type = ?");
-    args.push(filters.type);
-  }
-  if (filters.status) {
-    where.push("status = ?");
-    args.push(filters.status);
-  }
+  const { where, args } = issueFilterSql(filters);
   const sql = `SELECT COUNT(*) AS n FROM issues ${where.length ? "WHERE " + where.join(" AND ") : ""}`;
   const row = await db.prepare(sql).bind(...args).first<{ n: number }>();
   return Number(row?.n ?? 0);
+}
+
+// ---------------------------------------------------------------------------
+// Calendar range
+// ---------------------------------------------------------------------------
+
+/**
+ * Bounds for the calendar range query. Due dates are civil strings compared
+ * against `startDate`/`endDate`; scheduled instants are UTC ISO strings
+ * compared against the timezone-derived instant bounds of the same civil
+ * window, so an instant belongs to the range exactly when its civil date in
+ * the viewer's timezone does (correct across DST transitions; see
+ * shared/time.ts instantFromCivil).
+ */
+export interface CalendarIssueFilter {
+  startDate: string;
+  endDate: string;
+  startInstant: string;
+  endInstant: string;
+}
+
+/** Open issues whose due date or scheduled instant intersects [start, end). */
+export async function listCalendarIssues(db: D1Database, f: CalendarIssueFilter): Promise<IssueRecord[]> {
+  const res = await db
+    .prepare(
+      `SELECT ${ISSUE_COLUMNS} FROM issues
+       WHERE status = 'open'
+         AND (
+           (due_date IS NOT NULL AND due_date >= ? AND due_date < ?)
+           OR (scheduled_date IS NOT NULL AND scheduled_date >= ? AND scheduled_date < ?)
+         )
+       ORDER BY number`,
+    )
+    .bind(f.startDate, f.endDate, f.startInstant, f.endInstant)
+    .all<Record<string, unknown>>();
+  return res.results.map(rowToIssue);
 }
 
 export type IssueUpdateFields = Partial<
@@ -198,15 +239,25 @@ export type IssueUpdateFields = Partial<
   >
 >;
 
-export async function updateIssue(db: D1Database, id: string, fields: IssueUpdateFields, now: string): Promise<void> {
+export async function updateIssue(
+  db: D1Database,
+  id: string,
+  fields: IssueUpdateFields,
+  now: string,
+  expectedVersion?: number,
+): Promise<number | null> {
   const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
-  if (entries.length === 0) return;
   const sets = entries.map(([key]) => `${key} = ?`);
   const args = entries.map(([, v]) => (v === null ? null : String(v)));
-  await db
-    .prepare(`UPDATE issues SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`)
-    .bind(...args, now, id)
-    .run();
+  sets.push("updated_at = ?", "version = version + 1");
+  args.push(now);
+
+  const guarded = expectedVersion !== undefined;
+  const row = await db
+    .prepare(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?${guarded ? " AND version = ?" : ""} RETURNING version`)
+    .bind(...args, id, ...(guarded ? [expectedVersion] : []))
+    .first<{ version: number }>();
+  return row ? Number(row.version) : null;
 }
 
 // ---------------------------------------------------------------------------

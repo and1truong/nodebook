@@ -117,7 +117,10 @@ describe("reminders", () => {
     const issue = await createIssue({ title: "reschedule me", due_date: "2030-03-01" });
     await post(`/api/reminders/issue/${issue.number}`, { kind: "before_due", offset_minutes: 60 });
 
-    const res = await patch(`/api/issues/${issue.number}`, { due_date: "2030-03-10" });
+    const res = await patch(`/api/issues/${issue.number}`, {
+      expected_version: issue.version,
+      due_date: "2030-03-10",
+    });
     expect(res.status).toBe(200);
 
     const reminders = await api(`/api/reminders/issue/${issue.number}`);
@@ -129,7 +132,7 @@ describe("reminders", () => {
   it("dismisses before-due reminders when the due date is removed", async () => {
     const issue = await createIssue({ title: "cancel me", due_date: "2030-04-01" });
     await post(`/api/reminders/issue/${issue.number}`, { kind: "before_due", offset_minutes: 30 });
-    await patch(`/api/issues/${issue.number}`, { due_date: null });
+    await patch(`/api/issues/${issue.number}`, { expected_version: issue.version, due_date: null });
 
     const reminders = await api(`/api/reminders/issue/${issue.number}`);
     const list = reminders.body as { status: string }[];
