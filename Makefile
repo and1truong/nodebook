@@ -1,6 +1,7 @@
-.PHONY: dev dev\:web dev\:worker db\:migrate free-ports setup
+.PHONY: dev dev\:web dev\:worker db\:migrate deploy free-ports setup
 
 PORTS ?= 5173 8787
+DEPLOY_URL ?= https://nodebook.v3knet.workers.dev
 
 # Kill whatever is already listening on the dev ports (5173, 8787) so a
 # stale/crashed session never causes EADDRINUSE on startup.
@@ -35,6 +36,19 @@ dev\:worker: free-ports
 # Apply D1 migrations to the local database.
 db\:migrate:
 	npm run db:migrate:local
+
+# Build and deploy using the machine-local production bindings, then verify the
+# health endpoint is reachable. Cloudflare Access returns 302 without a session.
+# Apply remote D1 migrations separately (after a backup) when a schema migration is pending.
+deploy:
+	@test -f wrangler.personal.jsonc || { echo "Missing wrangler.personal.jsonc" >&2; exit 1; }
+	npm run build
+	npx wrangler deploy --config wrangler.personal.jsonc
+	@status=$$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-redirs 0 "$(DEPLOY_URL)/healthz"); \
+	case "$$status" in \
+		200|302) echo "Health check passed: $(DEPLOY_URL)/healthz ($$status)" ;; \
+		*) echo "Health check failed: $(DEPLOY_URL)/healthz ($$status)" >&2; exit 1 ;; \
+	esac
 
 # One-time setup: create .dev.vars from the example if missing.
 setup:
