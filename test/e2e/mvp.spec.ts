@@ -561,7 +561,20 @@ test.describe.serial("MVP acceptance", () => {
     await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
     await expect(aside.getByText("due 2099-01-01")).toBeVisible();
 
-    // Priority can be changed in place without opening the full edit form.
+    // Type and priority can be changed in place without opening the full edit form.
+    const typeSelect = aside.getByLabel(`Type for #${issueNumber}`);
+    await expect(typeSelect).toContainText(/wiki/i);
+    await typeSelect.click();
+    await page.getByRole("option", { name: /^bug$/i }).click();
+    await expect(typeSelect).toContainText(/bug/i);
+    const retyped = await apiJson(request, "GET", `/api/issues/${issueNumber}`);
+    expect(retyped.json.type).toBe("bug");
+
+    // Restore the type because later acceptance tests use this issue as a wiki root.
+    await typeSelect.click();
+    await page.getByRole("option", { name: /^wiki$/i }).click();
+    await expect(typeSelect).toContainText(/wiki/i);
+
     const prioritySelect = aside.getByLabel(`Priority for #${issueNumber}`);
     await expect(prioritySelect).toContainText("None");
     await prioritySelect.click();
