@@ -216,6 +216,13 @@ export interface CreatorAttributionDto {
   via: "web" | "mcp" | "system";
 }
 
+export interface LabelDto {
+  id: string;
+  name: string;
+  color: string | null;
+  created_at: string;
+}
+
 export interface IssueDto {
   id: string;
   number: number;

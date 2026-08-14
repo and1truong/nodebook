@@ -7,7 +7,7 @@ import {
   VersionConflictError,
 } from "../../domain/errors";
 import type { IssueRecord } from "../../domain/models";
-import type { IssueDto, IssueListResult } from "../../shared/contracts/issues";
+import type { IssueDto, IssueListResult, LabelDto } from "../../shared/contracts/issues";
 import { BODY_MAX_LENGTH, ISSUE_TYPES, TITLE_MAX_LENGTH } from "../../shared/limits";
 import { parseRecurrenceRule, nextOccurrence, type RecurrenceRule } from "../../shared/recurrence";
 import { isValidTimezone, nowIso, parseCivilDate, civilDateString, instantFromCivil } from "../../shared/time";
@@ -153,6 +153,11 @@ export async function getIssue(ctx: Ctx, ref: string): Promise<IssueDto> {
   const issue = await issueRepo.getIssueByRef(ctx.env.DB, ref);
   if (!issue) throw new NotFoundError(`Issue ${ref} not found`);
   return toIssueDto(ctx, issue);
+}
+
+export async function listLabels(ctx: Ctx): Promise<LabelDto[]> {
+  const labels = await issueRepo.listAllLabels(ctx.env.DB);
+  return labels.map(({ id, name, color, created_at }) => ({ id, name, color, created_at }));
 }
 
 export interface ListIssuesFilters {

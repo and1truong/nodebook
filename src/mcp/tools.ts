@@ -20,6 +20,7 @@ import {
   getUpcomingSchema,
   linkIssuesSchema,
   listAttachmentsSchema,
+  listLabelsSchema,
   searchIssuesSchema,
   updateIssueSchema,
   updateReminderSchema,
@@ -53,6 +54,16 @@ export const tools = [
     handler: withScope("read:issue", async (ctx: ToolContext, args) => {
       const ref = "issue_id" in args ? requireIssueId(args.issue_id) : String(args.number);
       return issueService.getIssue(toCtx(ctx), ref);
+    }),
+  }),
+
+  defineTool({
+    name: "list_labels",
+    description: "List all workspace labels with their metadata, sorted case-insensitively by name.",
+    inputSchema: listLabelsSchema,
+    scope: "read:issue",
+    handler: withScope("read:issue", async (ctx: ToolContext) => {
+      return issueService.listLabels(toCtx(ctx));
     }),
   }),
 

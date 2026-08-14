@@ -40,6 +40,36 @@ describe("MCP tools", () => {
     expect((searched.result as { count: number }).count).toBeGreaterThanOrEqual(1);
   });
 
+  it("list_labels returns metadata in case-insensitive order without duplicates", async () => {
+    await createIssue({ title: "first labelled issue", labels: ["zebra", "Alpha", "shared"] });
+    await createIssue({ title: "second labelled issue", labels: ["beta", "SHARED"] });
+    const { token, sessionId } = await setupToken(["read:issue"]);
+
+    const listed = await callTool(token, sessionId, "list_labels", {});
+    const labels = listed.result as { id: string; name: string; color: string | null; created_at: string }[];
+
+    expect(labels.map((label) => label.name)).toEqual(["Alpha", "beta", "shared", "zebra"]);
+    expect(labels.filter((label) => label.name.toLowerCase() === "shared")).toHaveLength(1);
+    for (const label of labels) {
+      expect(label.id).toEqual(expect.any(String));
+      expect(label.color).toBeNull();
+      expect(Number.isNaN(new Date(label.created_at).getTime())).toBe(false);
+    }
+  });
+
+  it("list_labels returns an empty array for an empty workspace", async () => {
+    const { token, sessionId } = await setupToken(["read:issue"]);
+    const listed = await callTool(token, sessionId, "list_labels", {});
+    expect(listed.result).toEqual([]);
+  });
+
+  it("list_labels requires read:issue", async () => {
+    const { token, sessionId } = await setupToken(["read:search"]);
+    const listed = await callTool(token, sessionId, "list_labels", {});
+    expect(listed.error?.code).toBe(-32003);
+    expect(listed.error?.message).toContain("read:issue");
+  });
+
   it("get_children, get_backlinks (read graph)", async () => {
     const parent = await createIssue({ title: "mcp parent" });
     const child = await createIssue({ title: "mcp child", body: `child of #${parent.number}` });

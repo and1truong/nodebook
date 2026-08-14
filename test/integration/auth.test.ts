@@ -57,11 +57,14 @@ describe("MCP protocol", () => {
 
     const list = await mcpCall(token, "tools/list", {}, sessionId);
     expect(list.status).toBe(200);
-    const tools = (list.body.result as { tools: { name: string }[] }).tools;
-    expect(tools.length).toBeGreaterThanOrEqual(18);
+    const tools = (list.body.result as {
+      tools: { name: string; inputSchema: Record<string, unknown> }[];
+    }).tools;
+    expect(tools.length).toBeGreaterThanOrEqual(19);
     expect(tools.map((t) => t.name)).toEqual(
       expect.arrayContaining([
         "get_issue",
+        "list_labels",
         "search_issues",
         "get_children",
         "get_backlinks",
@@ -81,6 +84,11 @@ describe("MCP protocol", () => {
         "attach_file",
       ]),
     );
+    expect(tools.find((tool) => tool.name === "list_labels")?.inputSchema).toEqual({
+      type: "object",
+      properties: {},
+      required: [],
+    });
 
     const ping = await mcpCall(token, "ping", {}, sessionId);
     expect(ping.body.result).toEqual({});

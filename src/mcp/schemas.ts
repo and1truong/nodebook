@@ -35,6 +35,8 @@ export const searchIssuesSchema = z.object({
   limit: z.number().int().min(1).max(100).optional(),
 });
 
+export const listLabelsSchema = z.object({});
+
 export const getChildrenSchema = z.object({ issue_id: issueRefSchema });
 export const getBacklinksSchema = z.object({ issue_id: issueRefSchema });
 
