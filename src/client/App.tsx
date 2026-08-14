@@ -14,8 +14,8 @@ import { SearchPage } from "./pages/SearchPage";
 import { TokenSettingsPage } from "./pages/TokenSettingsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import type { AppConfigDto } from "../shared/contracts/config";
-import type { CalendarView, WeekStartDay } from "../shared/contracts/config";
-import { DEFAULT_WEEK_START_DAY } from "../shared/contracts/config";
+import type { CalendarView, IssuePageLimit, WeekStartDay } from "../shared/contracts/config";
+import { DEFAULT_ISSUES_PAGE_LIMIT, DEFAULT_WEEK_START_DAY } from "../shared/contracts/config";
 
 export function App() {
   const { path, navigate } = useRouter();
@@ -54,6 +54,11 @@ export function App() {
   const weekStartDay: WeekStartDay | undefined =
     config === undefined ? undefined : (config?.week_start_day ?? DEFAULT_WEEK_START_DAY);
 
+  // Delay the Issues list's first request until its deployment default is
+  // known, avoiding an unnecessary request with the wrong page size.
+  const issuesDefaultLimit: IssuePageLimit | undefined =
+    config === undefined ? undefined : (config?.issues_default_limit ?? DEFAULT_ISSUES_PAGE_LIMIT);
+
   // /upcoming is a compatibility alias: replace the URL in place so the
   // canonical /calendar route is what the address bar and history hold.
   useEffect(() => {
@@ -64,7 +69,7 @@ export function App() {
   if (path === "/" || path === "/inbox") content = <InboxPage weekStartDay={weekStartDay} />;
   else if (path === "/today") content = <TodayPage />;
   else if (path === "/calendar" || path === "/upcoming") content = <CalendarPage defaultView={calendarDefaultView} weekStartDay={weekStartDay} />;
-  else if (path === "/issues") content = <IssuesPage />;
+  else if (path === "/issues") content = <IssuesPage defaultLimit={issuesDefaultLimit} />;
   else if (matchPath("/issues/new", path)) content = <IssueDetailPage mode="create" weekStartDay={weekStartDay} />;
   else if (matchPath("/issues/:ref", path)) {
     const { ref } = matchPath("/issues/:ref", path)!;

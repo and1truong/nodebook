@@ -2,9 +2,12 @@
 import { describe, expect, it } from "vitest";
 import {
   DEFAULT_CALENDAR_VIEW,
+  DEFAULT_ISSUES_PAGE_LIMIT,
   DEFAULT_WEEK_START_DAY,
+  ISSUE_PAGE_LIMITS,
   WEEK_START_DAYS,
   resolveCalendarDefaultView,
+  resolveIssuesDefaultLimit,
   resolveWeekStartDay,
   weekStartIndex,
 } from "../../src/shared/contracts/config";
@@ -31,6 +34,25 @@ describe("resolveCalendarDefaultView", () => {
 
   it("exposes the fallback constant for configuration and tests", () => {
     expect(DEFAULT_CALENDAR_VIEW).toBe("week");
+  });
+});
+
+describe("resolveIssuesDefaultLimit", () => {
+  it("accepts every selectable page size", () => {
+    expect(ISSUE_PAGE_LIMITS).toEqual([20, 50, 100]);
+    for (const limit of ISSUE_PAGE_LIMITS) {
+      expect(resolveIssuesDefaultLimit(String(limit))).toBe(limit);
+    }
+  });
+
+  it("falls back to 20 when the variable is missing or invalid", () => {
+    expect(resolveIssuesDefaultLimit(undefined)).toBe(20);
+    expect(resolveIssuesDefaultLimit(null)).toBe(20);
+    expect(resolveIssuesDefaultLimit("")).toBe(20);
+    expect(resolveIssuesDefaultLimit("10")).toBe(20);
+    expect(resolveIssuesDefaultLimit("200")).toBe(20);
+    expect(resolveIssuesDefaultLimit("50 rows")).toBe(20);
+    expect(DEFAULT_ISSUES_PAGE_LIMIT).toBe(20);
   });
 });
 

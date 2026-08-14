@@ -43,6 +43,7 @@ Set these variables (dashboard → Workers → nodebook → Settings → Variabl
 | `MCP_CORS_ORIGINS` | no | Comma-separated origins allowed on `/mcp` (default `*`) |
 | `CALENDAR_DEFAULT_VIEW` | no | Initial calendar view: `day`, `week`, or `month` (missing/invalid values fall back to `week`) |
 | `WEEK_START_DAY` | no | First day of the calendar week: `sunday`–`saturday`, lowercase (missing/invalid values fall back to `sunday`). Rotates Calendar views, date pickers, and the Inbox/Calendar **Next week** shortcuts after a reload |
+| `ISSUES_DEFAULT_LIMIT` | no | Initial `/issues` page size: `20`, `50`, or `100` (missing/invalid values fall back to `20`); users can change it in the list footer |
 
 ## 3. Cloudflare Access (web + API)
 

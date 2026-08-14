@@ -22,7 +22,7 @@ import { attachmentsRoutes } from "./server/routes/attachments";
 import { tokensRoutes } from "./server/routes/tokens";
 import { runScheduledReminders } from "./server/scheduled/reminders";
 import { runScheduledAttachmentGc } from "./server/scheduled/attachment-gc";
-import { resolveCalendarDefaultView, resolveWeekStartDay } from "./shared/contracts/config";
+import { resolveCalendarDefaultView, resolveIssuesDefaultLimit, resolveWeekStartDay } from "./shared/contracts/config";
 
 // Durable Object classes must be exported from the entrypoint module.
 export { McpSession } from "./mcp/McpSession";
@@ -51,6 +51,7 @@ app.get("/api/me", (c) => {
     actor_type: actor.type,
     calendar_default_view: resolveCalendarDefaultView(c.env.CALENDAR_DEFAULT_VIEW),
     week_start_day: resolveWeekStartDay(c.env.WEEK_START_DAY),
+    issues_default_limit: resolveIssuesDefaultLimit(c.env.ISSUES_DEFAULT_LIMIT),
   });
 });
 

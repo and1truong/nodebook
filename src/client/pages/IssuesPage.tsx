@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { api } from "../api";
 import type { IssueDto } from "../../shared/contracts/issues";
 import { ISSUE_TYPES } from "../../shared/limits";
+import { ISSUE_PAGE_LIMITS, type IssuePageLimit } from "../../shared/contracts/config";
 import { PageHeader, IssueRow, Loading, ErrorState, EmptyState } from "../components/ui";
 import { Button, buttonVariants } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -14,9 +15,11 @@ function toggleSelection(values: string[], value: string): string[] {
   return values.includes(value) ? values.filter((item) => item !== value) : [...values, value];
 }
 
-export function IssuesPage() {
+export function IssuesPage({ defaultLimit }: { defaultLimit: IssuePageLimit | undefined }) {
   const [issues, setIssues] = useState<IssueDto[] | null>(null);
   const [total, setTotal] = useState(0);
+  const [limit, setLimit] = useState<IssuePageLimit | null>(defaultLimit ?? null);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState<unknown>(null);
   const [types, setTypes] = useState<string[]>([]);
   const [status, setStatus] = useState("open");
@@ -26,11 +29,22 @@ export function IssuesPage() {
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
   useEffect(() => {
-    const timeout = setTimeout(() => setDebouncedQuery(query.trim()), 250);
-    return () => clearTimeout(timeout);
-  }, [query]);
+    if (defaultLimit !== undefined) setLimit((current) => current ?? defaultLimit);
+  }, [defaultLimit]);
 
   useEffect(() => {
+    const nextQuery = query.trim();
+    const timeout = setTimeout(() => {
+      if (nextQuery === debouncedQuery) return;
+      setDebouncedQuery(nextQuery);
+      setPage(1);
+    }, 250);
+    return () => clearTimeout(timeout);
+  }, [query, debouncedQuery]);
+
+  useEffect(() => {
+    if (limit === null) return;
+
     let cancelled = false;
     setIssues(null);
     setError(null);
@@ -40,9 +54,16 @@ export function IssuesPage() {
         status: status || undefined,
         label: labels,
         q: debouncedQuery || undefined,
+        limit: String(limit),
+        offset: String((page - 1) * limit),
       })
       .then((result) => {
         if (cancelled) return;
+        const lastPage = Math.max(1, Math.ceil(result.total / limit));
+        if (page > lastPage) {
+          setPage(lastPage);
+          return;
+        }
         setIssues(result.issues);
         setTotal(result.total);
         const discovered = result.issues.flatMap((issue) => issue.labels);
@@ -54,7 +75,7 @@ export function IssuesPage() {
     return () => {
       cancelled = true;
     };
-  }, [types, status, labels, debouncedQuery]);
+  }, [types, status, labels, debouncedQuery, limit, page]);
 
   const hasFilters = types.length > 0 || labels.length > 0 || status !== "" || query !== "";
   const resetFilters = () => {
@@ -63,7 +84,12 @@ export function IssuesPage() {
     setLabels([]);
     setQuery("");
     setDebouncedQuery("");
+    setPage(1);
   };
+
+  const pageCount = limit === null ? 1 : Math.max(1, Math.ceil(total / limit));
+  const firstIssue = total === 0 || limit === null ? 0 : (page - 1) * limit + 1;
+  const lastIssue = limit === null ? 0 : Math.min(page * limit, total);
 
   return (
     <>
@@ -92,6 +118,60 @@ export function IssuesPage() {
                 <IssueRow key={issue.id} issue={issue} />
               ))}
             </ul>
+          )}
+          {issues && limit !== null && (
+            <footer
+              className="mt-4 flex flex-col gap-3 border-t border-border pt-4 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between"
+              aria-label="Issue pagination"
+            >
+              <span>
+                {firstIssue}–{lastIssue} of {total}
+              </span>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page <= 1}
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  aria-label="Previous issue page"
+                >
+                  Previous
+                </Button>
+                <span className="min-w-20 text-center text-xs" aria-live="polite">
+                  Page {page} of {pageCount}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={page >= pageCount}
+                  onClick={() => setPage((current) => Math.min(pageCount, current + 1))}
+                  aria-label="Next issue page"
+                >
+                  Next
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <label htmlFor="issues-page-limit" className="whitespace-nowrap text-xs">
+                  Rows per page
+                </label>
+                <Select
+                  value={String(limit)}
+                  onValueChange={(value) => {
+                    setLimit(Number(value) as IssuePageLimit);
+                    setPage(1);
+                  }}
+                >
+                  <SelectTrigger id="issues-page-limit" size="sm" className="w-20" aria-label="Rows per page">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ISSUE_PAGE_LIMITS.map((option) => (
+                      <SelectItem key={option} value={String(option)}>{option}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </footer>
           )}
         </section>
 
@@ -129,7 +209,13 @@ export function IssuesPage() {
               <label className="text-xs font-medium" htmlFor="issue-status">
                 Status
               </label>
-              <Select value={status || "all"} onValueChange={(value) => setStatus(value === "all" ? "" : value)}>
+              <Select
+                value={status || "all"}
+                onValueChange={(value) => {
+                  setStatus(value === "all" ? "" : value);
+                  setPage(1);
+                }}
+              >
                 <SelectTrigger id="issue-status" className="h-8 w-full" aria-label="Filter by status">
                   <SelectValue />
                 </SelectTrigger>
@@ -150,7 +236,10 @@ export function IssuesPage() {
                       type="checkbox"
                       className="size-3.5 rounded border-input accent-primary"
                       checked={types.includes(type)}
-                      onChange={() => setTypes((current) => toggleSelection(current, type))}
+                      onChange={() => {
+                        setTypes((current) => toggleSelection(current, type));
+                        setPage(1);
+                      }}
                     />
                     {type}
                   </label>
@@ -170,7 +259,10 @@ export function IssuesPage() {
                         type="checkbox"
                         className="size-3.5 rounded border-input accent-primary"
                         checked={labels.includes(label)}
-                        onChange={() => setLabels((current) => toggleSelection(current, label))}
+                        onChange={() => {
+                          setLabels((current) => toggleSelection(current, label));
+                          setPage(1);
+                        }}
                       />
                       <span className="min-w-0 truncate" title={label}>{label}</span>
                     </label>

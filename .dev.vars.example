@@ -18,3 +18,6 @@ AUTH_DEV_EMAIL=owner@nodebook.local
 
 # First day of the calendar week: sunday, monday, …, saturday (missing/invalid values fall back to sunday).
 # WEEK_START_DAY=sunday
+
+# Initial number of rows on the Issues page: 20, 50, or 100 (missing/invalid values fall back to 20).
+# ISSUES_DEFAULT_LIMIT=20

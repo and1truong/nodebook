@@ -5,6 +5,7 @@
  * authenticated /api/me endpoint — no build-time Vite config.
  *  - `calendar_default_view` ← `CALENDAR_DEFAULT_VIEW` (default "week")
  *  - `week_start_day` ← `WEEK_START_DAY` (default "sunday")
+ *  - `issues_default_limit` ← `ISSUES_DEFAULT_LIMIT` (default 20)
  */
 
 /** Calendar view modes. Week is the deployment default. */
@@ -47,10 +48,24 @@ export function weekStartIndex(day: WeekStartDay): number {
   return WEEK_START_DAYS.indexOf(day);
 }
 
+/** Page sizes offered by the Issues list. */
+export const ISSUE_PAGE_LIMITS = [20, 50, 100] as const;
+export type IssuePageLimit = (typeof ISSUE_PAGE_LIMITS)[number];
+export const DEFAULT_ISSUES_PAGE_LIMIT: IssuePageLimit = 20;
+
+/** Resolve the Issues page's default size, accepting only selectable values. */
+export function resolveIssuesDefaultLimit(raw: string | null | undefined): IssuePageLimit {
+  const value = Number(raw?.trim());
+  return (ISSUE_PAGE_LIMITS as readonly number[]).includes(value)
+    ? (value as IssuePageLimit)
+    : DEFAULT_ISSUES_PAGE_LIMIT;
+}
+
 /** Identity + runtime configuration returned by GET /api/me. */
 export interface AppConfigDto {
   email: string;
   actor_type: string;
   calendar_default_view: CalendarView;
   week_start_day: WeekStartDay;
+  issues_default_limit: IssuePageLimit;
 }

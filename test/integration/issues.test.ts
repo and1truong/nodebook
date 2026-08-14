@@ -198,6 +198,7 @@ describe("issue lifecycle", () => {
     expect(bad.status).toBe(200);
     const res = bad.body as { issues: unknown[] };
     expect(Array.isArray(res.issues)).toBe(true);
+    expect(res.issues.length).toBeLessThanOrEqual(20);
   });
 
   it("filters the issue list by type/status/label", async () => {

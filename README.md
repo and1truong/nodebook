@@ -8,7 +8,7 @@ Canonical PRD: https://github.com/and1truong/wiki/issues/229
 
 NodeBook is a single-owner workspace where every issue is a first-class node in a wiki graph:
 
-- **Issues** — all PRD types (`task`, `bug`, `epic`, `story`, `decision`, `finding`, `incident`, `learning`, `wiki`, `note`) with open/closed state, labels, priorities, Markdown bodies, and durable audit history.
+- **Issues** — all PRD types (`task`, `bug`, `epic`, `story`, `decision`, `finding`, `incident`, `learning`, `wiki`, `note`) with open/closed state, labels, priorities, Markdown bodies, durable audit history, and a paginated list with selectable 20/50/100-row pages (`ISSUES_DEFAULT_LIMIT`, default **20**).
 - **Graph** — parent/child hierarchy, typed relationships (`related`, `depends_on`, `blocks`, `supersedes`, `duplicates`), and `#123` references that resolve even when the target is created later.
 - **Wiki** — hierarchy tree navigation, breadcrumbs, backlinks, and related-content panels.
 - **Search** — FTS5 full-text search over titles, bodies, comments, labels, and attachment metadata, with type/state/label filters and PRD `search_knowledge` semantics.
