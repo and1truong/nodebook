@@ -14,6 +14,8 @@ const markdown = `# Heading one
 
 Paragraph with **strong text**, ~~deleted text~~, \`inline code\`, and a [link](/inbox).
 
+Status: ![Build status](/markdown-fixture.png) passing.
+
 - Unordered
   1. Nested ordered
      - Nested unordered
@@ -33,6 +35,12 @@ const veryLongLine = "${"code".repeat(60)}";
 | First very wide column | Second very wide column | Third very wide column | Fourth very wide column |
 | --- | --- | --- | --- |
 | ${"wide content ".repeat(8)} | Cell two | Cell three | Cell four |
+
+<table>
+  <caption>Raw HTML table</caption>
+  <thead><tr><th>First raw column</th><th>Second raw column</th><th>Third raw column</th></tr></thead>
+  <tbody><tr><td>${"raw content ".repeat(12)}</td><td>Cell two</td><td>Cell three</td></tr></tbody>
+</table>
 `;
 
 async function post(request: APIRequestContext, path: string, data: unknown) {
@@ -81,7 +89,7 @@ test("rich Markdown is responsive and shared by bodies, comments, and previews",
     }
     await expect(body.locator("ul").first()).toHaveCSS("list-style-type", "disc");
     await expect(body.locator("ol").first()).toHaveCSS("list-style-type", "decimal");
-    await expect(body.locator(".task-list-item")).toHaveCount(2);
+    await expect(body.locator('li > input[type="checkbox"]')).toHaveCount(2);
     await expect(body.locator("blockquote")).toBeVisible();
     await expect(body.locator("code", { hasText: "inline code" })).toBeVisible();
     await expect(body.locator("pre code")).toContainText("veryLongLine");
@@ -90,10 +98,16 @@ test("rich Markdown is responsive and shared by bodies, comments, and previews",
     await expect(image).toBeVisible();
     await expect(image).toHaveCSS("max-width", "100%");
     await expect(image).toHaveCSS("height", "1px");
+    await expect(body.getByRole("img", { name: "Build status" })).toHaveCSS("display", "inline");
 
-    const tableWrap = body.locator(".markdown-table-wrap");
+    const tableWraps = body.locator(".markdown-table-wrap");
+    await expect(tableWraps).toHaveCount(2);
+    const tableWrap = tableWraps.first();
     await expect(tableWrap).toHaveAttribute("tabindex", "0");
     await expect(tableWrap).toHaveCSS("overflow-x", "auto");
+    const rawTableWrap = body.getByRole("table", { name: "Raw HTML table" }).locator("xpath=..");
+    await expect(rawTableWrap).toHaveClass("markdown-table-wrap");
+    await expect(rawTableWrap).toHaveAttribute("role", "region");
     expect(await body.evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBeTruthy();
     expect(await tableWrap.evaluate((element) => element.scrollWidth >= element.clientWidth)).toBeTruthy();
 
@@ -101,12 +115,12 @@ test("rich Markdown is responsive and shared by bodies, comments, and previews",
     await expect(body).toHaveCSS("color", foreground);
     const comment = page.locator(".comment .markdown");
     await expect(comment.getByRole("heading", { level: 1, name: "Heading one" })).toBeVisible();
-    await expect(comment.locator(".markdown-table-wrap")).toBeVisible();
+    await expect(comment.locator(".markdown-table-wrap")).toHaveCount(2);
   }
 
   await page.getByRole("button", { name: "Edit", exact: true }).first().click();
   await page.getByRole("button", { name: "Preview", exact: true }).click();
   const preview = page.locator(".issue-editor-inline .markdown");
   await expect(preview.getByRole("heading", { level: 1, name: "Heading one" })).toBeVisible();
-  await expect(preview.locator(".markdown-table-wrap")).toBeVisible();
+  await expect(preview.locator(".markdown-table-wrap")).toHaveCount(2);
 });

@@ -379,10 +379,10 @@
 .markdown li + li {
   margin-top: 0.25em;
 }
-.markdown .task-list-item {
+.markdown :is(.task-list-item, li:has(> input[type="checkbox"])) {
   list-style: none;
 }
-.markdown .task-list-item input[type="checkbox"] {
+.markdown :is(.task-list-item, li:has(> input[type="checkbox"])) > input[type="checkbox"] {
   width: 1em;
   height: 1em;
   margin: 0 0.45em 0 -1.4em;
@@ -446,9 +446,11 @@
   outline-offset: 2px;
 }
 .markdown table {
+  border-collapse: collapse;
+}
+.markdown .markdown-table-wrap table {
   width: max-content;
   min-width: 100%;
-  border-collapse: collapse;
 }
 .markdown th,
 .markdown td {
@@ -475,10 +477,9 @@
   background: color-mix(in srgb, var(--primary) 8%, transparent);
 }
 .markdown img {
-  display: block;
+  display: inline;
   max-width: 100%;
   height: auto;
-  margin: 1em 0;
   border-radius: 6px;
 }
 .markdown a {
