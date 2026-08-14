@@ -257,7 +257,10 @@ function WikiArticle({ issueRef, tree }: { issueRef: string; tree: WikiNodeDto[]
                 <Settings2 aria-hidden="true" />
                 Edit &amp; manage
               </Link>
-              <Link to="/wiki/new" className={buttonVariants({ size: "sm" })}>
+              <Link
+                to={`/wiki/new?parent_id=${encodeURIComponent(issue.id)}`}
+                className={buttonVariants({ size: "sm" })}
+              >
                 <FilePlus2 aria-hidden="true" />
                 New page
               </Link>

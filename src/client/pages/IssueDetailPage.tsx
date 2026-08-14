@@ -28,12 +28,14 @@ export function IssueDetailPage({
   issueRef,
   wiki = false,
   createType,
+  createParentId,
   weekStartDay = "sunday",
 }: {
   mode: "view" | "create";
   issueRef?: string;
   wiki?: boolean;
   createType?: IssueFormValues["type"];
+  createParentId?: string;
   /** First day of the calendar week (default Sunday). */
   weekStartDay?: WeekStartDay;
 }) {
@@ -73,6 +75,7 @@ export function IssueDetailPage({
         title={creatingWikiPage ? "New wiki page" : "New issue"}
         onCreated={(issue) => navigate(creatingWikiPage ? `/wiki/${issue.number}` : `/issues/${issue.number}`)}
         onCancel={() => navigate(creatingWikiPage ? "/wiki" : "/issues")}
+        initialParentId={createParentId}
         weekStartDay={weekStartDay}
       />
     );
@@ -423,16 +426,22 @@ function CreateIssueForm({
   onCreated,
   onCancel,
   initialType,
+  initialParentId,
   title,
   weekStartDay = "sunday",
 }: {
   onCreated: (issue: IssueDto) => void;
   onCancel: () => void;
   initialType?: IssueFormValues["type"];
+  initialParentId?: string;
   title: string;
   weekStartDay?: WeekStartDay;
 }) {
-  const [initial] = useState(() => ({ ...emptyFormValues(), type: initialType ?? "task" }));
+  const [initial] = useState(() => ({
+    ...emptyFormValues(),
+    type: initialType ?? "task",
+    parent_id: initialParentId ?? "",
+  }));
   return (
     <div>
       <h1 className="mb-3 text-2xl font-semibold tracking-tight">{title}</h1>
@@ -453,6 +462,7 @@ function CreateIssueForm({
             scheduled_date: scheduledDateToIso(values),
             timezone: values.timezone,
             recurrence_rule: recurrenceToRule(values),
+            parent_id: values.parent_id || null,
           });
           onCreated(issue);
         }}

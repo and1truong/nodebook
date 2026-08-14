@@ -19,6 +19,9 @@ import { DEFAULT_ISSUES_PAGE_LIMIT, DEFAULT_WEEK_START_DAY } from "../shared/con
 
 export function App() {
   const { path, navigate } = useRouter();
+  const queryStart = path.indexOf("?");
+  const routePath = queryStart === -1 ? path : path.slice(0, queryStart);
+  const searchParams = new URLSearchParams(queryStart === -1 ? "" : path.slice(queryStart + 1));
   const [email, setEmail] = useState<string>("");
   // undefined = still loading; null = config fetch failed (fall back to week).
   const [config, setConfig] = useState<AppConfigDto | null | undefined>(undefined);
@@ -62,29 +65,37 @@ export function App() {
   // /upcoming is a compatibility alias: replace the URL in place so the
   // canonical /calendar route is what the address bar and history hold.
   useEffect(() => {
-    if (path === "/upcoming") navigateReplace("/calendar");
-  }, [path]);
+    if (routePath === "/upcoming") navigateReplace("/calendar");
+  }, [routePath]);
 
   let content: React.ReactNode;
-  if (path === "/" || path === "/inbox") content = <InboxPage weekStartDay={weekStartDay} />;
-  else if (path === "/today") content = <TodayPage />;
-  else if (path === "/calendar" || path === "/upcoming") content = <CalendarPage defaultView={calendarDefaultView} weekStartDay={weekStartDay} />;
-  else if (path === "/issues") content = <IssuesPage defaultLimit={issuesDefaultLimit} />;
-  else if (matchPath("/issues/new", path)) content = <IssueDetailPage mode="create" weekStartDay={weekStartDay} />;
-  else if (matchPath("/issues/:ref", path)) {
-    const { ref } = matchPath("/issues/:ref", path)!;
+  if (routePath === "/" || routePath === "/inbox") content = <InboxPage weekStartDay={weekStartDay} />;
+  else if (routePath === "/today") content = <TodayPage />;
+  else if (routePath === "/calendar" || routePath === "/upcoming") content = <CalendarPage defaultView={calendarDefaultView} weekStartDay={weekStartDay} />;
+  else if (routePath === "/issues") content = <IssuesPage defaultLimit={issuesDefaultLimit} />;
+  else if (matchPath("/issues/new", routePath)) content = <IssueDetailPage mode="create" weekStartDay={weekStartDay} />;
+  else if (matchPath("/issues/:ref", routePath)) {
+    const { ref } = matchPath("/issues/:ref", routePath)!;
     content = <IssueDetailPage mode="view" issueRef={ref} weekStartDay={weekStartDay} />;
-  } else if (path === "/wiki") content = <WikiPage />;
-  else if (path === "/wiki/new") content = <IssueDetailPage mode="create" createType="wiki" weekStartDay={weekStartDay} />;
-  else if (matchPath("/wiki/:ref", path)) {
-    const { ref } = matchPath("/wiki/:ref", path)!;
+  } else if (routePath === "/wiki") content = <WikiPage />;
+  else if (routePath === "/wiki/new") {
+    content = (
+      <IssueDetailPage
+        mode="create"
+        createType="wiki"
+        createParentId={searchParams.get("parent_id") ?? undefined}
+        weekStartDay={weekStartDay}
+      />
+    );
+  } else if (matchPath("/wiki/:ref", routePath)) {
+    const { ref } = matchPath("/wiki/:ref", routePath)!;
     content = <WikiPage selectedRef={ref} />;
-  } else if (path === "/search") content = <SearchPage />;
-  else if (path === "/settings/tokens") content = <TokenSettingsPage />;
+  } else if (routePath === "/search") content = <SearchPage />;
+  else if (routePath === "/settings/tokens") content = <TokenSettingsPage />;
   else content = <NotFoundPage />;
 
   return (
-    <AppShell email={email} path={path} navigate={navigate}>
+    <AppShell email={email} path={routePath} navigate={navigate}>
       <div key={path} className="page">
         {content}
       </div>

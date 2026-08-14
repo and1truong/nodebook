@@ -753,7 +753,7 @@ test.describe.serial("MVP acceptance", () => {
     expect(after.status()).toBe(401);
   });
 
-  test("wiki provides a browsable home and focused reading view", async ({ page }) => {
+  test("wiki provides a browsable home and focused reading view", async ({ page, request }) => {
     await page.goto("/wiki");
     await expect(page.getByRole("heading", { name: "Browse by topic" })).toBeVisible();
 
@@ -777,7 +777,18 @@ test.describe.serial("MVP acceptance", () => {
     await expect(page.getByRole("link", { name: "Edit & manage" })).toHaveAttribute("href", `/issues/${issueNumber}`);
 
     await page.getByRole("link", { name: "New page" }).click();
+    await expect(page).toHaveURL(/\/wiki\/new\?parent_id=/);
     await expect(page.getByRole("heading", { name: "New wiki page" })).toBeVisible();
     await expect(page.getByLabel("Type", { exact: true })).toContainText("wiki");
+
+    await page.getByLabel("Title", { exact: true }).fill("Child created from wiki page");
+    await page.getByRole("button", { name: "Create", exact: true }).click();
+    await expect(page).toHaveURL(/\/wiki\/\d+$/);
+    await expect(page.getByRole("heading", { name: "Child created from wiki page", exact: true })).toBeVisible();
+
+    const childPageNumber = Number(new URL(page.url()).pathname.split("/").pop());
+    const childPageResponse = await apiJson(request, "GET", `/api/issues/${childPageNumber}`);
+    expect(childPageResponse.status).toBe(200);
+    expect((childPageResponse.json as unknown as { parent_number: number | null }).parent_number).toBe(issueNumber);
   });
 });
