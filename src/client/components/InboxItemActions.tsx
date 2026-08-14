@@ -112,6 +112,7 @@ export function InboxItemActions({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => void assignDueDate(today)}>Today</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void assignDueDate(addCivilDays(today, 1))}>Tomorrow</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void assignDueDate(addCivilDays(today, 7))}>Next week</DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => {
                 setCustomDate(today);

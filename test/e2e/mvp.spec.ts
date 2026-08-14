@@ -17,6 +17,25 @@ async function apiJson(request: APIRequestContext, method: string, path: string,
   return { status: res.status(), json };
 }
 
+/** Wall-clock date (YYYY-MM-DD) of now in the host timezone — matches the client's todayCivil. */
+function civilToday(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** Add civil days via UTC arithmetic, so month/year rollover is handled. */
+function addCivilDays(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year!, month! - 1, day! + days));
+  return next.toISOString().slice(0, 10);
+}
+
 test.describe.serial("MVP acceptance", () => {
   let issueNumber: number;
   let childNumber: number;
@@ -77,6 +96,7 @@ test.describe.serial("MVP acceptance", () => {
     const priorityTask = await createInboxIssue("Inbox priority task");
     const todayTask = await createInboxIssue("Inbox today task");
     const tomorrowTask = await createInboxIssue("Inbox tomorrow task");
+    const nextWeekTask = await createInboxIssue("Inbox next week task");
     const customDateTask = await createInboxIssue("Inbox custom date task");
     const closeNote = await createInboxIssue("Inbox note to close", "note");
 
@@ -110,6 +130,16 @@ test.describe.serial("MVP acceptance", () => {
     const plannedTomorrow = await apiJson(request, "GET", `/api/issues/${tomorrowTask.number}`);
     expect(plannedTomorrow.json.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(plannedTomorrow.json.due_date).not.toBe(plannedToday.json.due_date);
+
+    const nextWeekRow = page.locator(".issue-row", { hasText: "Inbox next week task" });
+    await nextWeekRow.getByRole("button", { name: `Plan issue #${nextWeekTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Next week", exact: true }).click();
+    await expect(nextWeekRow).toHaveCount(0);
+    const plannedNextWeek = await apiJson(request, "GET", `/api/issues/${nextWeekTask.number}`);
+    // Next week is exactly seven civil days after today in the browser's timezone;
+    // Date.UTC arithmetic handles month/year rollover (e.g. Dec 28 → Jan 4).
+    expect(plannedNextWeek.json.due_date).toBe(addCivilDays(civilToday(), 7));
+    expect(plannedNextWeek.json.due_date).not.toBe(plannedTomorrow.json.due_date);
 
     const customRow = page.locator(".issue-row", { hasText: "Inbox custom date task" });
     await customRow.getByRole("button", { name: `Plan issue #${customDateTask.number}` }).click();
