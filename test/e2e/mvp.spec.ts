@@ -36,6 +36,15 @@ function addCivilDays(date: string, days: number): string {
   return next.toISOString().slice(0, 10);
 }
 
+/** Add one calendar month, clamping month-end dates. */
+function nextCivilMonth(date: string): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const firstOfTarget = new Date(Date.UTC(year!, month!, 1));
+  const lastDay = new Date(Date.UTC(firstOfTarget.getUTCFullYear(), firstOfTarget.getUTCMonth() + 1, 0)).getUTCDate();
+  firstOfTarget.setUTCDate(Math.min(day!, lastDay));
+  return firstOfTarget.toISOString().slice(0, 10);
+}
+
 test.describe.serial("MVP acceptance", () => {
   let issueNumber: number;
   let childNumber: number;
@@ -97,6 +106,7 @@ test.describe.serial("MVP acceptance", () => {
     const todayTask = await createInboxIssue("Inbox today task");
     const tomorrowTask = await createInboxIssue("Inbox tomorrow task");
     const nextWeekTask = await createInboxIssue("Inbox next week task");
+    const nextMonthTask = await createInboxIssue("Inbox next month task");
     const customDateTask = await createInboxIssue("Inbox custom date task");
     const closeNote = await createInboxIssue("Inbox note to close", "note");
 
@@ -140,6 +150,13 @@ test.describe.serial("MVP acceptance", () => {
     // Date.UTC arithmetic handles month/year rollover (e.g. Dec 28 → Jan 4).
     expect(plannedNextWeek.json.due_date).toBe(addCivilDays(civilToday(), 7));
     expect(plannedNextWeek.json.due_date).not.toBe(plannedTomorrow.json.due_date);
+
+    const nextMonthRow = page.locator(".issue-row", { hasText: "Inbox next month task" });
+    await nextMonthRow.getByRole("button", { name: `Plan issue #${nextMonthTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Next month", exact: true }).click();
+    await expect(nextMonthRow).toHaveCount(0);
+    const plannedNextMonth = await apiJson(request, "GET", `/api/issues/${nextMonthTask.number}`);
+    expect(plannedNextMonth.json.due_date).toBe(nextCivilMonth(civilToday()));
 
     const customRow = page.locator(".issue-row", { hasText: "Inbox custom date task" });
     await customRow.getByRole("button", { name: `Plan issue #${customDateTask.number}` }).click();

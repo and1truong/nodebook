@@ -3,7 +3,7 @@ import { useState } from "react";
 import { CalendarDays, Check, X } from "lucide-react";
 import type { IssueDto } from "../../shared/contracts/issues";
 import { PRIORITIES } from "../../shared/limits";
-import { todayCivil } from "../../shared/time";
+import { addCivilMonths, todayCivil } from "../../shared/time";
 import { api } from "../api";
 import { DatePicker } from "./DatePicker";
 import { Button } from "./ui/button";
@@ -113,6 +113,7 @@ export function InboxItemActions({
             <DropdownMenuItem onSelect={() => void assignDueDate(today)}>Today</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void assignDueDate(addCivilDays(today, 1))}>Tomorrow</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void assignDueDate(addCivilDays(today, 7))}>Next week</DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void assignDueDate(addCivilMonths(today, 1))}>Next month</DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => {
                 setCustomDate(today);
