@@ -1,7 +1,7 @@
 /**
  * Calendar workspace (browser): routing, configurable default view, views,
  * drag-and-drop rescheduling (pointer + keyboard), failure rollback, the
- * day-view time-slot dragging and "Move date…" fallback, accessibility selectors, and
+ * day-view time-slot dragging and "Move date…" shortcuts/picker, accessibility selectors, and
  * narrow-screen rendering.
  *
  * The context runs in UTC (timezoneId) so fixture dates computed in the test
@@ -628,6 +628,31 @@ test.describe.serial("Calendar workspace", () => {
     await expect(page.locator(`.calendar-week-col[data-date="${today}"]`).getByRole("link", { name: /Keyboard due entry/ })).toHaveCount(0);
     const stored = await getIssue(request, due.number);
     expect(stored.due_date).toBe(target);
+  });
+
+  test("moves day-view entries with Inbox-style date shortcuts", async ({ page, request }) => {
+    const today = todayUtc();
+    const cases = [
+      { title: "Shortcut tomorrow entry", shortcut: "Tomorrow", expected: addDays(today, 1) },
+      { title: "Shortcut next week entry", shortcut: "Next week", expected: addDays(startOfWeek(today), 7) },
+      { title: "Shortcut next month entry", shortcut: "Next month", expected: firstOfNextMonth(today) },
+    ];
+    const issues = await Promise.all(
+      cases.map(({ title }) => createIssue(request, { title, due_date: today })),
+    );
+
+    await page.goto("/calendar");
+    await page.getByRole("button", { name: "Day", exact: true }).click();
+
+    for (const [index, testCase] of cases.entries()) {
+      const row = page.locator("li", { hasText: testCase.title });
+      await row.getByRole("button", { name: "Move date…" }).click();
+      await row.getByRole("button", { name: testCase.shortcut, exact: true }).click();
+
+      await expect(row).toHaveCount(0);
+      const stored = await getIssue(request, issues[index]!.number);
+      expect(stored.due_date).toBe(testCase.expected);
+    }
   });
 
   test("moves a day-view entry with the Move date… fallback picker", async ({ page, request }) => {

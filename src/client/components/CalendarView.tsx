@@ -10,7 +10,7 @@
  * threshold, delayed touch, and keyboard) are draggable onto month cells and
  * week columns. In the day view,
  * scheduled entries are draggable onto 15-minute slots to set their time; a
- * "Move date…" picker remains available per entry. Drags only start after the
+ * "Move date…" shortcuts and picker remain available per entry. Drags only start after the
  * activation threshold, so ordinary link clicks still
  * navigate. A drag overlay, active/target styling, auto-scroll, and screen
  * reader announcements accompany the interaction.
@@ -34,7 +34,20 @@ import type { CollisionDetection, DragEndEvent, DragStartEvent, KeyboardCoordina
 import type { CalendarItemDto } from "../../shared/contracts/issues";
 import { civilFromInstant } from "../../shared/time";
 import type { CalendarView, WeekStartDay } from "../calendar";
-import { MONTH_NAMES, WEEKDAY_LONG, WEEKDAY_SHORT, addDays, isSameMonth, monthGrid, parseDate, weekday, weekDays, weekdayHeaders } from "../calendar";
+import {
+  MONTH_NAMES,
+  WEEKDAY_LONG,
+  WEEKDAY_SHORT,
+  addDays,
+  isSameMonth,
+  monthGrid,
+  parseDate,
+  startOfNextMonth,
+  startOfNextWeek,
+  weekday,
+  weekDays,
+  weekdayHeaders,
+} from "../calendar";
 import { Link } from "../router";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "./ui";
@@ -285,7 +298,9 @@ const keyboardCoordinatesGetter: KeyboardCoordinateGetter = (event, { currentCoo
   };
 };
 
-/** "Move date…" fallback: opens the existing date picker for the entry. */
+/** "Move date…" fallback: offers the same period shortcuts as Inbox plus
+ * the existing date picker. Shortcut dates are relative to the viewer's
+ * current civil date, not the calendar day being viewed. */
 function MoveDateControl({
   item,
   today,
@@ -298,6 +313,17 @@ function MoveDateControl({
   onMove: (item: CalendarItemDto, date: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const moveTo = (date: string) => {
+    onMove(item, date);
+    setOpen(false);
+  };
+  const shortcuts = [
+    { label: "Today", date: today },
+    { label: "Tomorrow", date: addDays(today, 1) },
+    { label: "Next week", date: startOfNextWeek(today, weekStartDay) },
+    { label: "Next month", date: startOfNextMonth(today) },
+  ];
+
   return (
     <div className="relative flex-none">
       <Button
@@ -311,6 +337,21 @@ function MoveDateControl({
       </Button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-1 rounded-lg border border-border bg-popover p-2 shadow-md">
+          <div className="mb-2 flex flex-col border-b border-border pb-1">
+            {shortcuts.map((shortcut) => (
+              <Button
+                key={shortcut.label}
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-7 justify-start px-2 text-xs"
+                onClick={() => moveTo(shortcut.date)}
+              >
+                {shortcut.label}
+              </Button>
+            ))}
+          </div>
+          <p className="mb-1 px-1 text-[11px] font-medium text-muted-foreground">Pick date</p>
           <DatePicker
             id={`move-${item.issue.id}-${item.kind}`}
             value={item.date}
@@ -318,8 +359,8 @@ function MoveDateControl({
             ariaLabel="Move date"
             weekStartDay={weekStartDay}
             onChange={(date) => {
-              if (date) onMove(item, date);
-              setOpen(false);
+              if (date) moveTo(date);
+              else setOpen(false);
             }}
           />
         </div>
