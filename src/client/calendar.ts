@@ -6,9 +6,12 @@
  * week starts, and navigation are pure calendar math (proleptic Gregorian,
  * Sunday-first weeks to match DatePicker).
  */
-import { daysInMonth, parseCivilDate } from "../shared/time";
+import { civilDateString, civilFromInstant, daysInMonth, instantFromCivil, parseCivilDate } from "../shared/time";
+import type { CalendarItemDto, IssueDto } from "../shared/contracts/issues";
+import type { CalendarView } from "../shared/contracts/config";
 
-export type CalendarView = "day" | "week" | "month";
+/** Re-exported for callers that previously imported the union here. */
+export type { CalendarView };
 
 export const WEEKDAY_SHORT = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 export const WEEKDAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -148,4 +151,89 @@ export function viewLabel(view: CalendarView, date: string): string {
     return `${fmt(start, false)}, ${start.year} – ${fmt(end, false)}, ${end.year}`;
   }
   return `${fmt(start, true)} – ${fmt(end, true)}`;
+}
+
+// ---------------------------------------------------------------------------
+// Rescheduling
+// ---------------------------------------------------------------------------
+
+/** Field-specific issue patch produced by moving a calendar entry. */
+export type IssuePatch = {
+  due_date?: string;
+  scheduled_date?: string;
+};
+
+/**
+ * Patch for moving `item` to `targetDate` (viewer-local civil date), or null
+ * for same-date and invalid drops (no-op). Due entries move only `due_date`;
+ * scheduled entries move only `scheduled_date`, preserving the viewer-local
+ * wall-clock time via civil-time helpers (DST-safe: spring-forward gaps land
+ * on the post-transition instant, fall-back overlaps pick the first one).
+ */
+export function reschedulePatch(
+  item: CalendarItemDto,
+  targetDate: string,
+  timezone: string,
+): IssuePatch | null {
+  if (item.date === targetDate) return null;
+  const target = parseDate(targetDate);
+  if (!target) return null;
+  if (item.kind === "due") return { due_date: targetDate };
+  const iso = item.issue.scheduled_date;
+  if (!iso) return null;
+  const instant = new Date(iso);
+  if (Number.isNaN(instant.getTime())) return null;
+  const civil = civilFromInstant(instant, timezone);
+  const next = instantFromCivil(timezone, {
+    year: target.year,
+    month: target.month,
+    day: target.day,
+    hour: civil.hour,
+    minute: civil.minute,
+    second: civil.second,
+  });
+  const nextIso = next.toISOString();
+  if (nextIso === iso) return null;
+  return { scheduled_date: nextIso };
+}
+
+/** Server-compatible deterministic ordering: date, kind, then issue number. */
+export function calendarEntryOrder(a: CalendarItemDto, b: CalendarItemDto): number {
+  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
+  if (a.kind !== b.kind) return a.kind === "due" ? -1 : 1;
+  return a.issue.number - b.issue.number;
+}
+
+/** The calendar entries of `issue` (both kinds) within the visible range. */
+export function entriesForIssue(issue: IssueDto, range: DateRange, timezone: string): CalendarItemDto[] {
+  const out: CalendarItemDto[] = [];
+  if (issue.due_date && issue.due_date >= range.start && issue.due_date < range.end) {
+    out.push({ issue, date: issue.due_date, kind: "due" });
+  }
+  if (issue.scheduled_date) {
+    const instant = new Date(issue.scheduled_date);
+    if (!Number.isNaN(instant.getTime())) {
+      const date = civilDateString(instant, timezone);
+      if (date >= range.start && date < range.end) {
+        out.push({ issue, date, kind: "scheduled" });
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Replace every entry of `issue` with entries recomputed from its (possibly
+ * locally patched) DTO, keeping other issues' entries and the deterministic
+ * server order. Used for optimistic moves and post-PATCH reconciliation.
+ */
+export function reconcileCalendarItems(
+  items: CalendarItemDto[],
+  issue: IssueDto,
+  range: DateRange,
+  timezone: string,
+): CalendarItemDto[] {
+  return [...items.filter((i) => i.issue.id !== issue.id), ...entriesForIssue(issue, range, timezone)].sort(
+    calendarEntryOrder,
+  );
 }

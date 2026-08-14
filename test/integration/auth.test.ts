@@ -9,7 +9,11 @@ describe("web authentication", () => {
     // verify the API is reachable with the dev identity.
     const res = await api("/api/me");
     expect(res.status).toBe(200);
-    expect((res.body as { email: string }).email).toBe(OWNER);
+    const body = res.body as { email: string; calendar_default_view: string };
+    expect(body.email).toBe(OWNER);
+    // Runtime configuration is exposed through /api/me; the test binding
+    // resolves to "week".
+    expect(body.calendar_default_view).toBe("week");
   });
 
   it("rejects MCP calls without a bearer token", async () => {

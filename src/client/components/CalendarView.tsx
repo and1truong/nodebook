@@ -4,14 +4,38 @@
  * scheduled entries from all-day due entries. Entries link to their issues;
  * keys include issue, kind, and occurrence so dual due/scheduled entries of
  * the same issue never collide.
+ *
+ * Dragging: entries (pointer with a movement threshold, delayed touch, and
+ * keyboard) are draggable onto month cells and week columns; the day agenda
+ * is the non-drag fallback with a "Move date…" picker per entry. Drags only
+ * start after the activation threshold, so ordinary link clicks still
+ * navigate. A drag overlay, active/target styling, auto-scroll, and screen
+ * reader announcements accompany the interaction.
  */
+import { useState } from "react";
 import type { ReactNode } from "react";
+import {
+  DndContext,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  closestCorners,
+  pointerWithin,
+  useDraggable,
+  useDroppable,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import type { CollisionDetection, DragEndEvent, DragStartEvent, KeyboardCoordinateGetter } from "@dnd-kit/core";
 import type { CalendarItemDto } from "../../shared/contracts/issues";
 import type { CalendarView } from "../calendar";
-import { MONTH_NAMES, WEEKDAY_LONG, WEEKDAY_SHORT, isSameMonth, monthGrid, parseDate, weekday, weekDays } from "../calendar";
+import { MONTH_NAMES, WEEKDAY_LONG, WEEKDAY_SHORT, addDays, isSameMonth, monthGrid, parseDate, weekday, weekDays } from "../calendar";
 import { Link } from "../router";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "./ui";
+import { DatePicker } from "./DatePicker";
+import { Button } from "./ui/button";
 
 function fullDateLabel(date: string): string {
   const p = parseDate(date);
@@ -36,13 +60,7 @@ function groupByDate(items: CalendarItemDto[]): Map<string, CalendarItemDto[]> {
   return byDate;
 }
 
-function EntryLink({
-  item,
-  compact = false,
-}: {
-  item: CalendarItemDto;
-  compact?: boolean;
-}) {
+function EntryLink({ item, compact = false }: { item: CalendarItemDto; compact?: boolean }) {
   const { issue, kind } = item;
   const timed = kind === "scheduled" ? formatTime(issue.scheduled_date) : null;
   const label = `${kind === "due" ? "Due" : "Scheduled"} — #${issue.number} ${issue.title}`;
@@ -74,15 +92,160 @@ function EntryLink({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Drag and drop primitives
+// ---------------------------------------------------------------------------
+
+/** One day on the grid/columns; the drop target for dragged entries. */
+function DroppableDate({
+  date,
+  className,
+  children,
+}: {
+  date: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: `date:${date}`, data: { date } });
+  return (
+    <div
+      ref={setNodeRef}
+      data-date={date}
+      className={cn(className, isOver && "calendar-drop-target bg-accent/50 ring-2 ring-inset ring-primary/60")}
+    >
+      {children}
+    </div>
+  );
+}
+
+/** Draggable entry: drags only after the activation threshold, so the inner
+ *  issue link keeps normal click navigation. Keyboard users focus the entry
+ *  (role="button"), press Space/Enter to pick up, arrows to move, Space to
+ *  drop. Moves of an issue with an in-flight PATCH are disabled. */
+function DraggableEntry({
+  item,
+  compact,
+  busy,
+}: {
+  item: CalendarItemDto;
+  compact: boolean;
+  busy: boolean;
+}) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
+    id: `${item.issue.id}:${item.kind}:${item.date}`,
+    data: { item },
+    disabled: busy,
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      {...attributes}
+      {...listeners}
+      aria-busy={busy || undefined}
+      title={busy ? "Move in progress" : "Drag to reschedule"}
+      className={cn(
+        "calendar-drag-handle cursor-grab rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        isDragging && "opacity-40",
+        busy && "cursor-wait opacity-60",
+      )}
+    >
+      <EntryLink item={item} compact={compact} />
+    </div>
+  );
+}
+
+/** Move keyboard drags by calendar date rather than fragile pixel steps.
+ * Left/right select adjacent dates; up/down select the same weekday in the
+ * previous/next week when that date is present in the rendered range. */
+const calendarCollisionDetection: CollisionDetection = (args) => {
+  const pointerCollisions = pointerWithin(args);
+  return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
+};
+
+const keyboardCoordinatesGetter: KeyboardCoordinateGetter = (event, { currentCoordinates, context }) => {
+  const overDate = context.over?.data.current?.date;
+  const activeItem = context.active?.data.current?.item as CalendarItemDto | undefined;
+  const date = typeof overDate === "string" ? overDate : activeItem?.date;
+  if (!date) return undefined;
+
+  const dayDelta =
+    event.code === "ArrowRight" ? 1
+    : event.code === "ArrowLeft" ? -1
+    : event.code === "ArrowDown" ? 7
+    : event.code === "ArrowUp" ? -7
+    : 0;
+  if (!dayDelta) return undefined;
+
+  const targetDate = addDays(date, dayDelta);
+  const target = context.droppableContainers
+    .getEnabled()
+    .find((container) => container.data.current?.date === targetDate);
+  const targetRect = target ? context.droppableRects.get(target.id) ?? target.rect.current : undefined;
+  const collisionRect = context.collisionRect;
+  if (!targetRect || !collisionRect) return currentCoordinates;
+
+  const horizontal = event.code === "ArrowRight" || event.code === "ArrowLeft";
+  return {
+    x: horizontal ? targetRect.left + (targetRect.width - collisionRect.width) / 2 : currentCoordinates.x,
+    y: horizontal ? currentCoordinates.y : targetRect.top + (targetRect.height - collisionRect.height) / 2,
+  };
+};
+
+/** "Move date…" fallback: opens the existing date picker for the entry. */
+function MoveDateControl({
+  item,
+  today,
+  onMove,
+}: {
+  item: CalendarItemDto;
+  today: string;
+  onMove: (item: CalendarItemDto, date: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative flex-none">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-expanded={open}
+        className="h-6 px-1.5 text-xs text-muted-foreground"
+        onClick={() => setOpen((o) => !o)}
+      >
+        Move date…
+      </Button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-1 rounded-lg border border-border bg-popover p-2 shadow-md">
+          <DatePicker
+            id={`move-${item.issue.id}-${item.kind}`}
+            value={item.date}
+            today={today}
+            ariaLabel="Move date"
+            onChange={(date) => {
+              if (date) onMove(item, date);
+              setOpen(false);
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Views
+// ---------------------------------------------------------------------------
+
 function MonthGrid({
   selected,
   today,
   items,
+  busyIssueIds,
   onSelectDay,
 }: {
   selected: string;
   today: string;
   items: CalendarItemDto[];
+  busyIssueIds: ReadonlySet<string>;
   onSelectDay: (date: string) => void;
 }) {
   const grid = monthGrid(selected);
@@ -100,10 +263,13 @@ function MonthGrid({
           const isToday = date === today;
           const dayItems = byDate.get(date) ?? [];
           return (
-            <div
+            <DroppableDate
               key={date}
-              data-date={date}
-              className={cn("calendar-day-cell flex min-h-[76px] flex-col items-stretch gap-0.5 bg-card p-1", !inMonth && "opacity-45")}
+              date={date}
+              className={cn(
+                "calendar-day-cell flex min-h-[76px] flex-col items-stretch gap-0.5 bg-card p-1",
+                !inMonth && "opacity-45",
+              )}
             >
               <button
                 type="button"
@@ -117,12 +283,12 @@ function MonthGrid({
                 {Number(date.slice(8))}
               </button>
               {dayItems.slice(0, 3).map((item) => (
-                <EntryLink key={`${item.issue.id}:${item.kind}:${item.date}`} item={item} compact />
+                <DraggableEntry key={`${item.issue.id}:${item.kind}:${item.date}`} item={item} compact busy={busyIssueIds.has(item.issue.id)} />
               ))}
               {dayItems.length > 3 && (
                 <span className="px-1 text-[10px] leading-tight text-muted-foreground">+{dayItems.length - 3} more</span>
               )}
-            </div>
+            </DroppableDate>
           );
         })}
       </div>
@@ -134,11 +300,13 @@ function WeekView({
   selected,
   today,
   items,
+  busyIssueIds,
   onSelectDay,
 }: {
   selected: string;
   today: string;
   items: CalendarItemDto[];
+  busyIssueIds: ReadonlySet<string>;
   onSelectDay: (date: string) => void;
 }) {
   const days = weekDays(selected);
@@ -150,7 +318,11 @@ function WeekView({
           const isToday = date === today;
           const dayItems = byDate.get(date) ?? [];
           return (
-            <div key={date} data-date={date} className="calendar-week-col flex min-h-[160px] flex-col bg-card">
+            <DroppableDate
+              key={date}
+              date={date}
+              className="calendar-week-col flex min-h-[160px] flex-col bg-card"
+            >
               <button
                 type="button"
                 onClick={() => onSelectDay(date)}
@@ -171,10 +343,10 @@ function WeekView({
               </button>
               <div className="flex flex-1 flex-col gap-0.5 p-1">
                 {dayItems.map((item) => (
-                  <EntryLink key={`${item.issue.id}:${item.kind}:${item.date}`} item={item} />
+                  <DraggableEntry key={`${item.issue.id}:${item.kind}:${item.date}`} item={item} compact={false} busy={busyIssueIds.has(item.issue.id)} />
                 ))}
               </div>
-            </div>
+            </DroppableDate>
           );
         })}
       </div>
@@ -184,10 +356,14 @@ function WeekView({
 
 function DayAgenda({
   selected,
+  today,
   items,
+  onMove,
 }: {
   selected: string;
+  today: string;
   items: CalendarItemDto[];
+  onMove: (item: CalendarItemDto, date: string) => void;
 }) {
   const dayItems = groupByDate(items).get(selected) ?? [];
   const scheduled = dayItems
@@ -209,8 +385,11 @@ function DayAgenda({
       ) : (
         <ul className="divide-y divide-border rounded-lg border border-border bg-card">
           {entries.map((item) => (
-            <li key={`${item.issue.id}:${item.kind}:${item.date}`} className="px-2 py-1.5">
-              <EntryLink item={item} />
+            <li key={`${item.issue.id}:${item.kind}:${item.date}`} className="flex items-center justify-between gap-2 px-2 py-1.5">
+              <div className="min-w-0 flex-1">
+                <EntryLink item={item} />
+              </div>
+              <MoveDateControl item={item} today={today} onMove={onMove} />
             </li>
           ))}
         </ul>
@@ -230,31 +409,112 @@ function DayAgenda({
   );
 }
 
+// ---------------------------------------------------------------------------
+// Renderer
+// ---------------------------------------------------------------------------
+
 export function CalendarViewRenderer({
   view,
   selected,
   today,
   items,
+  busyIssueIds,
   onSelectDay,
+  onMove,
 }: {
   view: CalendarView;
   selected: string;
   today: string;
   items: CalendarItemDto[];
+  /** Viewer timezone: passed through for callers that derive patches. */
+  timezone: string;
+  busyIssueIds: ReadonlySet<string>;
   onSelectDay: (date: string) => void;
+  onMove: (item: CalendarItemDto, date: string) => void;
 }) {
+  const [activeItem, setActiveItem] = useState<CalendarItemDto | null>(null);
+  const sensors = useSensors(
+    // A movement threshold keeps plain clicks on the entry links navigable.
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: keyboardCoordinatesGetter }),
+  );
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveItem((event.active.data.current?.item as CalendarItemDto | undefined) ?? null);
+  };
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveItem(null);
+    const item = event.active.data.current?.item as CalendarItemDto | undefined;
+    const date = event.over?.data.current?.date as string | undefined;
+    if (item && date) onMove(item, date);
+  };
+
+  const announcementFor = (date: unknown) => {
+    const d = typeof date === "string" ? date : "";
+    return d ? fullDateLabel(d) : "an unknown date";
+  };
+
   if (view === "month" && items.length === 0) {
     return <EmptyState>No planned work in this month.</EmptyState>;
   }
   if (view === "week" && items.length === 0) {
     return <EmptyState>No planned work this week.</EmptyState>;
   }
-  if (view === "day") {
-    return <DayAgenda selected={selected} items={items} />;
-  }
-  return view === "month" ? (
-    <MonthGrid selected={selected} today={today} items={items} onSelectDay={onSelectDay} />
-  ) : (
-    <WeekView selected={selected} today={today} items={items} onSelectDay={onSelectDay} />
+
+  return (
+    <DndContext
+      sensors={sensors}
+      collisionDetection={calendarCollisionDetection}
+      onDragStart={handleDragStart}
+      onDragEnd={handleDragEnd}
+      onDragCancel={() => setActiveItem(null)}
+      accessibility={{
+        announcements: {
+          onDragStart({ active }) {
+            const item = active.data.current?.item as CalendarItemDto | undefined;
+            return item
+              ? `Picked up #${item.issue.number} ${item.issue.title}. Use arrow keys to move it and space to drop.`
+              : "Picked up a calendar entry.";
+          },
+          onDragOver({ over }) {
+            return `Moved over ${announcementFor(over?.data.current?.date)}.`;
+          },
+          onDragEnd({ over }) {
+            return `Dropped on ${announcementFor(over?.data.current?.date)}.`;
+          },
+          onDragCancel() {
+            return "Drop cancelled.";
+          },
+        },
+      }}
+    >
+        {view === "day" ? (
+          <DayAgenda selected={selected} today={today} items={items} onMove={onMove} />
+        ) : view === "month" ? (
+          <MonthGrid
+            selected={selected}
+            today={today}
+            items={items}
+            busyIssueIds={busyIssueIds}
+            onSelectDay={onSelectDay}
+          />
+        ) : (
+          <WeekView
+            selected={selected}
+            today={today}
+            items={items}
+            busyIssueIds={busyIssueIds}
+            onSelectDay={onSelectDay}
+          />
+        )}
+      <DragOverlay dropAnimation={null}>
+        {activeItem ? (
+          <div className="calendar-drag-overlay cursor-grabbing rounded-md border border-border bg-card p-0.5 shadow-lg">
+            <EntryLink item={activeItem} compact={view === "month"} />
+          </div>
+        ) : null}
+      </DragOverlay>
+    </DndContext>
   );
 }

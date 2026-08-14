@@ -1,6 +1,6 @@
 /** Planning views and recurring-task behavior. */
 import { describe, expect, it } from "vitest";
-import { api, createIssue, post, testEnv } from "./helpers";
+import { api, createIssue, post, patch, testEnv } from "./helpers";
 
 function todayCivil(now = new Date()): string {
   const d = now;
@@ -267,6 +267,28 @@ describe("calendar range API", () => {
     expect(res.status).toBe(200);
     const numbers = (res.body as { issue: { number: number } }[]).map((i) => i.issue.number);
     expect(numbers).toContain(future.number);
+  });
+
+  it("recalculates before-due reminders when a calendar move changes the due date", async () => {
+    // A calendar drag persists via the same PATCH the calendar client sends;
+    // before-due reminders must track the new due date server-side.
+    const issue = await createIssue({ title: "reminder follows move", due_date: "2025-06-10" });
+    const created = await post(`/api/reminders/issue/${issue.number}`, {
+      kind: "before_due",
+      offset_minutes: 60,
+    });
+    expect(created.status).toBe(201);
+    const first = created.body as { trigger_at: string };
+    // Before-due reminders anchor to the due day's end (23:59:59) minus the offset.
+    expect(first.trigger_at).toBe("2025-06-10T22:59:59.000Z");
+
+    const moved = await patch(`/api/issues/${issue.number}`, { due_date: "2025-06-20" });
+    expect(moved.status).toBe(200);
+
+    const list = await api(`/api/reminders/issue/${issue.number}`);
+    const reminders = list.body as { trigger_at: string; kind: string }[];
+    const beforeDue = reminders.find((r) => r.kind === "before_due")!;
+    expect(beforeDue.trigger_at).toBe("2025-06-20T22:59:59.000Z");
   });
 });
 

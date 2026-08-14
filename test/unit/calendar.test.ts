@@ -7,6 +7,8 @@ import {
   monthGrid,
   monthLabel,
   navigate,
+  reconcileCalendarItems,
+  reschedulePatch,
   startOfWeek,
   viewLabel,
   viewRange,
@@ -119,5 +121,180 @@ describe("calendar arithmetic", () => {
     expect(isSameMonth("2025-02-01", "2025-02-28")).toBe(true);
     expect(isSameMonth("2025-01-31", "2025-02-01")).toBe(false);
     expect(isSameMonth("2024-12-31", "2025-01-01")).toBe(false);
+  });
+});
+
+describe("rescheduling patches", () => {
+  const issue = (over: Partial<{ id: string; number: number; due_date: string | null; scheduled_date: string | null }>) => ({
+    id: "issue-1",
+    number: 7,
+    type: "task" as const,
+    title: "Move me",
+    body: "",
+    status: "open" as const,
+    priority: null as null,
+    labels: [],
+    start_date: null,
+    due_date: null,
+    scheduled_date: null,
+    timezone: "UTC" as const,
+    recurrence_rule: null,
+    parent_id: null,
+    parent_number: null,
+    created_by: "owner",
+    created_at: "2025-01-01T00:00:00.000Z",
+    updated_at: "2025-01-01T00:00:00.000Z",
+    closed_at: null,
+    completed_at: null,
+    child_count: 0,
+    backlink_count: 0,
+    ...over,
+  });
+
+  it("moves a due entry by patching only due_date", () => {
+    const item = {
+      issue: issue({ due_date: "2025-06-10" }),
+      date: "2025-06-10",
+      kind: "due" as const,
+    };
+    expect(reschedulePatch(item, "2025-06-12", "UTC")).toEqual({ due_date: "2025-06-12" });
+  });
+
+  it("moves a scheduled entry by patching only scheduled_date", () => {
+    const item = {
+      issue: issue({ scheduled_date: "2025-06-10T09:00:00.000Z" }),
+      date: "2025-06-10",
+      kind: "scheduled" as const,
+    };
+    expect(reschedulePatch(item, "2025-06-12", "UTC")).toEqual({ scheduled_date: "2025-06-12T09:00:00.000Z" });
+  });
+
+  it("preserves viewer-local wall-clock time when moving a scheduled entry", () => {
+    // 13:00Z = 09:00 EDT; moving a day must keep 09:00 in New York.
+    const item = {
+      issue: issue({ scheduled_date: "2025-06-10T13:00:00.000Z" }),
+      date: "2025-06-10",
+      kind: "scheduled" as const,
+    };
+    expect(reschedulePatch(item, "2025-06-12", "America/New_York")).toEqual({
+      scheduled_date: "2025-06-12T13:00:00.000Z",
+    });
+  });
+
+  it("keeps the wall-clock time across DST transitions", () => {
+    // Spring forward 2025-03-09 in New York: 09:00 EST → 09:00 EDT.
+    const before = {
+      issue: issue({ scheduled_date: "2025-03-08T14:00:00.000Z" }), // 09:00 EST
+      date: "2025-03-08",
+      kind: "scheduled" as const,
+    };
+    expect(reschedulePatch(before, "2025-03-09", "America/New_York")).toEqual({
+      scheduled_date: "2025-03-09T13:00:00.000Z", // 09:00 EDT
+    });
+
+    // Fall back 2025-11-02 in New York (2:00 EDT → 1:00 EST): a move from
+    // Nov 1 (09:00 EDT = 13:00Z) to Nov 3 must land on 09:00 EST = 14:00Z.
+    const after = {
+      issue: issue({ scheduled_date: "2025-11-01T13:00:00.000Z" }), // 09:00 EDT
+      date: "2025-11-01",
+      kind: "scheduled" as const,
+    };
+    expect(reschedulePatch(after, "2025-11-03", "America/New_York")).toEqual({
+      scheduled_date: "2025-11-03T14:00:00.000Z", // 09:00 EST
+    });
+  });
+
+  it("handles date-boundary moves", () => {
+    const item = {
+      issue: issue({ due_date: "2025-12-31" }),
+      date: "2025-12-31",
+      kind: "due" as const,
+    };
+    expect(reschedulePatch(item, "2026-01-01", "UTC")).toEqual({ due_date: "2026-01-01" });
+    const scheduled = {
+      issue: issue({ scheduled_date: "2025-12-31T23:30:00.000Z" }),
+      date: "2025-12-31",
+      kind: "scheduled" as const,
+    };
+    expect(reschedulePatch(scheduled, "2026-01-01", "UTC")).toEqual({
+      scheduled_date: "2026-01-01T23:30:00.000Z",
+    });
+  });
+
+  it("moves only the corresponding field of a dual entry", () => {
+    const dual = issue({ due_date: "2025-06-10", scheduled_date: "2025-06-10T10:00:00.000Z" });
+    const due = { issue: dual, date: "2025-06-10", kind: "due" as const };
+    expect(reschedulePatch(due, "2025-06-11", "UTC")).toEqual({ due_date: "2025-06-11" });
+    const scheduled = { issue: dual, date: "2025-06-10", kind: "scheduled" as const };
+    expect(reschedulePatch(scheduled, "2025-06-11", "UTC")).toEqual({
+      scheduled_date: "2025-06-11T10:00:00.000Z",
+    });
+  });
+
+  it("treats same-date and invalid drops as no-ops", () => {
+    const due = { issue: issue({ due_date: "2025-06-10" }), date: "2025-06-10", kind: "due" as const };
+    expect(reschedulePatch(due, "2025-06-10", "UTC")).toBeNull(); // same date
+    expect(reschedulePatch(due, "2025-6-10", "UTC")).toBeNull(); // malformed target
+    expect(reschedulePatch(due, "not-a-date", "UTC")).toBeNull();
+    const scheduled = { issue: issue({}), date: "2025-06-10", kind: "scheduled" as const };
+    expect(reschedulePatch(scheduled, "2025-06-11", "UTC")).toBeNull(); // no instant
+    const badInstant = {
+      issue: issue({ scheduled_date: "garbage" }),
+      date: "2025-06-10",
+      kind: "scheduled" as const,
+    };
+    expect(reschedulePatch(badInstant, "2025-06-11", "UTC")).toBeNull();
+  });
+});
+
+describe("calendar entry reconciliation", () => {
+  const issue = (over: { id: string; number: number; due_date?: string | null; scheduled_date?: string | null }) => ({
+    id: over.id,
+    number: over.number,
+    type: "task" as const,
+    title: `Issue ${over.number}`,
+    body: "",
+    status: "open" as const,
+    priority: null as null,
+    labels: [],
+    start_date: null,
+    due_date: over.due_date ?? null,
+    scheduled_date: over.scheduled_date ?? null,
+    timezone: "UTC" as const,
+    recurrence_rule: null,
+    parent_id: null,
+    parent_number: null,
+    created_by: "owner",
+    created_at: "2025-01-01T00:00:00.000Z",
+    updated_at: "2025-01-01T00:00:00.000Z",
+    closed_at: null,
+    completed_at: null,
+    child_count: 0,
+    backlink_count: 0,
+  });
+  const range = { start: "2025-06-01", end: "2025-07-01" };
+
+  it("replaces every entry of an issue from its DTO and keeps server order", () => {
+    const a = issue({ id: "a", number: 2, due_date: "2025-06-05" });
+    const b = issue({ id: "b", number: 1, due_date: "2025-06-10", scheduled_date: "2025-06-10T09:00:00.000Z" });
+    const items = [
+      { issue: b, date: "2025-06-10", kind: "due" as const },
+      { issue: a, date: "2025-06-05", kind: "due" as const },
+      { issue: b, date: "2025-06-10", kind: "scheduled" as const },
+    ];
+    const moved = issue({ id: "b", number: 1, due_date: "2025-06-20", scheduled_date: "2025-06-10T09:00:00.000Z" });
+    const next = reconcileCalendarItems(items, moved, range, "UTC");
+    expect(next).toEqual([
+      { issue: a, date: "2025-06-05", kind: "due" },
+      { issue: moved, date: "2025-06-10", kind: "scheduled" },
+      { issue: moved, date: "2025-06-20", kind: "due" },
+    ]);
+  });
+
+  it("drops recomputed entries that leave the visible range", () => {
+    const a = issue({ id: "a", number: 3, due_date: "2025-06-05" });
+    const items = [{ issue: a, date: "2025-06-05", kind: "due" as const }];
+    const movedAway = issue({ id: "a", number: 3, due_date: "2025-08-01" });
+    expect(reconcileCalendarItems(items, movedAway, range, "UTC")).toEqual([]);
   });
 });

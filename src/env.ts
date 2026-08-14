@@ -23,6 +23,8 @@ export interface Env {
   MCP_MAX_UPLOAD_BYTES: string;
   /** Allowed CORS origins for /mcp (comma separated); empty = "*". */
   MCP_CORS_ORIGINS?: string;
+  /** Initial calendar view: "day", "week", or "month" (default "week"). */
+  CALENDAR_DEFAULT_VIEW?: string;
 }
 
 export function uploadLimitBytes(env: Env): number {

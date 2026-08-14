@@ -24,7 +24,9 @@
     "MAX_UPLOAD_BYTES": "26214400",
     "MCP_MAX_UPLOAD_BYTES": "5242880",
     // Allowed CORS origins for the MCP endpoint (comma separated). Empty = *.
-    "MCP_CORS_ORIGINS": ""
+    "MCP_CORS_ORIGINS": "",
+    // Initial calendar view: "day", "week", or "month" (invalid/missing → week).
+    "CALENDAR_DEFAULT_VIEW": "week"
   },
   "d1_databases": [
     {

@@ -17,6 +17,7 @@ import type {
   SubIssueSummaryDto,
   WikiNodeDto,
 } from "../shared/contracts/issues";
+import type { AppConfigDto } from "../shared/contracts/config";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -51,7 +52,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  me: () => request<{ email: string; actor_type: string }>("/api/me"),
+  me: () => request<AppConfigDto>("/api/me"),
 
   // Issues
   listIssues: (params: Record<string, string | undefined> = {}) => {
