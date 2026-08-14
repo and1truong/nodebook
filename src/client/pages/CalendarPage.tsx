@@ -49,6 +49,9 @@ export function CalendarPage({
   const [notice, setNotice] = useState<string | null>(null);
   const [createTarget, setCreateTarget] = useState<CalendarCreateTarget | null>(null);
   const [busyIssueIds, setBusyIssueIds] = useState<ReadonlySet<string>>(new Set());
+  // State disables rendered drag handles; the ref is the synchronous lock.
+  // React may not commit state between two drag-end callbacks in the same tick.
+  const busyIssueIdsRef = useRef(new Set<string>());
   const fetchSeq = useRef(0);
   // A second entry of the same issue can be moved before React has committed
   // the first response DTO. Keep the last server-confirmed CAS token outside
@@ -76,7 +79,9 @@ export function CalendarPage({
       .calendar(range.start, range.end, tz)
       .then((next) => {
         if (fetchSeq.current === seq) {
-          for (const item of next) issueVersions.current.set(item.issue.id, item.issue.version);
+          // Only visible issues need cached CAS tokens. Replacing rather than
+          // appending bounds this map to the current calendar range.
+          issueVersions.current = new Map(next.map((item) => [item.issue.id, item.issue.version]));
           setItems(next);
         }
       })
@@ -90,7 +95,10 @@ export function CalendarPage({
     };
   }, [range?.start, range?.end, tz, reloadKey]);
 
-  const step = (delta: number) => setSelected((cur) => navigate(view ?? "week", cur, delta));
+  const step = (delta: number) => {
+    if (!view || !weekStartDay) return;
+    setSelected((cur) => navigate(view, cur, delta));
+  };
   const goToday = () => setSelected(today);
 
   const moveEntry = useCallback(
@@ -98,8 +106,9 @@ export function CalendarPage({
       if (!range) return;
       const patch = reschedulePatch(item, targetDate, tz, targetTime);
       if (!patch) return; // same-date / invalid drop: no-op
-      if (busyIssueIds.has(item.issue.id)) return; // no concurrent moves per issue
-      setBusyIssueIds((prev) => new Set(prev).add(item.issue.id));
+      if (busyIssueIdsRef.current.has(item.issue.id)) return; // no concurrent moves per issue
+      busyIssueIdsRef.current.add(item.issue.id);
+      setBusyIssueIds(new Set(busyIssueIdsRef.current));
       setNotice(null);
       const reconcileVisible = (current: CalendarItemDto[] | null, issue: IssueDto) => {
         const visibleRange = rangeRef.current;
@@ -128,14 +137,11 @@ export function CalendarPage({
           }.`,
         );
       } finally {
-        setBusyIssueIds((prev) => {
-          const next = new Set(prev);
-          next.delete(item.issue.id);
-          return next;
-        });
+        busyIssueIdsRef.current.delete(item.issue.id);
+        setBusyIssueIds(new Set(busyIssueIdsRef.current));
       }
     },
-    [range, tz, busyIssueIds],
+    [range, tz],
   );
 
   return (
@@ -144,13 +150,13 @@ export function CalendarPage({
         title="Calendar"
         actions={
           <div className="flex flex-wrap items-center justify-end gap-1.5">
-            <Button variant="outline" size="sm" aria-label="Previous" onClick={() => step(-1)}>
+            <Button variant="outline" size="sm" aria-label="Previous" disabled={!view || !weekStartDay} onClick={() => step(-1)}>
               <ChevronLeft className="size-4" />
             </Button>
             <Button variant="outline" size="sm" onClick={goToday}>
               Today
             </Button>
-            <Button variant="outline" size="sm" aria-label="Next" onClick={() => step(1)}>
+            <Button variant="outline" size="sm" aria-label="Next" disabled={!view || !weekStartDay} onClick={() => step(1)}>
               <ChevronRight className="size-4" />
             </Button>
             <div role="group" aria-label="View" className="ml-1 flex items-center gap-0.5 rounded-md border border-border bg-card p-0.5">

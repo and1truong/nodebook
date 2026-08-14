@@ -132,6 +132,16 @@ describe("MCP tools", () => {
     expect(result.error?.code).toBe(-32602);
   });
 
+  it("rejects MCP issue updates with no fields to change", async () => {
+    const issue = await createIssue({ title: "MCP no-op" });
+    const { token, sessionId } = await setupToken(["write:issue"]);
+    const result = await callTool(token, sessionId, "update_issue", {
+      issue_id: issue.id,
+      expected_version: issue.version,
+    });
+    expect(result.error?.code).toBe(-32602);
+  });
+
   it("add_comment, add_child, link_issues (write comment/graph)", async () => {
     const parent = await createIssue({ title: "mcp tree root" });
     const { token, sessionId } = await setupToken(["write:comment", "write:graph"]);

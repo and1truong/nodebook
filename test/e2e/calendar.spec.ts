@@ -292,6 +292,27 @@ test.describe.serial("Calendar workspace", () => {
     await expect(page).toHaveURL(new RegExp(`/issues/${dueTomorrow.number}$`));
   });
 
+  test("month view expands days with more than three entries", async ({ page, request }) => {
+    const today = todayUtc();
+    const [year, month, day] = today.split("-").map(Number);
+    const target = `${year}-${String(month).padStart(2, "0")}-${day! <= 15 ? "25" : "05"}`;
+    const created = await Promise.all(
+      Array.from({ length: 4 }, (_, index) =>
+        createIssue(request, { title: `Month overflow ${index + 1}`, due_date: target }),
+      ),
+    );
+
+    await page.goto("/calendar");
+    await page.getByRole("button", { name: "Month", exact: true }).click();
+    const cell = page.locator(`.calendar-day-cell[data-date="${target}"]`);
+    await expect(cell.getByRole("link", { name: /Month overflow/ })).toHaveCount(3);
+    await cell.getByRole("button", { name: "+1 more" }).click();
+    await expect(cell.getByRole("link", { name: /Month overflow/ })).toHaveCount(4);
+    await expect(cell.getByRole("button", { name: "Show fewer" })).toHaveAttribute("aria-expanded", "true");
+
+    for (const issue of created) await apiJson(request, "POST", `/api/issues/${issue.number}/close`);
+  });
+
   test("day view separates timed scheduled entries from all-day due entries", async ({ page, request }) => {
     const today = todayUtc();
     await createIssue(request, { title: "Day scheduled issue", scheduled_date: `${today}T09:00:00.000Z` });
@@ -310,6 +331,26 @@ test.describe.serial("Calendar workspace", () => {
     await expect(allDay.getByRole("link", { name: /Day scheduled issue/ })).toHaveCount(0);
   });
 
+  test("lays out entries at the same minute side by side", async ({ page, request }) => {
+    const today = todayUtc();
+    const created = await Promise.all(
+      Array.from({ length: 3 }, (_, index) =>
+        createIssue(request, {
+          title: `Same-minute entry ${index + 1}`,
+          scheduled_date: `${today}T13:15:00.000Z`,
+        }),
+      ),
+    );
+
+    await page.goto("/calendar");
+    await page.getByRole("button", { name: "Day", exact: true }).click();
+    const group = page.locator(".calendar-same-time-group", { hasText: "Same-minute entry 1" });
+    await expect(group.getByRole("link", { name: /Same-minute entry/ })).toHaveCount(3);
+    await expect(group).toHaveAttribute("style", /repeat\(3, minmax\(0(?:px)?, 1fr\)\)/);
+
+    for (const issue of created) await apiJson(request, "POST", `/api/issues/${issue.number}/close`);
+  });
+
   test("creates issues by clicking month, week, and day views", async ({ page, request }) => {
     const today = todayUtc();
     const weekDate = weekTarget(today);
@@ -317,7 +358,7 @@ test.describe.serial("Calendar workspace", () => {
     await page.goto("/calendar");
     await page.getByRole("button", { name: "Month", exact: true }).click();
     const todayCell = page.locator(`.calendar-day-cell[data-date="${today}"]`);
-    await todayCell.locator(":scope > button").click();
+    await todayCell.locator(":scope > button").first().click();
     let dialog = page.getByRole("dialog", { name: "Create issue" });
     await expect(dialog).toContainText(`Due`);
     await dialog.getByLabel("Title").fill("Created from month click");
@@ -366,6 +407,18 @@ test.describe.serial("Calendar workspace", () => {
       const closed = await apiJson(request, "POST", `/api/issues/${number}/close`);
       expect(closed.status).toBe(200);
     }
+  });
+
+  test("opens day time slots with the keyboard", async ({ page }) => {
+    await page.goto("/calendar");
+    await page.getByRole("button", { name: "Day", exact: true }).click();
+
+    const slot = page.getByRole("button", { name: "Create an issue at 11:45 AM" });
+    await slot.scrollIntoViewIfNeeded();
+    await slot.focus();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog", { name: "Create issue" })).toContainText("at 11:45 AM");
+    await page.getByRole("button", { name: "Cancel" }).click();
   });
 
   test("drags a scheduled entry in day view to set its time", async ({ page, request }) => {
@@ -649,7 +702,8 @@ test.describe.serial("Calendar workspace", () => {
     for (const [index, testCase] of cases.entries()) {
       const row = page.locator("li", { hasText: testCase.title });
       await row.getByRole("button", { name: "Move date…" }).click();
-      await row.getByRole("button", { name: testCase.shortcut, exact: true }).click();
+      // The accessible popover is portaled outside the row.
+      await page.getByRole("button", { name: testCase.shortcut, exact: true }).click();
 
       await expect(row).toHaveCount(0);
       const stored = await getIssue(request, issues[index]!.number);
@@ -666,6 +720,11 @@ test.describe.serial("Calendar workspace", () => {
     await page.getByRole("button", { name: "Day", exact: true }).click();
 
     const row = page.locator("li", { hasText: "Picker due entry" });
+    await row.getByRole("button", { name: "Move date…" }).click();
+    await expect(page.getByRole("textbox", { name: "Move date" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("textbox", { name: "Move date" })).toHaveCount(0);
+
     await row.getByRole("button", { name: "Move date…" }).click();
     // DatePicker commits as soon as the typed value becomes a valid ISO date.
     await page.getByRole("textbox", { name: "Move date" }).fill(target);

@@ -85,6 +85,11 @@ Tokens are stored as SHA-256 hashes with display prefixes, support expiration, a
 
 Issue edits use optimistic locking across the browser and MCP. Read the current issue first, then pass its `version` as `expected_version` to `update_issue`. A `-32009` conflict means another editor changed the issue; refetch and deliberately reapply the intended changes rather than retrying the stale payload.
 
+### API/MCP migration notes
+
+- Optimistic locking is a **breaking contract change**: `PATCH /api/issues/:ref` and MCP `update_issue` require `expected_version` and at least one field to change. Existing MCP clients must reconnect or refresh their cached tool schema, then read an issue before updating it. Missing arguments fail with HTTP `400` or MCP `-32602`; stale versions fail with HTTP `409` or MCP `-32009`.
+- `GET /api/issues` preserves its historical default limit of 100 for compatibility. The web UI sends its deployment-configured `ISSUES_DEFAULT_LIMIT` explicitly; API consumers can paginate with `limit`, `offset`, and the response's `total`.
+
 ## Production notes
 
 - The web/API hostname **must** be protected with Cloudflare Access (`ACCESS_TEAM` + `ACCESS_AUD`); only `/mcp` bypasses Access, and it still rejects every request without a valid scoped token.

@@ -187,6 +187,11 @@ export async function getIssueHistory(ctx: Ctx, ref: string): Promise<unknown[]>
 // ---------------------------------------------------------------------------
 
 export async function updateIssue(ctx: Ctx, ref: string, input: IssueUpdateInput): Promise<IssueDto> {
+  const hasUpdate = Object.entries(input).some(
+    ([key, value]) => key !== "expected_version" && value !== undefined,
+  );
+  if (!hasUpdate) throw new ValidationError("At least one issue field must be provided");
+
   const issue = await issueRepo.getIssueByRef(ctx.env.DB, ref);
   if (!issue) throw new NotFoundError(`Issue ${ref} not found`);
   const before = snapshot(issue);

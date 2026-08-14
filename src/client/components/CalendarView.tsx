@@ -17,6 +17,7 @@
  */
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { Popover } from "radix-ui";
 import {
   DndContext,
   DragOverlay,
@@ -190,9 +191,16 @@ function DroppableTime({
     <div
       ref={setNodeRef}
       data-time={time}
-      aria-label={`${timeLabel(minutes)} time slot`}
+      role="button"
+      tabIndex={0}
+      aria-label={`Create an issue at ${timeLabel(minutes)}`}
       title={`Create an issue at ${timeLabel(minutes)}`}
       onClick={() => onCreate(date, time)}
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        onCreate(date, time);
+      }}
       className={cn(
         "calendar-time-slot absolute left-16 right-0 cursor-pointer border-t border-border/30 hover:bg-accent/40",
         minutes % 60 === 0 && "border-border/70",
@@ -244,7 +252,9 @@ function DraggableEntry({
 
 /** Move keyboard drags by semantic targets rather than fragile pixel steps.
  * Day timelines use up/down for adjacent 15-minute slots. Date grids use
- * left/right for adjacent dates and up/down for the previous/next week. */
+ * left/right for adjacent dates and up/down for the previous/next week.
+ * Movement intentionally stops at the rendered range; navigating the calendar
+ * mounts the next set of semantic drop targets. */
 const calendarCollisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
   return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
@@ -325,18 +335,22 @@ function MoveDateControl({
   ];
 
   return (
-    <div className="relative flex-none">
-      <Button
-        variant="ghost"
-        size="sm"
-        aria-expanded={open}
-        className="h-6 px-1.5 text-xs text-muted-foreground"
-        onClick={() => setOpen((o) => !o)}
-      >
-        Move date…
-      </Button>
-      {open && (
-        <div className="absolute right-0 top-full z-30 mt-1 rounded-lg border border-border bg-popover p-2 shadow-md">
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-6 flex-none px-1.5 text-xs text-muted-foreground"
+        >
+          Move date…
+        </Button>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={4}
+          className="z-30 rounded-lg border border-border bg-popover p-2 text-popover-foreground shadow-md outline-none"
+        >
           <div className="mb-2 flex flex-col border-b border-border pb-1">
             {shortcuts.map((shortcut) => (
               <Button
@@ -363,9 +377,9 @@ function MoveDateControl({
               else setOpen(false);
             }}
           />
-        </div>
-      )}
-    </div>
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   );
 }
 
@@ -390,6 +404,16 @@ function MonthGrid({
 }) {
   const grid = monthGrid(selected, weekStartDay);
   const byDate = groupByDate(items);
+  const [expandedDates, setExpandedDates] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => setExpandedDates(new Set()), [selected]);
+  const toggleExpanded = (date: string) => {
+    setExpandedDates((current) => {
+      const next = new Set(current);
+      if (next.has(date)) next.delete(date);
+      else next.add(date);
+      return next;
+    });
+  };
   return (
     <div>
       {items.length === 0 && (
@@ -430,11 +454,18 @@ function MonthGrid({
               >
                 {Number(date.slice(8))}
               </button>
-              {dayItems.slice(0, 3).map((item) => (
+              {dayItems.slice(0, expandedDates.has(date) ? dayItems.length : 3).map((item) => (
                 <DraggableEntry key={`${item.issue.id}:${item.kind}:${item.date}`} item={item} compact busy={busyIssueIds.has(item.issue.id)} />
               ))}
               {dayItems.length > 3 && (
-                <span className="px-1 text-[10px] leading-tight text-muted-foreground">+{dayItems.length - 3} more</span>
+                <button
+                  type="button"
+                  aria-expanded={expandedDates.has(date)}
+                  className="self-start rounded px-1 text-[10px] leading-tight text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  onClick={() => toggleExpanded(date)}
+                >
+                  {expandedDates.has(date) ? "Show fewer" : `+${dayItems.length - 3} more`}
+                </button>
               )}
             </DroppableDate>
           );
@@ -541,6 +572,12 @@ function DayAgenda({
     .filter((entry): entry is { item: CalendarItemDto; minutes: number } => entry.minutes !== null)
     .sort((a, b) => a.minutes - b.minutes || a.item.issue.number - b.item.issue.number);
   const allDay = dayItems.filter((i) => i.kind === "due");
+  const scheduledGroups: { minutes: number; items: CalendarItemDto[] }[] = [];
+  for (const entry of scheduled) {
+    const current = scheduledGroups[scheduledGroups.length - 1];
+    if (current?.minutes === entry.minutes) current.items.push(entry.item);
+    else scheduledGroups.push({ minutes: entry.minutes, items: [entry.item] });
+  }
   const firstScheduledMinute = scheduled[0]?.minutes;
 
   // Put the first appointment in context; empty days start at a useful
@@ -606,21 +643,31 @@ function DayAgenda({
                 onCreate={(date, time) => onCreate(date, time)}
               />
             ))}
-            {scheduled.map(({ item, minutes }, index) => (
+            {scheduledGroups.map((group) => (
               <div
-                key={`${item.issue.id}:${item.kind}:${item.date}`}
-                className="pointer-events-auto absolute left-[4.5rem] right-2 z-20 flex min-w-0 items-center gap-1 rounded-md border border-warning/40 bg-card p-0.5 shadow-sm"
-                style={{ top: Math.min(minutes, DAY_HEIGHT - 46) + (index > 0 && scheduled[index - 1]?.minutes === minutes ? 6 : 0) }}
+                key={group.minutes}
+                className="calendar-same-time-group pointer-events-auto absolute left-[4.5rem] right-2 z-20 grid min-w-0 gap-1"
+                style={{
+                  top: Math.min(group.minutes, DAY_HEIGHT - 46),
+                  gridTemplateColumns: `repeat(${group.items.length}, minmax(0, 1fr))`,
+                }}
               >
-                <div className="min-w-0 flex-1">
-                  <DraggableEntry
-                    item={item}
-                    compact={false}
-                    busy={busyIssueIds.has(item.issue.id)}
-                    timeMinutes={Math.floor(minutes / DAY_SLOT_MINUTES) * DAY_SLOT_MINUTES}
-                  />
-                </div>
-                <MoveDateControl item={item} today={today} weekStartDay={weekStartDay} onMove={onMove} />
+                {group.items.map((item) => (
+                  <div
+                    key={`${item.issue.id}:${item.kind}:${item.date}`}
+                    className="flex min-w-0 items-center gap-1 rounded-md border border-warning/40 bg-card p-0.5 shadow-sm"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <DraggableEntry
+                        item={item}
+                        compact={false}
+                        busy={busyIssueIds.has(item.issue.id)}
+                        timeMinutes={Math.floor(group.minutes / DAY_SLOT_MINUTES) * DAY_SLOT_MINUTES}
+                      />
+                    </div>
+                    <MoveDateControl item={item} today={today} weekStartDay={weekStartDay} onMove={onMove} />
+                  </div>
+                ))}
               </div>
             ))}
           </div>

@@ -183,6 +183,17 @@ describe("issue lifecycle", () => {
     expect(missing.status).toBe(400);
   });
 
+  it("rejects an empty edit without advancing its version or audit history", async () => {
+    const issue = await createIssue({ title: "no-op edit" });
+    const empty = await patch(`/api/issues/${issue.number}`, { expected_version: issue.version });
+    expect(empty.status).toBe(400);
+
+    const current = (await api(`/api/issues/${issue.number}`)).body as { version: number };
+    expect(current.version).toBe(issue.version);
+    const history = (await api(`/api/issues/${issue.number}/history`)).body as { action: string }[];
+    expect(history.filter((event) => event.action === "issue.update")).toHaveLength(0);
+  });
+
   it("looks up issues by number and by uuid", async () => {
     const issue = await createIssue({ title: "refs" });
     const byNumber = await api(`/api/issues/${issue.number}`);
@@ -198,7 +209,7 @@ describe("issue lifecycle", () => {
     expect(bad.status).toBe(200);
     const res = bad.body as { issues: unknown[] };
     expect(Array.isArray(res.issues)).toBe(true);
-    expect(res.issues.length).toBeLessThanOrEqual(20);
+    expect(res.issues.length).toBeLessThanOrEqual(100);
   });
 
   it("filters the issue list by type/status/label", async () => {

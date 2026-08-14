@@ -52,7 +52,13 @@ export const updateIssueSchema = createIssueSchema
   .extend({
     issue_id: issueRefSchema,
     expected_version: z.number().int().positive(),
-  });
+  })
+  .refine(
+    (input) => Object.entries(input).some(
+      ([key, value]) => key !== "issue_id" && key !== "expected_version" && value !== undefined,
+    ),
+    { message: "At least one issue field must be provided" },
+  );
 
 export const closeIssueSchema = z.object({ issue_id: issueRefSchema });
 export const completeTaskSchema = z.object({ issue_id: issueRefSchema });

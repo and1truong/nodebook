@@ -5,7 +5,6 @@ import * as issueService from "../services/issue-service";
 import { addComment, listComments } from "../services/comment-service";
 import { commentCreateSchema, issueCreateSchema, issueUpdateSchema } from "../../shared/contracts/issues";
 import { ValidationError } from "../../domain/errors";
-import { resolveIssuesDefaultLimit } from "../../shared/contracts/config";
 
 export const issuesRoutes = new Hono<AppEnv>();
 
@@ -18,12 +17,13 @@ issuesRoutes.get("/", async (c) => {
   const status = c.req.query("status");
   const labels = c.req.queries("label");
   const query = c.req.query("q");
-  const defaultLimit = resolveIssuesDefaultLimit(c.env.ISSUES_DEFAULT_LIMIT);
-  const limitParam = Number(c.req.query("limit") ?? defaultLimit);
+  // Preserve the API's historical default for external consumers. The web UI
+  // always sends its deployment-configured page size explicitly.
+  const limitParam = Number(c.req.query("limit") ?? 100);
   const offsetParam = Number(c.req.query("offset") ?? 0);
-  // Clamp instead of trusting raw query params (non-numeric input → configured
+  // Clamp instead of trusting raw query params (non-numeric input → API
   // default, never NaN bind values).
-  const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : defaultLimit;
+  const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 100;
   const offset = Number.isFinite(offsetParam) ? Math.max(offsetParam, 0) : 0;
   const result = await issueService.listIssues(ctx(c), {
     type: types,
