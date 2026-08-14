@@ -331,9 +331,13 @@ async function toBacklinkDto(ctx: Ctx, record: ReferenceRecord): Promise<Backlin
 // Wiki tree
 // ---------------------------------------------------------------------------
 
-/** Full hierarchy tree of root issues (used by the wiki navigation). */
+/**
+ * Full hierarchy tree of wiki pages (used by the wiki navigation). Only
+ * root issues of type `wiki` are top-level entries; descendants may keep any
+ * issue type. Branches beneath excluded (non-wiki) roots are not promoted.
+ */
 export async function getWikiTree(ctx: Ctx): Promise<WikiNodeDto[]> {
-  const roots = await listIssues(ctx.env.DB, { parent_id: null, limit: 500 });
+  const roots = await listIssues(ctx.env.DB, { parent_id: null, type: "wiki", limit: 500 });
   const nodes = await Promise.all(roots.map((root) => buildWikiNode(ctx, root)));
   return nodes;
 }

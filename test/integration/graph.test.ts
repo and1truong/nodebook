@@ -363,18 +363,27 @@ describe("sub-issues tree", () => {
 });
 
 describe("wiki projection", () => {
-  it("builds the tree and breadcrumbs", async () => {
+  it("builds the tree from wiki roots only, keeping mixed-type descendants", async () => {
     const root = await createIssue({ title: "wiki root", type: "wiki" });
     const section = await createIssue({ title: "section", type: "wiki" });
-    const page = await createIssue({ title: "page", type: "wiki" });
+    // Non-wiki descendants stay visible beneath a wiki root.
+    const page = await createIssue({ title: "page", type: "task" });
     await post(`/api/graph/${section.number}/parent`, { parent_id: root.id });
     await post(`/api/graph/${page.number}/parent`, { parent_id: section.id });
+
+    // A non-wiki root and its branch must not appear in the wiki tree.
+    const nonWikiRoot = await createIssue({ title: "non-wiki root", type: "task" });
+    const nonWikiChild = await createIssue({ title: "non-wiki child", type: "wiki" });
+    await post(`/api/graph/${nonWikiChild.number}/parent`, { parent_id: nonWikiRoot.id });
 
     const tree = await api("/api/wiki/tree");
     const nodes = tree.body as {
       issue: { number: number };
       children: { issue: { number: number }; children: { issue: { number: number } }[] }[];
     }[];
+    expect(nodes.some((n) => n.issue.number === nonWikiRoot.number)).toBe(false);
+    // Branches beneath a non-wiki root are not promoted, even wiki-typed ones.
+    expect(nodes.some((n) => n.issue.number === nonWikiChild.number)).toBe(false);
     const rootNode = nodes.find((n) => n.issue.number === root.number)!;
     expect(rootNode.children.length).toBe(1);
     expect(rootNode.children[0]!.issue.number).toBe(section.number);

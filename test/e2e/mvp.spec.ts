@@ -70,7 +70,9 @@ test.describe.serial("MVP acceptance", () => {
     await page.goto("/inbox");
     await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 
-    // Quick create from the top bar.
+    // Quick create from the top bar as a wiki root (drives the wiki home).
+    await page.getByLabel("Issue type").click();
+    await page.getByRole("option", { name: "wiki" }).click();
     await page.getByLabel("Quick create title").fill("Set up the NodeBook workspace");
     await page.getByRole("button", { name: "Add" }).click();
 
@@ -699,6 +701,10 @@ test.describe.serial("MVP acceptance", () => {
     const childPage = page.locator(".tree-link", { hasText: "Write deployment guide" });
     await expect(rootPage).toBeVisible();
     await expect(childPage).toHaveCount(0);
+
+    // Non-wiki roots are excluded from the wiki home and its tree.
+    await expect(page.locator(".tree-link", { hasText: "Inbox priority task" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Inbox priority task/ })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Expand Set up the NodeBook workspace" }).click();
     await expect(childPage).toBeVisible();
