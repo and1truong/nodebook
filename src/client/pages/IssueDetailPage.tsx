@@ -118,7 +118,7 @@ export function IssueDetailPage({
 
   return (
     <article className="issue-detail flex flex-col gap-5">
-      <div className="issue-head border-b border-border pb-4">
+      <IssueLinkPreview className="issue-head border-b border-border pb-4">
         {wiki && crumbs.length > 0 && (
           <nav className="mb-2 text-xs text-muted-foreground" aria-label="Breadcrumbs">
             {crumbs.map((c, i) => (
@@ -197,7 +197,7 @@ export function IssueDetailPage({
             </Link>
           )}
         </div>
-      </div>
+      </IssueLinkPreview>
 
       {editing ? (
         <IssueEditor

@@ -242,9 +242,17 @@ test.describe.serial("MVP acceptance", () => {
     const source = sourceRes.json as unknown as { number: number };
 
     await page.goto(`/issues/${source.number}`);
-    await page.locator(`.issue-body a[href='/issues/${target.number}']`).hover();
 
     const card = page.locator(".issue-hover-card");
+
+    // The parent link in the issue header uses the same preview as issue-body links.
+    await page.locator(`.issue-head a[href='/issues/${target.number}']`).hover();
+    await expect(card).toBeVisible();
+    await expect(card).toContainText("Hover card target");
+    await page.mouse.move(0, 0);
+    await expect(card).toBeHidden();
+
+    await page.locator(`.issue-body a[href='/issues/${target.number}']`).hover();
     await expect(card).toBeVisible();
     await expect(card).toContainText("Hover card target");
     await expect(card).toContainText(`#${target.number}`);
