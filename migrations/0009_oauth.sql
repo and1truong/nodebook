@@ -27,6 +27,9 @@ CREATE TABLE oauth_grants (
   revoked_at TEXT
 );
 CREATE INDEX idx_oauth_grants_client ON oauth_grants(client_id);
+-- A client may retain revoked grants for audit history, but only one active
+-- owner-approved connection may exist at a time.
+CREATE UNIQUE INDEX idx_oauth_grants_one_active_client ON oauth_grants(client_id) WHERE revoked_at IS NULL;
 
 CREATE TABLE oauth_codes (
   code_hash TEXT PRIMARY KEY,

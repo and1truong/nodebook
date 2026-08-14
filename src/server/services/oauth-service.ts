@@ -10,7 +10,7 @@ import type { Env } from "../../env";
 import { oauthIssuer } from "../../env";
 import type { Ctx } from "../ctx";
 import { ValidationError } from "../../domain/errors";
-import type { OauthClientRecord } from "../../domain/models";
+import type { OauthClientRecord, OauthGrantRecord } from "../../domain/models";
 import { MCP_SCOPES, type McpScope } from "../../shared/limits";
 import { sha256Hex } from "../auth/token-auth";
 import { recordAudit } from "./audit-service";
@@ -290,11 +290,8 @@ export async function approveAuthorization(
 ): Promise<{ code: string; redirectUri: string; state: string | null }> {
   const now = new Date().toISOString();
   let grant = await oauthRepo.findActiveGrantForClient(env.DB, client.id);
-  if (grant) {
-    const merged = unionScopes(parseScopesJson(grant.scopes_json), scopes);
-    await oauthRepo.updateGrantScopes(env.DB, grant.id, JSON.stringify(merged));
-  } else {
-    grant = {
+  if (!grant) {
+    const candidate: OauthGrantRecord = {
       id: crypto.randomUUID(),
       client_id: client.id,
       scopes_json: JSON.stringify(scopes),
@@ -302,7 +299,19 @@ export async function approveAuthorization(
       last_used_at: null,
       revoked_at: null,
     };
-    await oauthRepo.insertGrant(env.DB, { id: grant.id, clientId: client.id, scopesJson: grant.scopes_json, now });
+    // The partial unique index makes concurrent approval requests converge on
+    // one active connection. The loser loads and reuses the winner's grant.
+    if (await oauthRepo.insertGrant(env.DB, { id: candidate.id, clientId: client.id, scopesJson: candidate.scopes_json, now })) {
+      grant = candidate;
+    } else {
+      grant = await oauthRepo.findActiveGrantForClient(env.DB, client.id);
+      if (!grant) throw new Error("Active OAuth grant disappeared during approval");
+    }
+  }
+  if (!grant) throw new Error("Active OAuth grant disappeared during approval");
+  const merged = unionScopes(parseScopesJson(grant.scopes_json), scopes);
+  if (JSON.stringify(merged) !== grant.scopes_json) {
+    await oauthRepo.updateGrantScopes(env.DB, grant.id, JSON.stringify(merged));
   }
   await recordAudit(ctx, {
     action: "oauth_grant.approve",
@@ -415,8 +424,8 @@ export async function exchangeRefreshToken(
     throw new OAuthError("invalid_request", 400, "refresh_token and client_id are required");
   }
   const record = await oauthRepo.getTokenWithContext(env.DB, await sha256Hex(refresh_token));
-  if (!record || record.kind !== "refresh" || record.revoked_at || record.expires_at <= new Date().toISOString()) {
-    throw new OAuthError("invalid_grant", 400, "Refresh token is unknown, revoked, or expired");
+  if (!record || record.kind !== "refresh" || record.expires_at <= new Date().toISOString()) {
+    throw new OAuthError("invalid_grant", 400, "Refresh token is unknown or expired");
   }
   const client = await oauthRepo.getClientByClientId(env.DB, client_id);
   if (!client || client.id !== record.client_id) {
@@ -424,6 +433,13 @@ export async function exchangeRefreshToken(
   }
   if (record.grant_revoked_at) {
     throw new OAuthError("invalid_grant", 400, "Grant is revoked");
+  }
+  if (record.revoked_at) {
+    // A revoked but still-active-grant refresh token was already rotated. Its
+    // reuse is a replay signal, so invalidate the whole token family before
+    // returning invalid_grant to prevent an attacker continuing the chain.
+    await oauthRepo.revokeGrantAndTokens(env.DB, record.grant_id, new Date().toISOString());
+    throw new OAuthError("invalid_grant", 400, "Refresh token replay detected");
   }
   // Scopes can never expand beyond the owner-approved grant scopes.
   const grantScopes = parseScopesJson(record.scopes_json);
@@ -444,7 +460,11 @@ export async function exchangeRefreshToken(
   // Atomic rotation: burn the presented refresh token, then issue a new pair.
   const now = new Date().toISOString();
   const rotated = await oauthRepo.revokeToken(env.DB, record.token_hash, now);
-  if (!rotated) throw new OAuthError("invalid_grant", 400, "Refresh token already rotated");
+  if (!rotated) {
+    // A concurrent redemption won the rotation race; treat this as replay.
+    await oauthRepo.revokeGrantAndTokens(env.DB, record.grant_id, now);
+    throw new OAuthError("invalid_grant", 400, "Refresh token replay detected");
+  }
   await oauthRepo.touchGrant(env.DB, record.grant_id, now);
 
   return issueTokenPair(env, record.grant_id, client.id, scopes, record.resource, record.token_hash);

@@ -258,6 +258,25 @@ describe("authorization + consent", () => {
     expect(res.headers.get("location")).toBeNull();
   });
 
+  it("keeps one active grant when approvals race", async () => {
+    const client = await registerClient("Concurrent Consent");
+    const verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+
+    await Promise.all([
+      approve(client, verifier),
+      approve(client, verifier, { scope: "read:issue read:search write:issue" }),
+    ]);
+
+    const grant = await testEnv().DB.prepare(
+      `SELECT COUNT(*) AS count, scopes_json FROM oauth_grants
+       WHERE client_id = (SELECT id FROM oauth_clients WHERE client_id = ?) AND revoked_at IS NULL`,
+    )
+      .bind(client.client_id)
+      .first<{ count: number; scopes_json: string }>();
+    expect(grant?.count).toBe(1);
+    expect(JSON.parse(grant!.scopes_json)).toContain("write:issue");
+  });
+
   it("rejects missing PKCE, non-S256 methods, unknown scopes, and bad resources with redirect errors", async () => {
     const client = await registerClient();
 
@@ -406,14 +425,17 @@ describe("refresh token rotation", () => {
     const { sessionId } = await mcpInitialize(newAccess);
     expect(sessionId).toBeTruthy();
 
-    // Reuse of the rotated-away refresh token fails.
+    // Reuse of the rotated-away refresh token is a replay signal. It revokes
+    // the full grant, including the attacker-controlled descendant tokens.
     const replay = await refresh(client, refreshToken);
     expect(replay.status).toBe(400);
     expect(replay.body.error).toBe("invalid_grant");
 
-    // The new refresh token still works.
-    const again = await refresh(client, newRefresh);
-    expect(again.status).toBe(200);
+    const accessAfterReplay = await mcpCall(newAccess, "ping", {}, sessionId);
+    expect(accessAfterReplay.status).toBe(401);
+    const descendantAfterReplay = await refresh(client, newRefresh);
+    expect(descendantAfterReplay.status).toBe(400);
+    expect(descendantAfterReplay.body.error).toBe("invalid_grant");
   });
 
   it("never lets a refresh expand the approved scopes", async () => {

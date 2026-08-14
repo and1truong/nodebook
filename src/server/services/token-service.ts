@@ -121,9 +121,8 @@ export async function revokeOauthGrant(ctx: Ctx, grantId: string): Promise<Oauth
   const { grant, client_id, client_name } = row;
   if (!grant.revoked_at) {
     const now = new Date().toISOString();
-    await oauthRepo.revokeGrant(ctx.env.DB, grantId, now);
-    // Invalidate every access and refresh token of the grant immediately.
-    await oauthRepo.revokeTokensForGrant(ctx.env.DB, grantId, now);
+    // Invalidate the grant and every access/refresh token atomically.
+    await oauthRepo.revokeGrantAndTokens(ctx.env.DB, grantId, now);
     await recordAudit(ctx, {
       action: "oauth_grant.revoke",
       entityType: "oauth_grant",

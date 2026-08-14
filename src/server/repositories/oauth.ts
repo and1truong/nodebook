@@ -33,16 +33,21 @@ export async function getClientByClientId(db: D1Database, clientId: string): Pro
 // Grants
 // ---------------------------------------------------------------------------
 
+/**
+ * Create the client's active grant. The partial unique index allows historical
+ * revoked grants while making concurrent approval requests race safely.
+ */
 export async function insertGrant(
   db: D1Database,
   input: { id: string; clientId: string; scopesJson: string; now: string },
-): Promise<void> {
-  await db
+): Promise<boolean> {
+  const res = await db
     .prepare(
-      "INSERT INTO oauth_grants (id, client_id, scopes_json, created_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, NULL, NULL)",
+      "INSERT OR IGNORE INTO oauth_grants (id, client_id, scopes_json, created_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, NULL, NULL)",
     )
     .bind(input.id, input.clientId, input.scopesJson, input.now)
     .run();
+  return res.meta.changes > 0;
 }
 
 export async function findActiveGrantForClient(db: D1Database, clientId: string): Promise<OauthGrantRecord | null> {
@@ -259,6 +264,15 @@ export async function revokeTokensForGrant(db: D1Database, grantId: string, now:
     .prepare("UPDATE oauth_tokens SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL")
     .bind(now, grantId)
     .run();
+}
+
+/** Atomically revoke a grant and every token it issued. */
+export async function revokeGrantAndTokens(db: D1Database, grantId: string, now: string): Promise<boolean> {
+  const results = await db.batch([
+    db.prepare("UPDATE oauth_grants SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL").bind(now, grantId),
+    db.prepare("UPDATE oauth_tokens SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL").bind(now, grantId),
+  ]);
+  return results[0]!.meta.changes > 0;
 }
 
 /** Revoke one token; returns true when the token was still active (rotation race guard). */
