@@ -47,9 +47,12 @@ export const createIssueSchema = z.object({
 
 export const updateIssueSchema = createIssueSchema
   .omit({})
-  .extend({ issue_id: issueRefSchema })
+  .extend({ issue_id: issueRefSchema, expected_version: z.number().int().positive() })
   .partial()
-  .extend({ issue_id: issueRefSchema });
+  .extend({
+    issue_id: issueRefSchema,
+    expected_version: z.number().int().positive(),
+  });
 
 export const closeIssueSchema = z.object({ issue_id: issueRefSchema });
 export const completeTaskSchema = z.object({ issue_id: issueRefSchema });

@@ -42,9 +42,10 @@ function weekTarget(today: string): string {
 /** Another date in the current week, distinct from both given dates. */
 function otherWeekDay(today: string, target: string): string {
   const start = startOfWeek(today);
-  for (let i = 0; i < 7; i++) {
-    const d = addDays(start, i);
-    if (d !== today && d !== target) return d;
+  const end = addDays(start, 6);
+  for (const offset of [-1, 1, -2, 2, -3, 3]) {
+    const candidate = addDays(today, offset);
+    if (candidate >= start && candidate <= end && candidate !== target) return candidate;
   }
   throw new Error("no other day in the week");
 }
@@ -568,11 +569,12 @@ test.describe.serial("Calendar workspace", () => {
     // Then move only the scheduled entry (still in today's column); the due
     // date is untouched.
     const secondTarget = otherWeekDay(today, target);
-    await pointerDrag(
-      page,
-      page.getByRole("link", { name: `Scheduled — #${dual.number} Drag dual entry` }),
-      page.locator(`.calendar-week-col[data-date="${secondTarget}"]`),
-    );
+    await page.getByRole("button", { name: "Day", exact: true }).click();
+    const scheduledLink = page.getByRole("link", { name: `Scheduled — #${dual.number} Drag dual entry` });
+    const scheduledRow = scheduledLink.locator("xpath=../../..");
+    await scheduledRow.getByRole("button", { name: "Move date…" }).click();
+    await page.getByRole("textbox", { name: "Move date" }).fill(secondTarget);
+    await expect(scheduledLink).toHaveCount(0);
     stored = await getIssue(request, dual.number);
     expect(stored.due_date).toBe(target);
     expect(stored.scheduled_date).toBe(`${secondTarget}T10:30:00.000Z`);

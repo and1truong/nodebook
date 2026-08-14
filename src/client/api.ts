@@ -63,8 +63,11 @@ export const api = {
   getIssue: (ref: string) => request<IssueDto>(`/api/issues/${ref}`),
   createIssue: (input: Record<string, unknown>) =>
     request<IssueDto>("/api/issues", { method: "POST", body: JSON.stringify(input) }),
-  updateIssue: (ref: string, input: Record<string, unknown>) =>
-    request<IssueDto>(`/api/issues/${ref}`, { method: "PATCH", body: JSON.stringify(input) }),
+  updateIssue: (ref: string, expectedVersion: number, input: Record<string, unknown>) =>
+    request<IssueDto>(`/api/issues/${ref}`, {
+      method: "PATCH",
+      body: JSON.stringify({ ...input, expected_version: expectedVersion }),
+    }),
   closeIssue: (ref: string) => request<IssueDto>(`/api/issues/${ref}/close`, { method: "POST" }),
   reopenIssue: (ref: string) => request<IssueDto>(`/api/issues/${ref}/reopen`, { method: "POST" }),
   completeTask: (ref: string) => request<IssueDto>(`/api/issues/${ref}/complete`, { method: "POST" }),

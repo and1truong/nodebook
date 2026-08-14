@@ -81,7 +81,7 @@ export function IssueDetailPage({
   if (!issue) return <Loading />;
 
   const submitEdit = async (values: IssueFormValues) => {
-    await api.updateIssue(issue.number.toString(), {
+    await api.updateIssue(issue.number.toString(), issue.version, {
       type: values.type,
       title: values.title,
       body: values.body,

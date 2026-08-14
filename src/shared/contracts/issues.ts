@@ -91,6 +91,8 @@ export const issueCreateSchema = z.object({
 });
 
 export const issueUpdateSchema = issueCreateSchema.partial().extend({
+  // Optimistic-lock token from the IssueDto the editor read.
+  expected_version: z.number().int().positive(),
   // partial() keeps .default() semantics; make every field optional.
   type: issueTypeSchema.optional(),
   title: titleSchema.optional(),
@@ -214,6 +216,7 @@ export interface IssueDto {
   created_by: string;
   created_at: string;
   updated_at: string;
+  version: number;
   closed_at: string | null;
   completed_at: string | null;
   child_count: number;

@@ -25,7 +25,7 @@ export async function allocateIssueNumber(db: D1Database): Promise<number> {
 export const ISSUE_COLUMNS = `
   id, number, type, title, body, status, priority, start_date, due_date,
   scheduled_date, timezone, recurrence_rule, parent_id, created_by, created_at,
-  updated_at, closed_at, completed_at
+  updated_at, version, closed_at, completed_at
 `;
 
 export function rowToIssue(row: Record<string, unknown>): IssueRecord {
@@ -46,6 +46,7 @@ export function rowToIssue(row: Record<string, unknown>): IssueRecord {
     created_by: String(row.created_by),
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
+    version: Number(row.version),
     closed_at: (row.closed_at as string | null) ?? null,
     completed_at: (row.completed_at as string | null) ?? null,
   };
@@ -234,15 +235,25 @@ export type IssueUpdateFields = Partial<
   >
 >;
 
-export async function updateIssue(db: D1Database, id: string, fields: IssueUpdateFields, now: string): Promise<void> {
+export async function updateIssue(
+  db: D1Database,
+  id: string,
+  fields: IssueUpdateFields,
+  now: string,
+  expectedVersion?: number,
+): Promise<number | null> {
   const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
-  if (entries.length === 0) return;
   const sets = entries.map(([key]) => `${key} = ?`);
   const args = entries.map(([, v]) => (v === null ? null : String(v)));
-  await db
-    .prepare(`UPDATE issues SET ${sets.join(", ")}, updated_at = ? WHERE id = ?`)
-    .bind(...args, now, id)
-    .run();
+  sets.push("updated_at = ?", "version = version + 1");
+  args.push(now);
+
+  const guarded = expectedVersion !== undefined;
+  const row = await db
+    .prepare(`UPDATE issues SET ${sets.join(", ")} WHERE id = ?${guarded ? " AND version = ?" : ""} RETURNING version`)
+    .bind(...args, id, ...(guarded ? [expectedVersion] : []))
+    .first<{ version: number }>();
+  return row ? Number(row.version) : null;
 }
 
 // ---------------------------------------------------------------------------

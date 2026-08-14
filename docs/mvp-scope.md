@@ -48,6 +48,7 @@ The MVP covers PRD features M1–M11 for a single-owner workspace. This document
 | --- | --- |
 | Issue CRUD + state transitions work through web and MCP with identical rules | `test/integration/issues.test.ts`, `test/integration/mcp.test.ts` (create/update/close/complete), audit parity assertions |
 | Numbers are stable, sequential, and unique under concurrency | `test/integration/issues.test.ts` (12 concurrent creates → 12 unique numbers) |
+| Human and MCP issue edits cannot silently overwrite one another | `test/integration/issues.test.ts`, `test/integration/mcp.test.ts` (same-version races and cross-transport stale writes), `test/e2e/mvp.spec.ts` (draft preserved on conflict) |
 | Graph invariants hold (no cycles/self-parents/duplicate links) | `test/integration/graph.test.ts` |
 | References resolve even when created before their target | `test/integration/graph.test.ts` (late resolution, comment refs) |
 | Search returns ranked, filtered, safe results; index stays consistent | `test/integration/search.test.ts` incl. rebuild |
@@ -56,7 +57,7 @@ The MVP covers PRD features M1–M11 for a single-owner workspace. This document
 | Attachments are private, deduplicated, range-servable, and GC-safe | `test/integration/attachments.test.ts` |
 | MCP scopes and revocation are enforced per request | `test/integration/auth.test.ts`, `test/integration/mcp.test.ts` |
 | Web/API is protected by Cloudflare Access and owner-only | `src/server/auth/access-auth.ts` + `test/unit/access-auth.test.ts` (JWT verification), `test/integration/auth.test.ts` |
-| Browser acceptance flow spans creation → linking → planning → reminder delivery → attachment → search → MCP mutation → audit history | `test/e2e/mvp.spec.ts` (8 serial tests + lazy nested sub-issue tree scenario with branch failure/retry and cache reuse + existing-issue linking/reparent/cycle-guard scenario) |
+| Browser acceptance flow spans creation → linking → planning → reminder delivery → attachment → search → MCP mutation → audit history | `test/e2e/mvp.spec.ts` (14 serial tests + lazy nested sub-issue tree scenario with branch failure/retry and cache reuse + existing-issue linking/reparent/cycle-guard scenario) |
 
 ## Manual staging smoke test (post-deploy)
 

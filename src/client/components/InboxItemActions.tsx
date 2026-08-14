@@ -42,7 +42,7 @@ export function InboxItemActions({
     setPending(true);
     setError(null);
     try {
-      const updated = await api.updateIssue(String(issue.number), {
+      const updated = await api.updateIssue(String(issue.number), issue.version, {
         priority: priority === "none" ? null : priority,
       });
       onUpdated(updated);
@@ -57,7 +57,7 @@ export function InboxItemActions({
     setPending(true);
     setError(null);
     try {
-      await api.updateIssue(String(issue.number), { due_date: dueDate });
+      await api.updateIssue(String(issue.number), issue.version, { due_date: dueDate });
       onRemoved(issue.id);
     } catch (err) {
       setError(messageOf(err, "Could not set due date"));

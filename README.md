@@ -83,6 +83,8 @@ Auth:  Authorization: Bearer nbk_…
 
 Tokens are stored as SHA-256 hashes with display prefixes, support expiration, and revoke immediately. Every tool call is re-checked against the database on each request. `get_today`/`get_upcoming` accept an optional `timezone` argument (IANA); `get_upcoming` is retained unchanged for compatibility with the retired Upcoming browser page.
 
+Issue edits use optimistic locking across the browser and MCP. Read the current issue first, then pass its `version` as `expected_version` to `update_issue`. A `-32009` conflict means another editor changed the issue; refetch and deliberately reapply the intended changes rather than retrying the stale payload.
+
 ## Production notes
 
 - The web/API hostname **must** be protected with Cloudflare Access (`ACCESS_TEAM` + `ACCESS_AUD`); only `/mcp` bypasses Access, and it still rejects every request without a valid scoped token.

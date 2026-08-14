@@ -27,11 +27,15 @@ Auth is fail-closed: with neither `ACCESS_TEAM`/`ACCESS_AUD` nor `AUTH_DEV_EMAIL
 - `0004_planning.sql` — `occurrences` (recurring-task completions, unique per issue+instant).
 - `0005_reminders.sql` — `reminders`, `reminder_occurrences` (materialized deliveries with expiring claim locks), `notifications`, `notification_deliveries` (idempotency keys).
 - `0006_attachments.sql` — `attachments` metadata (soft-delete + R2 key = blob checksum).
+- `0008_issue_version.sql` — monotonic `issues.version` revision for optimistic locking across browser and MCP edits.
 
 ## Key algorithms
 
 ### Issue numbering
 `UPDATE meta SET value = CAST(value AS INTEGER) + 1 WHERE key = 'issue_seq' RETURNING value` — a single atomic statement, so concurrent creates can never observe the same number (covered by an integration test).
+
+### Optimistic issue editing
+Every issue DTO carries a monotonic integer `version`. Browser `PATCH /api/issues/:ref` requests and MCP `update_issue` calls must send that value as `expected_version`; the repository performs a single compare-and-swap update (`WHERE id = ? AND version = ?`) and increments the version for the winner. A stale writer receives HTTP `409 version_conflict` or MCP `-32009`, and no labels, references, search entries, reminders, or audit events are changed by the rejected request. All issue-row mutations increment the version, including close/reopen/completion and parent changes, so an open editor notices any intervening issue change. Clients must refetch and deliberately reapply a draft after a conflict rather than retrying automatically.
 
 ### Recurrence (src/shared/recurrence.ts)
 RFC 5545 subset: `FREQ=DAILY|WEEKLY|MONTHLY`, `INTERVAL`, `BYDAY` (daily/weekly), `COUNT`, `UNTIL`. All math is civil-time in the issue's IANA timezone via `Intl.DateTimeFormat`:
@@ -84,7 +88,7 @@ Uploads (multipart for the browser, base64 for MCP with a 5 MB cap) are checksum
 ## Testing strategy
 
 - `test/unit` (Node) — pure logic: recurrence/DST, timezone math, reference parsing (code-block exclusion), JWT verification against locally generated RSA keys, token hashing/scopes, FTS escaping.
-- `test/integration` (Workers runtime via `@cloudflare/vitest-pool-workers`) — the full worker under `SELF.fetch` with real D1/R2/DO bindings: auth rejection, concurrent numbering, state transitions, cycle/duplicate prevention, late-resolving backlinks, FTS ranking/filters/rebuild, planning boundaries (including the calendar range/timezone/DST/dual-entry surface and before-due reminder recalculation after a calendar move), reminder idempotency/locks/recalculation, attachment dedupe/ranges/GC, scheduled handlers, and the complete MCP surface including HTTP/MCP audit parity. Migrations are applied per test file from `test/integration/setup.ts`.
+- `test/integration` (Workers runtime via `@cloudflare/vitest-pool-workers`) — the full worker under `SELF.fetch` with real D1/R2/DO bindings: auth rejection, concurrent numbering, state transitions, cycle/duplicate prevention, late-resolving backlinks, FTS ranking/filters/rebuild, planning boundaries (including the calendar range/timezone/DST/dual-entry surface and before-due reminder recalculation after a calendar move), reminder idempotency/locks/recalculation, attachment dedupe/ranges/GC, scheduled handlers, and the complete MCP surface including HTTP/MCP audit parity and cross-transport optimistic-lock conflicts. Migrations are applied per test file from `test/integration/setup.ts`.
 - `test/e2e` (Playwright) — a serial acceptance flow against `wrangler dev` with fresh state: create → edit/plan → child + relationship + comment → reminder delivery → attachment → search → recurring completion → MCP mutation + token revocation → wiki tree.
 
 The integration pool requires `nodejs_compat` for its own harness; the application itself never uses it (see `wrangler.jsonc`).

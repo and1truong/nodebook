@@ -34,26 +34,8 @@ import { toIssueDto, toIssueDtos } from "./dto";
 // Hierarchy
 // ---------------------------------------------------------------------------
 
-export async function setParent(ctx: Ctx, issueId: string, parentId: string | null): Promise<void> {
-  const issue = await getIssueById(ctx.env.DB, issueId);
-  if (!issue) throw new NotFoundError("Issue not found");
-
-  if (parentId === null) {
-    if (issue.parent_id !== null) {
-      await ctx.env.DB.prepare("UPDATE issues SET parent_id = NULL, updated_at = ? WHERE id = ?")
-        .bind(new Date().toISOString(), issueId)
-        .run();
-      await recordAudit(ctx, {
-        action: "issue.set_parent",
-        entityType: "issue",
-        entityId: issueId,
-        before: { parent_id: issue.parent_id },
-        after: { parent_id: null },
-      });
-    }
-    return;
-  }
-
+export async function validateParentChange(ctx: Ctx, issueId: string, parentId: string | null): Promise<void> {
+  if (parentId === null) return;
   if (parentId === issueId) throw new ValidationError("An issue cannot be its own parent");
   const parent = await getIssueById(ctx.env.DB, parentId);
   if (!parent) throw new NotFoundError("Parent issue not found");
@@ -64,8 +46,17 @@ export async function setParent(ctx: Ctx, issueId: string, parentId: string | nu
   if (ancestors.includes(issueId)) {
     throw new ConflictError("Setting this parent would create a cycle");
   }
+}
 
-  await ctx.env.DB.prepare("UPDATE issues SET parent_id = ?, updated_at = ? WHERE id = ?")
+export async function setParent(ctx: Ctx, issueId: string, parentId: string | null): Promise<void> {
+  const issue = await getIssueById(ctx.env.DB, issueId);
+  if (!issue) throw new NotFoundError("Issue not found");
+  if (issue.parent_id === parentId) return;
+
+  await validateParentChange(ctx, issueId, parentId);
+  await ctx.env.DB.prepare(
+    "UPDATE issues SET parent_id = ?, updated_at = ?, version = version + 1 WHERE id = ?",
+  )
     .bind(parentId, new Date().toISOString(), issueId)
     .run();
   await recordAudit(ctx, {

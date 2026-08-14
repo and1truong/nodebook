@@ -650,6 +650,33 @@ test.describe.serial("MVP acceptance", () => {
     await expect(page.getByRole("button", { name: "Reopen" })).toBeVisible();
   });
 
+  test("a stale browser draft is preserved and rejected", async ({ page, request }) => {
+    const created = await apiJson(request, "POST", "/api/issues", {
+      title: "Optimistic locking browser test",
+      body: "original body",
+    });
+    expect(created.status).toBe(201);
+    const issue = created.json as { number: number; version: number };
+
+    await page.goto(`/issues/${issue.number}`);
+    await page.getByRole("button", { name: "Edit" }).click();
+    const body = page.locator("#issue-body");
+    await body.fill("human draft that must survive");
+
+    const external = await apiJson(request, "PATCH", `/api/issues/${issue.number}`, {
+      expected_version: issue.version,
+      body: "external edit won",
+    });
+    expect(external.status).toBe(200);
+
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("alert")).toContainText("Issue changed since it was loaded");
+    await expect(body).toHaveValue("human draft that must survive");
+
+    const current = await apiJson(request, "GET", `/api/issues/${issue.number}`);
+    expect(current.json.body).toBe("external edit won");
+  });
+
   test("MCP mutation is visible in the web UI with audit attribution", async ({ page, request }) => {
     // Create a scoped token via the UI.
     await page.goto("/settings/tokens");

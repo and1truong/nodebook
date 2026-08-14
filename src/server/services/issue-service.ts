@@ -4,6 +4,7 @@ import {
   ConflictError,
   NotFoundError,
   ValidationError,
+  VersionConflictError,
 } from "../../domain/errors";
 import type { IssueRecord } from "../../domain/models";
 import type { IssueDto, IssueListResult } from "../../shared/contracts/issues";
@@ -14,7 +15,7 @@ import { recordAudit, listAuditForEntity } from "./audit-service";
 import { refreshIssueReferences, resolveReferencesForNewIssue } from "./reference-service";
 import { indexIssue, deleteIndexEntry } from "./search-service";
 import { toIssueDto, toIssueDtos } from "./dto";
-import { setParent } from "./graph-service";
+import { validateParentChange } from "./graph-service";
 import * as issueRepo from "../repositories/issues";
 import * as graphRepo from "../repositories/graph";
 import { recalculateBeforeDueRemindersForIssue } from "./reminder-service";
@@ -34,6 +35,7 @@ export interface IssueCreateInput {
 }
 
 export interface IssueUpdateInput {
+  expected_version: number;
   type?: string;
   title?: string;
   body?: string;
@@ -89,6 +91,7 @@ export async function createIssue(ctx: Ctx, input: IssueCreateInput): Promise<Is
     created_by: actorId(ctx),
     created_at: now,
     updated_at: now,
+    version: 1,
     closed_at: null,
     completed_at: null,
   };
@@ -206,10 +209,17 @@ export async function updateIssue(ctx: Ctx, ref: string, input: IssueUpdateInput
   if (input.recurrence_rule !== undefined) {
     fields.recurrence_rule = validateRecurrence(input.recurrence_rule, input.timezone ?? issue.timezone);
   }
+  if (input.parent_id !== undefined) {
+    await validateParentChange(ctx, issue.id, input.parent_id);
+    fields.parent_id = input.parent_id;
+  }
 
   const now = nowIso();
-  if (Object.keys(fields).length > 0) {
-    await issueRepo.updateIssue(ctx.env.DB, issue.id, fields, now);
+  const nextVersion = await issueRepo.updateIssue(ctx.env.DB, issue.id, fields, now, input.expected_version);
+  if (nextVersion === null) {
+    const current = await issueRepo.getIssueById(ctx.env.DB, issue.id);
+    if (!current) throw new NotFoundError("Issue not found");
+    throw new VersionConflictError(input.expected_version, current.version);
   }
 
   if (input.labels !== undefined) {
@@ -220,10 +230,14 @@ export async function updateIssue(ctx: Ctx, ref: string, input: IssueUpdateInput
     await refreshIssueReferences(ctx, issue.id, input.body, issue.number);
   }
 
-  // Parent changes go through graph validation (self-parent, existence, cycles)
-  // rather than a direct column write.
-  if (input.parent_id !== undefined) {
-    await setParent(ctx, issue.id, input.parent_id);
+  if (input.parent_id !== undefined && input.parent_id !== issue.parent_id) {
+    await recordAudit(ctx, {
+      action: "issue.set_parent",
+      entityType: "issue",
+      entityId: issue.id,
+      before: { parent_id: issue.parent_id },
+      after: { parent_id: input.parent_id },
+    });
   }
 
   const updated = await issueRepo.getIssueById(ctx.env.DB, issue.id);

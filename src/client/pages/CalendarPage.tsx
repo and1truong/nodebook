@@ -13,7 +13,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { api } from "../api";
+import { ApiError, api } from "../api";
 import { todayCivil } from "../../shared/time";
 import type { CalendarItemDto, IssueDto } from "../../shared/contracts/issues";
 import type { CalendarView, WeekStartDay } from "../calendar";
@@ -50,6 +50,10 @@ export function CalendarPage({
   const [createTarget, setCreateTarget] = useState<CalendarCreateTarget | null>(null);
   const [busyIssueIds, setBusyIssueIds] = useState<ReadonlySet<string>>(new Set());
   const fetchSeq = useRef(0);
+  // A second entry of the same issue can be moved before React has committed
+  // the first response DTO. Keep the last server-confirmed CAS token outside
+  // render state so rapid sequential moves never reuse the old version.
+  const issueVersions = useRef(new Map<string, number>());
 
   // null until the deployment defaults resolve (config still loading): the
   // first range fetch must wait for both the view and the week start so a
@@ -71,7 +75,10 @@ export function CalendarPage({
     api
       .calendar(range.start, range.end, tz)
       .then((next) => {
-        if (fetchSeq.current === seq) setItems(next);
+        if (fetchSeq.current === seq) {
+          for (const item of next) issueVersions.current.set(item.issue.id, item.issue.version);
+          setItems(next);
+        }
       })
       .catch((err) => {
         if (fetchSeq.current === seq) setError(err);
@@ -101,12 +108,20 @@ export function CalendarPage({
       const optimistic: IssueDto = { ...item.issue, ...patch };
       setItems((prev) => reconcileVisible(prev, optimistic));
       try {
-        const updated = await api.updateIssue(String(item.issue.number), patch);
+        const expectedVersion = issueVersions.current.get(item.issue.id) ?? item.issue.version;
+        const updated = await api.updateIssue(String(item.issue.number), expectedVersion, patch);
+        issueVersions.current.set(updated.id, updated.version);
         setItems((prev) => reconcileVisible(prev, updated));
       } catch (err) {
-        // Roll back just this issue to its pre-move DTO in the currently
-        // visible range, which may differ from the drag's original range.
-        setItems((prev) => reconcileVisible(prev, item.issue));
+        if (err instanceof ApiError && err.code === "version_conflict") {
+          // The pre-move DTO is stale too; refetch instead of rolling stale
+          // data back over the authoritative external edit.
+          setReloadKey((key) => key + 1);
+        } else {
+          // Roll back just this issue to its pre-move DTO in the currently
+          // visible range, which may differ from the drag's original range.
+          setItems((prev) => reconcileVisible(prev, item.issue));
+        }
         setNotice(
           `Couldn't move "#${item.issue.number} ${item.issue.title}" — ${
             err instanceof Error ? err.message : "update failed"
@@ -201,6 +216,7 @@ export function CalendarPage({
           timezone={tz}
           onClose={() => setCreateTarget(null)}
           onCreated={(issue) => {
+            issueVersions.current.set(issue.id, issue.version);
             const visibleRange = rangeRef.current;
             setItems((current) =>
               current && visibleRange ? reconcileCalendarItems(current, issue, visibleRange, tz) : current,

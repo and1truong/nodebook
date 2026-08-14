@@ -282,7 +282,10 @@ describe("calendar range API", () => {
     // Before-due reminders anchor to the due day's end (23:59:59) minus the offset.
     expect(first.trigger_at).toBe("2025-06-10T22:59:59.000Z");
 
-    const moved = await patch(`/api/issues/${issue.number}`, { due_date: "2025-06-20" });
+    const moved = await patch(`/api/issues/${issue.number}`, {
+      expected_version: issue.version,
+      due_date: "2025-06-20",
+    });
     expect(moved.status).toBe(200);
 
     const list = await api(`/api/reminders/issue/${issue.number}`);

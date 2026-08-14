@@ -117,7 +117,7 @@ function TypeSelect({
     setPending(true);
     setError(null);
     try {
-      const updated = await api.updateIssue(String(issue.number), { type });
+      const updated = await api.updateIssue(String(issue.number), issue.version, { type });
       onIssueUpdated(updated);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not update type");
@@ -172,7 +172,7 @@ function PrioritySelect({
     setPending(true);
     setError(null);
     try {
-      const updated = await api.updateIssue(String(issue.number), {
+      const updated = await api.updateIssue(String(issue.number), issue.version, {
         priority: value === "none" ? null : value,
       });
       onIssueUpdated(updated);

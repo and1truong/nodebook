@@ -32,16 +32,16 @@ describe("hierarchy", () => {
     await post(`/api/graph/${b.number}/parent`, { parent_id: a.id });
 
     // PATCHing b as a's parent would create a two-node cycle: rejected.
-    const cycle = await patch(`/api/issues/${a.number}`, { parent_id: b.id });
+    const cycle = await patch(`/api/issues/${a.number}`, { expected_version: a.version, parent_id: b.id });
     expect(cycle.status).toBe(409);
 
     // Self-parent via PATCH is rejected too.
-    const self = await patch(`/api/issues/${a.number}`, { parent_id: a.id });
+    const self = await patch(`/api/issues/${a.number}`, { expected_version: a.version, parent_id: a.id });
     expect(self.status).toBe(400);
 
     // Valid reparenting through PATCH still works.
     const c = await createIssue({ title: "cycle c" });
-    const ok = await patch(`/api/issues/${b.number}`, { parent_id: c.id });
+    const ok = await patch(`/api/issues/${b.number}`, { expected_version: Number(b.version) + 1, parent_id: c.id });
     expect(ok.status).toBe(200);
     expect((ok.body as { parent_number: number | null }).parent_number).toBe(c.number);
   });
@@ -127,7 +127,10 @@ describe("references", () => {
     const commentHost = await createIssue({ title: "comment ref host" });
     const targetNumber = allocator.number + 3;
 
-    await patch(`/api/issues/${source.number}`, { body: `depends on #${targetNumber}` });
+    await patch(`/api/issues/${source.number}`, {
+      expected_version: source.version,
+      body: `depends on #${targetNumber}`,
+    });
     const commentRes = await post(`/api/issues/${commentHost.number}/comments`, {
       body: `waiting on #${targetNumber}`,
     });

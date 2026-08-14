@@ -65,6 +65,7 @@ function toIssueDtoWith(
     created_by: issue.created_by,
     created_at: issue.created_at,
     updated_at: issue.updated_at,
+    version: issue.version,
     closed_at: issue.closed_at,
     completed_at: issue.completed_at,
     child_count: childCount,
