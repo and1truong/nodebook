@@ -38,6 +38,8 @@ export function DatePicker({
   onChange,
   ariaLabel,
   className,
+  inputClassName,
+  disabled = false,
   weekStartDay = "sunday",
 }: {
   id?: string;
@@ -47,6 +49,8 @@ export function DatePicker({
   onChange: (date: string) => void;
   ariaLabel: string;
   className?: string;
+  inputClassName?: string;
+  disabled?: boolean;
   /** First day of the calendar week (default Sunday). */
   weekStartDay?: WeekStartDay;
 }) {
@@ -88,7 +92,7 @@ export function DatePicker({
 
   const isSelected = (d: number) => parsed !== null && parsed.y === view.y && parsed.m === view.m && parsed.d === d;
   const isToday = (d: number) => todayParsed !== null && todayParsed.y === view.y && todayParsed.m === view.m && todayParsed.d === d;
-  const isDisabled = (d: number) => min !== undefined && toIso(view.y, view.m, d) < min;
+  const isDisabled = (d: number) => disabled || (min !== undefined && toIso(view.y, view.m, d) < min);
 
   return (
     <div className={cn("relative w-40", className)}>
@@ -98,6 +102,7 @@ export function DatePicker({
             <Input
               id={id}
               value={text}
+              disabled={disabled}
               onChange={(e) => {
                 const nextText = e.target.value;
                 setText(nextText);
@@ -116,11 +121,12 @@ export function DatePicker({
               onClick={() => handleOpenChange(true)}
               placeholder="YYYY-MM-DD"
               aria-label={ariaLabel}
-              className="cursor-pointer pr-10"
+              className={cn("cursor-pointer pr-10", inputClassName)}
             />
             <Popover.Trigger asChild>
               <button
                 type="button"
+                disabled={disabled}
                 aria-label={`${ariaLabel} calendar`}
                 className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
@@ -141,6 +147,7 @@ export function DatePicker({
               variant="ghost"
               size="sm"
               className="h-7 w-7 px-0"
+              disabled={disabled}
               aria-label="Previous month"
               onClick={() => setView((v) => (v.m === 1 ? { y: v.y - 1, m: 12 } : { y: v.y, m: v.m - 1 }))}
             >
@@ -154,6 +161,7 @@ export function DatePicker({
               variant="ghost"
               size="sm"
               className="h-7 w-7 px-0"
+              disabled={disabled}
               aria-label="Next month"
               onClick={() => setView((v) => (v.m === 12 ? { y: v.y + 1, m: 1 } : { y: v.y, m: v.m + 1 }))}
             >
@@ -197,6 +205,7 @@ export function DatePicker({
                 type="button"
                 variant="ghost"
                 size="sm"
+                disabled={disabled}
                 className="h-6 px-2 text-xs text-muted-foreground"
                 onClick={() => {
                   onChange("");
