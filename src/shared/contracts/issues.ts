@@ -203,6 +203,19 @@ export const mcpAttachFileSchema = z.object({
 // DTOs (API output shapes)
 // ---------------------------------------------------------------------------
 
+/** Structured actor + human-subject attribution; legacy string fields remain. */
+export interface CreatorAttributionDto {
+  actor_type: ActorType;
+  /** Raw actor id (MCP UUID/grant id, human email, or system id). */
+  actor_id: string;
+  /** Human account id; NodeBook currently uses email as this id. */
+  user_id: string | null;
+  email: string | null;
+  /** Friendly name when configured, otherwise email or a safe actor fallback. */
+  display_name: string;
+  via: "web" | "mcp" | "system";
+}
+
 export interface IssueDto {
   id: string;
   number: number;
@@ -220,6 +233,7 @@ export interface IssueDto {
   parent_id: string | null;
   parent_number: number | null;
   created_by: string;
+  creator: CreatorAttributionDto;
   created_at: string;
   updated_at: string;
   version: number;
@@ -241,6 +255,7 @@ export interface CommentDto {
   body: string;
   author: string;
   author_type: ActorType;
+  creator: CreatorAttributionDto;
   edited_at: string | null;
   created_at: string;
   updated_at: string;
@@ -256,6 +271,7 @@ export interface RelationshipDto {
   target_title: string;
   type: RelationshipType;
   created_by: string;
+  creator: CreatorAttributionDto;
   created_at: string;
 }
 
@@ -284,6 +300,7 @@ export interface AuditEventDto {
   id: string;
   actor_type: ActorType;
   actor_id: string;
+  creator: CreatorAttributionDto;
   action: string;
   entity_type: string;
   entity_id: string;
@@ -302,6 +319,7 @@ export interface ReminderDto {
   timezone: string;
   status: ReminderStatus;
   snooze_until: string | null;
+  creator: CreatorAttributionDto;
   created_at: string;
   last_triggered_at: string | null;
 }
@@ -325,6 +343,7 @@ export interface AttachmentDto {
   size: number;
   checksum: string;
   status: AttachmentStatus;
+  creator: CreatorAttributionDto;
   created_at: string;
   url: string;
 }

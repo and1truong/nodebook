@@ -80,7 +80,7 @@ export async function rebuildSearchIndex(ctx: Ctx): Promise<{ issues: number; co
   await searchRepo.clearSearchDocs(ctx.env.DB);
 
   const issues = await ctx.env.DB.prepare(
-    "SELECT id, number, type, title, body, status, priority, start_date, due_date, scheduled_date, timezone, recurrence_rule, parent_id, created_by, created_at, updated_at, version, closed_at, completed_at FROM issues",
+    "SELECT id, number, type, title, body, status, priority, start_date, due_date, scheduled_date, timezone, recurrence_rule, parent_id, created_by, created_for, created_via, created_at, updated_at, version, closed_at, completed_at FROM issues",
   ).all<Record<string, unknown>>();
   const issueRecords = issues.results.map((row) => ({
     id: String(row.id),
@@ -97,6 +97,8 @@ export async function rebuildSearchIndex(ctx: Ctx): Promise<{ issues: number; co
     recurrence_rule: (row.recurrence_rule as string | null) ?? null,
     parent_id: (row.parent_id as string | null) ?? null,
     created_by: String(row.created_by),
+    created_for: (row.created_for as string | null) ?? null,
+    created_via: (row.created_via as IssueRecord["created_via"]) ?? null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
     version: Number(row.version),
@@ -131,6 +133,8 @@ export async function rebuildSearchIndex(ctx: Ctx): Promise<{ issues: number; co
         body: String(row.body),
         author: String(row.author),
         author_type: String(row.author_type) as CommentRecord["author_type"],
+        author_for: (row.author_for as string | null) ?? null,
+        author_via: (row.author_via as CommentRecord["author_via"]) ?? null,
         edited_at: (row.edited_at as string | null) ?? null,
         created_at: String(row.created_at),
         updated_at: String(row.updated_at),
@@ -140,7 +144,7 @@ export async function rebuildSearchIndex(ctx: Ctx): Promise<{ issues: number; co
   }
 
   const attachments = await ctx.env.DB.prepare(
-    "SELECT id, owner_type, owner_id, filename, content_type, size, checksum, r2_key, status, uploaded_by, created_at, deleted_at FROM attachments WHERE status = 'active'",
+    "SELECT id, owner_type, owner_id, filename, content_type, size, checksum, r2_key, status, uploaded_by, uploaded_for, uploaded_via, created_at, deleted_at FROM attachments WHERE status = 'active'",
   ).all<Record<string, unknown>>();
   for (const row of attachments.results) {
     await indexAttachment(ctx, {
@@ -154,6 +158,8 @@ export async function rebuildSearchIndex(ctx: Ctx): Promise<{ issues: number; co
       r2_key: String(row.r2_key),
       status: "active",
       uploaded_by: String(row.uploaded_by),
+      uploaded_for: (row.uploaded_for as string | null) ?? null,
+      uploaded_via: (row.uploaded_via as AttachmentRecord["uploaded_via"]) ?? null,
       created_at: String(row.created_at),
       deleted_at: null,
     });

@@ -53,6 +53,8 @@ export interface ReminderInsert {
   recurrenceRule: string | null;
   timezone: string;
   createdBy: string;
+  createdFor: string | null;
+  createdVia: "web" | "mcp" | "system";
   now: string;
 }
 
@@ -60,10 +62,22 @@ export async function insertReminder(db: D1Database, input: ReminderInsert): Pro
   await db
     .prepare(
       `INSERT INTO reminders (id, issue_id, kind, trigger_at, offset_minutes, recurrence_rule, timezone,
-        status, snooze_until, created_by, created_at, last_triggered_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, NULL)`,
+        status, snooze_until, created_by, created_for, created_via, created_at, last_triggered_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NULL, ?, ?, ?, ?, NULL)`,
     )
-    .bind(input.id, input.issueId, input.kind, input.triggerAt, input.offsetMinutes, input.recurrenceRule, input.timezone, input.createdBy, input.now)
+    .bind(
+      input.id,
+      input.issueId,
+      input.kind,
+      input.triggerAt,
+      input.offsetMinutes,
+      input.recurrenceRule,
+      input.timezone,
+      input.createdBy,
+      input.createdFor,
+      input.createdVia,
+      input.now,
+    )
     .run();
 }
 
@@ -98,12 +112,20 @@ export type ReminderUpdate = Partial<
   Pick<ReminderRecord, "trigger_at" | "status" | "snooze_until" | "last_triggered_at">
 >;
 
-export async function updateReminder(db: D1Database, id: string, fields: ReminderUpdate): Promise<void> {
+export async function updateReminder(
+  db: D1Database,
+  id: string,
+  fields: ReminderUpdate,
+): Promise<ReminderRecord | null> {
   const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
-  if (entries.length === 0) return;
+  if (entries.length === 0) return null;
   const sets = entries.map(([key]) => `${key} = ?`);
   const args = entries.map(([, v]) => (v === null ? null : String(v)));
-  await db.prepare(`UPDATE reminders SET ${sets.join(", ")} WHERE id = ?`).bind(...args, id).run();
+  const row = await db
+    .prepare(`UPDATE reminders SET ${sets.join(", ")} WHERE id = ? RETURNING *`)
+    .bind(...args, id)
+    .first<Record<string, unknown>>();
+  return row ? rowToReminder(row) : null;
 }
 
 function rowToReminder(row: Record<string, unknown>): ReminderRecord {
@@ -118,6 +140,8 @@ function rowToReminder(row: Record<string, unknown>): ReminderRecord {
     status: row.status as ReminderRecord["status"],
     snooze_until: (row.snooze_until as string | null) ?? null,
     created_by: String(row.created_by),
+    created_for: (row.created_for as string | null) ?? null,
+    created_via: (row.created_via as ReminderRecord["created_via"]) ?? null,
     created_at: String(row.created_at),
     last_triggered_at: (row.last_triggered_at as string | null) ?? null,
   };

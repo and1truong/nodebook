@@ -13,16 +13,32 @@ export interface AttachmentInsert {
   checksum: string;
   r2Key: string;
   uploadedBy: string;
+  uploadedFor: string | null;
+  uploadedVia: "web" | "mcp" | "system";
   now: string;
 }
 
 export async function insertAttachment(db: D1Database, input: AttachmentInsert): Promise<void> {
   await db
     .prepare(
-      `INSERT INTO attachments (id, owner_type, owner_id, filename, content_type, size, checksum, r2_key, status, uploaded_by, created_at, deleted_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, NULL)`,
+      `INSERT INTO attachments (id, owner_type, owner_id, filename, content_type, size, checksum, r2_key, status,
+        uploaded_by, uploaded_for, uploaded_via, created_at, deleted_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, NULL)`,
     )
-    .bind(input.id, input.ownerType, input.ownerId, input.filename, input.contentType, input.size, input.checksum, input.r2Key, input.uploadedBy, input.now)
+    .bind(
+      input.id,
+      input.ownerType,
+      input.ownerId,
+      input.filename,
+      input.contentType,
+      input.size,
+      input.checksum,
+      input.r2Key,
+      input.uploadedBy,
+      input.uploadedFor,
+      input.uploadedVia,
+      input.now,
+    )
     .run();
 }
 
@@ -84,6 +100,8 @@ function rowToAttachment(row: Record<string, unknown>): AttachmentRecord {
     r2_key: String(row.r2_key),
     status: row.status as AttachmentStatus,
     uploaded_by: String(row.uploaded_by),
+    uploaded_for: (row.uploaded_for as string | null) ?? null,
+    uploaded_via: (row.uploaded_via as AttachmentRecord["uploaded_via"]) ?? null,
     created_at: String(row.created_at),
     deleted_at: (row.deleted_at as string | null) ?? null,
   };

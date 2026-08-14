@@ -6,7 +6,7 @@
 - **Web Platform APIs only.** No `nodejs_compat`: no filesystem, no sockets, no Node server. Dependencies are pure-JS (hono, zod, marked, dompurify) or Workers-native.
 - **Single shared domain layer.** HTTP routes, MCP tools, and scheduled handlers all call the same services (`src/server/services/*`) against the same repositories (`src/server/repositories/*`). Validation (zod schemas in `src/shared/contracts/`) and audit records are therefore identical across transports.
 - **D1 is the source of truth; R2 holds bytes; FTS5 indexes text.** Because D1 and R2 cannot join a transaction, all destructive paths are idempotent: soft deletion + grace periods + a daily garbage collector.
-- **Explicit actors.** Every mutation requires an actor context (`human` via Cloudflare Access, `mcp` via PAT, `system` for cron) and records immutable before/after audit payloads.
+- **Explicit actors and subjects.** Every mutation retains the performing actor (`human` via Cloudflare Access, stable `mcp` PAT/grant principal, or `system` for cron) separately from the human owner on whose behalf it ran. Immutable audit events record both identities and the request channel.
 
 ## Request paths
 
@@ -46,6 +46,7 @@ The OAuth `issuer` is the configured `OAUTH_ISSUER` variable (production) or the
 - `0006_attachments.sql` — `attachments` metadata (soft-delete + R2 key = blob checksum).
 - `0008_issue_version.sql` — monotonic `issues.version` revision for optimistic locking across browser and MCP edits.
 - `0009_oauth.sql` — `oauth_clients` (public clients + exact redirect-URI allowlists), `oauth_grants` (stable owner-approved connections, scopes, usage, revocation), `oauth_codes` (one-time hashed codes with PKCE challenges, resource, expiry, consumed state), `oauth_tokens` (hashed access/refresh tokens, kind, grant ownership, expiry, rotation/revocation state). Grant revocation cascades to every token via `revokeTokensForGrant`.
+- `0010_creator_attribution.sql` — snapshots the human owner on PAT/OAuth connection rows, stores actor/subject/channel separately on creator-bearing records and audit events, and deterministically backfills direct human history. Historical MCP rows are resolved through retained connection ownership when possible.
 
 ## Key algorithms
 
@@ -83,7 +84,7 @@ Mutations maintain `search_docs` (delete+insert, since FTS5 virtual tables rejec
 Uploads (multipart for the browser, base64 for MCP with a 5 MB cap) are checksummed (SHA-256); the R2 key is `blobs/<checksum>`, so identical content is stored once. Content endpoints enforce `Content-Disposition: inline` only for preview-safe types (images, PDF) and support byte ranges. Deletion is soft; the daily GC removes blobs whose key has no active attachment rows and whose rows are past a 24 h grace period. The GC/R2 race is closed by a tombstone handshake: the GC tombstones a key before deleting, re-checks the tombstone and active-row count right before the delete, and concurrent uploads of identical content restore the blob and clear the tombstone, verifying the blob afterwards so a delete already in flight can never land after the repair.
 
 ### MCP (src/mcp/)
-`/mcp` implements Streamable HTTP with JSON-RPC 2.0: `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call` (single-message and batch), plus `Mcp-Session-Id` headers and SSE when the client asks exclusively for `text/event-stream`. Session state (initialized flag, client info, TTL) lives in the `McpSession` Durable Object, which also executes tools against the shared services with the DO's bindings. The Worker re-validates the token (hash lookup, revocation, expiry) on **every** HTTP request before routing to the DO. Each tool declares a PRD scope enforced per invocation; insufficient scope yields JSON-RPC error `-32003`.
+`/mcp` implements Streamable HTTP with JSON-RPC 2.0: `initialize`, `notifications/initialized`, `ping`, `tools/list`, `tools/call` (single-message and batch), plus `Mcp-Session-Id` headers and SSE when the client asks exclusively for `text/event-stream`. Session state (initialized flag, client info, TTL) lives in the `McpSession` Durable Object, which also executes tools against the shared services with the DO's bindings. The Worker re-validates the token (hash lookup, revocation, expiry) on **every** HTTP request before routing to the DO. Authentication resolves the stable PAT id or OAuth grant id through its credential/connection row to the approving workspace owner; tool contexts carry both identities, while authorization continues to use the machine principal and scopes. Each tool declares a PRD scope enforced per invocation; insufficient scope yields JSON-RPC error `-32003`.
 
 ## Client UI (src/client/)
 

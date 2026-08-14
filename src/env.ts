@@ -10,6 +10,8 @@ export interface Env {
 
   // Configuration (wrangler.jsonc vars; override in production).
   OWNER_EMAIL: string;
+  /** Friendly owner name used for creator attribution; email is the fallback. */
+  OWNER_DISPLAY_NAME?: string;
   OWNER_TIMEZONE: string;
   /** Cloudflare Access team domain, e.g. "example.cloudflareaccess.com". */
   ACCESS_TEAM: string;
@@ -50,6 +52,13 @@ export function mcpUploadLimitBytes(env: Env): number {
 
 export function ownerTimezone(env: Env): string {
   return env.OWNER_TIMEZONE && env.OWNER_TIMEZONE.trim() ? env.OWNER_TIMEZONE : "UTC";
+}
+
+/** Current single-owner identity, matching Access vs. development auth mode. */
+export function workspaceOwnerEmail(env: Env): string | null {
+  const productionOwner = env.OWNER_EMAIL?.trim();
+  if (env.ACCESS_TEAM && env.ACCESS_AUD) return productionOwner || null;
+  return env.AUTH_DEV_EMAIL?.trim() || productionOwner || null;
 }
 
 /**

@@ -18,6 +18,7 @@ import { Link } from "../router";
 import { LabelChip, TypeBadge } from "./ui";
 import { Skeleton } from "./ui/skeleton";
 import { cn } from "@/lib/utils";
+import { creatorLabel } from "../attribution";
 
 const OPEN_DELAY_MS = 350;
 const CLOSE_DELAY_MS = 150;
@@ -322,7 +323,7 @@ const IssuePreviewCard = forwardRef<HTMLDivElement, CardProps>(function IssuePre
         <>
           <div className="p-4">
             <p className="mb-2 text-xs text-muted-foreground">
-              <span className="font-medium text-foreground">{issue.created_by}</span> opened on {cardDate(issue.created_at)}
+              <span className="font-medium text-foreground">{creatorLabel(issue.creator)}</span> opened on {cardDate(issue.created_at)}
             </p>
             <Link
               to={`/issues/${issue.number}`}

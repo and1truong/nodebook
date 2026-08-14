@@ -21,6 +21,7 @@ import { Loading, ErrorState } from "../components/ui";
 import { Button } from "../components/ui/button";
 import { Textarea } from "../components/ui/textarea";
 import { Link, useRouter } from "../router";
+import { creatorLabel } from "../attribution";
 
 export function IssueDetailPage({
   mode,
@@ -112,8 +113,7 @@ export function IssueDetailPage({
     setHistory(nextHistory);
   };
 
-  const creatorEvent = history?.find((event) => event.action === "issue.create");
-  const creator = creatorEvent?.actor_id ?? issue.created_by;
+  const creator = creatorLabel(issue.creator);
   const timeline = buildTimeline(comments ?? [], history ?? []);
 
   return (
@@ -185,9 +185,6 @@ export function IssueDetailPage({
           <span>
             <strong className="font-semibold text-foreground">{creator}</strong> opened this issue {formatInstant(issue.created_at)}
           </span>
-          {creatorEvent?.actor_type !== undefined && creatorEvent.actor_type !== "human" && (
-            <span className="rounded-full border border-border px-2 py-0.5 text-[11px]">{creatorEvent.actor_type}</span>
-          )}
           <span aria-hidden="true">·</span>
           <span>{comments?.length ?? 0} {comments?.length === 1 ? "comment" : "comments"}</span>
           {issue.parent_number !== null && (
@@ -218,9 +215,6 @@ export function IssueDetailPage({
                 <header className="flex flex-wrap items-center gap-2 border-b border-border bg-muted/50 px-4 py-2.5 text-sm text-muted-foreground">
                   <Avatar name={creator} inline />
                   <strong className="font-semibold text-foreground">{creator}</strong>
-                  {creatorEvent?.actor_type !== undefined && creatorEvent.actor_type !== "human" && (
-                    <span className="rounded-full border border-border px-2 py-0.5 text-[11px]">{creatorEvent.actor_type}</span>
-                  )}
                   <span>opened this issue {formatInstant(issue.created_at)}</span>
                 </header>
                 <div className="min-h-24 p-4">
@@ -282,6 +276,7 @@ export function IssueDetailPage({
 
 function CommentItem({ comment, onSaved }: { comment: CommentDto; onSaved: () => void }) {
   const [editing, setEditing] = useState(false);
+  const author = creatorLabel(comment.creator);
   const [body, setBody] = useState(comment.body);
 
   const save = async (e: React.FormEvent) => {
@@ -293,10 +288,10 @@ function CommentItem({ comment, onSaved }: { comment: CommentDto; onSaved: () =>
 
   return (
     <li className="comment timeline-entry relative pl-12">
-      <Avatar name={comment.author} />
+      <Avatar name={author} />
       <section className="conversation-card overflow-hidden rounded-lg border border-border bg-card">
         <header className="comment-head flex items-center gap-2 border-b border-border bg-muted/50 px-4 py-2.5">
-          <span className="comment-author text-sm font-semibold text-foreground">{comment.author}</span>
+          <span className="comment-author text-sm font-semibold text-foreground">{author}</span>
           <span className="dim">commented {formatInstant(comment.created_at)}</span>
           {comment.edited_at && <span className="dim">edited</span>}
           <Button variant="link" size="sm" className="ml-auto h-auto px-0 text-xs" onClick={() => setEditing((e) => !e)}>

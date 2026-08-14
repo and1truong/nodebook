@@ -24,8 +24,8 @@ export async function allocateIssueNumber(db: D1Database): Promise<number> {
 
 export const ISSUE_COLUMNS = `
   id, number, type, title, body, status, priority, start_date, due_date,
-  scheduled_date, timezone, recurrence_rule, parent_id, created_by, created_at,
-  updated_at, version, closed_at, completed_at
+  scheduled_date, timezone, recurrence_rule, parent_id, created_by, created_for,
+  created_via, created_at, updated_at, version, closed_at, completed_at
 `;
 
 export function rowToIssue(row: Record<string, unknown>): IssueRecord {
@@ -44,6 +44,8 @@ export function rowToIssue(row: Record<string, unknown>): IssueRecord {
     recurrence_rule: (row.recurrence_rule as string | null) ?? null,
     parent_id: (row.parent_id as string | null) ?? null,
     created_by: String(row.created_by),
+    created_for: (row.created_for as string | null) ?? null,
+    created_via: (row.created_via as IssueRecord["created_via"]) ?? null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
     version: Number(row.version),
@@ -60,6 +62,8 @@ export interface IssueRowInput {
   body: string;
   timezone: string;
   createdBy: string;
+  createdFor: string | null;
+  createdVia: "web" | "mcp" | "system";
   now: string;
 }
 
@@ -67,8 +71,8 @@ export async function insertIssue(db: D1Database, input: IssueRowInput, extra: P
   await db
     .prepare(
       `INSERT INTO issues (id, number, type, title, body, status, priority, start_date, due_date, scheduled_date,
-        timezone, recurrence_rule, parent_id, created_by, created_at, updated_at, closed_at, completed_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        timezone, recurrence_rule, parent_id, created_by, created_for, created_via, created_at, updated_at, closed_at, completed_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
     .bind(
       input.id,
@@ -85,6 +89,8 @@ export async function insertIssue(db: D1Database, input: IssueRowInput, extra: P
       extra.recurrence_rule ?? null,
       extra.parent_id ?? null,
       input.createdBy,
+      input.createdFor,
+      input.createdVia,
       input.now,
       input.now,
       extra.closed_at ?? null,
@@ -377,14 +383,17 @@ export async function insertComment(
     body: string;
     author: string;
     authorType: string;
+    authorFor: string | null;
+    authorVia: "web" | "mcp" | "system";
     now: string;
   },
 ): Promise<void> {
   await db
     .prepare(
-      "INSERT INTO comments (id, issue_id, body, author, author_type, edited_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, NULL, ?, ?)",
+      `INSERT INTO comments (id, issue_id, body, author, author_type, author_for, author_via, edited_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
     )
-    .bind(input.id, input.issueId, input.body, input.author, input.authorType, input.now, input.now)
+    .bind(input.id, input.issueId, input.body, input.author, input.authorType, input.authorFor, input.authorVia, input.now, input.now)
     .run();
 }
 
@@ -397,6 +406,8 @@ export async function getCommentById(db: D1Database, id: string): Promise<Commen
     body: String(row.body),
     author: String(row.author),
     author_type: row.author_type as CommentRecord["author_type"],
+    author_for: (row.author_for as string | null) ?? null,
+    author_via: (row.author_via as CommentRecord["author_via"]) ?? null,
     edited_at: (row.edited_at as string | null) ?? null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),
@@ -421,6 +432,8 @@ export async function listCommentsByIssue(db: D1Database, issueId: string): Prom
     body: String(row.body),
     author: String(row.author),
     author_type: row.author_type as CommentRecord["author_type"],
+    author_for: (row.author_for as string | null) ?? null,
+    author_via: (row.author_via as CommentRecord["author_via"]) ?? null,
     edited_at: (row.edited_at as string | null) ?? null,
     created_at: String(row.created_at),
     updated_at: String(row.updated_at),

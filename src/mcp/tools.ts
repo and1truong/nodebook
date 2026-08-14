@@ -51,8 +51,8 @@ export const tools = [
     inputSchema: getIssueSchema,
     scope: "read:issue",
     handler: withScope("read:issue", async (ctx: ToolContext, args) => {
-      const number = Number(args.number);
-      return searchService.getIssueByNumberOrThrow(toCtx(ctx), number);
+      const ref = "issue_id" in args ? requireIssueId(args.issue_id) : String(args.number);
+      return issueService.getIssue(toCtx(ctx), ref);
     }),
   }),
 
@@ -239,15 +239,17 @@ export const tools = [
 
   defineTool({
     name: "add_child",
-    description: "Create a child issue under a parent (hierarchy).",
+    description: "Create a child issue under a parent identified by issue number or UUID (hierarchy).",
     inputSchema: addChildSchema,
     scope: "write:graph",
     handler: withScope("write:graph", async (ctx: ToolContext, args) => {
-      return issueService.createIssue(toCtx(ctx), {
+      const c = toCtx(ctx);
+      const parent = await graphService.getIssueByRefOrThrow(c, requireIssueId(args.parent_id));
+      return issueService.createIssue(c, {
         type: args.type ?? "task",
         title: args.title,
         body: args.body ?? "",
-        parent_id: args.parent_id,
+        parent_id: parent.id,
       });
     }),
   }),
@@ -259,8 +261,8 @@ export const tools = [
     scope: "write:graph",
     handler: withScope("write:graph", async (ctx: ToolContext, args) => {
       const c = toCtx(ctx);
-      const source = await graphService.getIssueByRefOrThrow(c, args.source_id);
-      const target = await graphService.getIssueByRefOrThrow(c, args.target_id);
+      const source = await graphService.getIssueByRefOrThrow(c, requireIssueId(args.source_id));
+      const target = await graphService.getIssueByRefOrThrow(c, requireIssueId(args.target_id));
       return graphService.addRelationship(c, source.id, target.id, args.type);
     }),
   }),
@@ -275,9 +277,9 @@ export const tools = [
       const issue = await graphService.getIssueByRefOrThrow(c, requireIssueId(args.issue_id));
       return reminderService.createReminder(c, issue.id, {
         kind: args.kind,
-        triggerAt: args.trigger_at,
-        offsetMinutes: args.offset_minutes,
-        recurrenceRule: args.recurrence_rule,
+        triggerAt: args.kind === "absolute" ? args.trigger_at : undefined,
+        offsetMinutes: args.kind === "before_due" ? args.offset_minutes : undefined,
+        recurrenceRule: args.kind === "recurring" ? args.recurrence_rule : undefined,
         timezone: args.timezone,
       });
     }),
@@ -299,25 +301,26 @@ export const tools = [
 
   defineTool({
     name: "attach_file",
-    description: "Attach a file (base64 data) to an issue. Size limited to 5 MB for MCP uploads.",
+    description: "Attach a base64 file to an issue identified by number or UUID. Size limited to 5 MB for MCP uploads.",
     inputSchema: attachFileSchema,
     scope: "write:attachment",
     handler: withScope("write:attachment", async (ctx: ToolContext, args) => {
       const c = toCtx(ctx);
-      const issue = await graphService.getIssueByRefOrThrow(c, args.issue_id);
-      const bytes = base64ToBytes(args.data);
-      if (bytes.byteLength > mcpUploadLimitBytes(ctx.env)) {
+      const issue = await graphService.getIssueByRefOrThrow(c, requireIssueId(args.issue_id));
+      const maxBytes = mcpUploadLimitBytes(ctx.env);
+      if (estimatedBase64DecodedSize(args.data) > maxBytes) {
         throw new PayloadTooLargeError(
-          `File exceeds the ${Math.floor(mcpUploadLimitBytes(ctx.env) / (1024 * 1024))} MB MCP upload limit`,
+          `File exceeds the ${Math.floor(maxBytes / (1024 * 1024))} MB MCP upload limit`,
         );
       }
+      const bytes = base64ToBytes(args.data);
       return attachmentService.uploadAttachment(c, {
         ownerType: "issue",
         ownerId: issue.id,
         filename: args.filename,
         contentType: args.content_type ?? "application/octet-stream",
         bytes,
-        maxBytes: mcpUploadLimitBytes(ctx.env),
+        maxBytes,
       });
     }),
   }),
@@ -329,8 +332,14 @@ export function getToolByName(name: string) {
   return tools.find((t) => t.name === name);
 }
 
+function estimatedBase64DecodedSize(data: string): number {
+  const compact = data.replace(/\s/g, "");
+  const withoutPadding = compact.replace(/=+$/, "");
+  return Math.floor((withoutPadding.length * 3) / 4);
+}
+
 export function base64ToBytes(data: string): ArrayBuffer {
-  const b64 = data.replace(/-/g, "+").replace(/_/g, "/");
+  const b64 = data.replace(/\s/g, "").replace(/-/g, "+").replace(/_/g, "/");
   const padded = b64 + "=".repeat((4 - (b64.length % 4)) % 4);
   const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);

@@ -31,6 +31,8 @@ export interface IssueRecord {
   recurrence_rule: string | null;
   parent_id: string | null;
   created_by: string;
+  created_for: string | null;
+  created_via: "web" | "mcp" | "system" | null;
   created_at: string;
   updated_at: string;
   version: number;
@@ -51,6 +53,8 @@ export interface CommentRecord {
   body: string;
   author: string;
   author_type: ActorType;
+  author_for: string | null;
+  author_via: "web" | "mcp" | "system" | null;
   edited_at: string | null;
   created_at: string;
   updated_at: string;
@@ -62,6 +66,8 @@ export interface RelationshipRecord {
   target_id: string;
   type: RelationshipType;
   created_by: string;
+  created_for: string | null;
+  created_via: "web" | "mcp" | "system" | null;
   created_at: string;
 }
 
@@ -79,6 +85,10 @@ export interface AuditRecord {
   id: string;
   actor_type: ActorType;
   actor_id: string;
+  subject_id: string | null;
+  subject_email: string | null;
+  subject_display_name: string | null;
+  via: "web" | "mcp" | "system" | null;
   action: string;
   entity_type: string;
   entity_id: string;
@@ -97,6 +107,8 @@ export interface McpTokenRecord {
   expires_at: string | null;
   last_used_at: string | null;
   revoked_at: string | null;
+  owner_email: string | null;
+  owner_display_name: string | null;
 }
 
 export interface OauthClientRecord {
@@ -111,6 +123,8 @@ export interface OauthGrantRecord {
   id: string;
   client_id: string;
   scopes_json: string;
+  owner_email: string | null;
+  owner_display_name: string | null;
   created_at: string;
   last_used_at: string | null;
   revoked_at: string | null;
@@ -154,6 +168,8 @@ export interface ReminderRecord {
   status: ReminderStatus;
   snooze_until: string | null;
   created_by: string;
+  created_for: string | null;
+  created_via: "web" | "mcp" | "system" | null;
   created_at: string;
   last_triggered_at: string | null;
 }
@@ -193,6 +209,8 @@ export interface AttachmentRecord {
   r2_key: string;
   status: AttachmentStatus;
   uploaded_by: string;
+  uploaded_for: string | null;
+  uploaded_via: "web" | "mcp" | "system" | null;
   created_at: string;
   deleted_at: string | null;
 }

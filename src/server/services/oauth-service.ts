@@ -14,6 +14,7 @@ import type { OauthClientRecord, OauthGrantRecord } from "../../domain/models";
 import { MCP_SCOPES, type McpScope } from "../../shared/limits";
 import { sha256Hex } from "../auth/token-auth";
 import { recordAudit } from "./audit-service";
+import { attributionFromCtx } from "../ctx";
 import * as oauthRepo from "../repositories/oauth";
 
 /** Authorization codes expire after 10 minutes and are single-use. */
@@ -289,19 +290,30 @@ export async function approveAuthorization(
   resource: string,
 ): Promise<{ code: string; redirectUri: string; state: string | null }> {
   const now = new Date().toISOString();
+  const { subject } = attributionFromCtx(ctx);
+  if (!subject) throw new ValidationError("A human owner is required to approve an OAuth connection");
   let grant = await oauthRepo.findActiveGrantForClient(env.DB, client.id);
   if (!grant) {
     const candidate: OauthGrantRecord = {
       id: crypto.randomUUID(),
       client_id: client.id,
       scopes_json: JSON.stringify(scopes),
+      owner_email: subject.email,
+      owner_display_name: subject.displayName,
       created_at: now,
       last_used_at: null,
       revoked_at: null,
     };
     // The partial unique index makes concurrent approval requests converge on
     // one active connection. The loser loads and reuses the winner's grant.
-    if (await oauthRepo.insertGrant(env.DB, { id: candidate.id, clientId: client.id, scopesJson: candidate.scopes_json, now })) {
+    if (await oauthRepo.insertGrant(env.DB, {
+      id: candidate.id,
+      clientId: client.id,
+      scopesJson: candidate.scopes_json,
+      ownerEmail: candidate.owner_email!,
+      ownerDisplayName: candidate.owner_display_name,
+      now,
+    })) {
       grant = candidate;
     } else {
       grant = await oauthRepo.findActiveGrantForClient(env.DB, client.id);

@@ -3,6 +3,7 @@ import { Activity } from "lucide-react";
 import { formatInstant } from "../api";
 import type { AuditEventDto } from "../../shared/contracts/issues";
 import { Badge } from "./ui/badge";
+import { creatorLabel } from "../attribution";
 
 const ACTION_LABELS: Record<string, string> = {
   "issue.update": "updated the issue",
@@ -18,10 +19,12 @@ export function HistoryItem({ event }: { event: AuditEventDto }) {
         <Activity className="size-3.5" aria-hidden="true" />
       </span>
       <div className="history-head flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-        <span className="history-actor font-semibold text-foreground">{event.actor_id}</span>
+        <span className="history-actor font-semibold text-foreground" title={`Actor: ${event.actor_type}:${event.actor_id}`}>
+          {creatorLabel(event.creator)}
+        </span>
         <span className="history-action">{ACTION_LABELS[event.action] ?? event.action}</span>
         <Badge variant="outline" className="text-[10px] text-muted-foreground">
-          {event.actor_type}
+          {event.creator.via}
         </Badge>
         <span className="history-time">{formatInstant(event.created_at)}</span>
       </div>

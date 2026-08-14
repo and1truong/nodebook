@@ -19,6 +19,7 @@ import { validateParentChange } from "./graph-service";
 import * as issueRepo from "../repositories/issues";
 import * as graphRepo from "../repositories/graph";
 import { recalculateBeforeDueRemindersForIssue } from "./reminder-service";
+import { creationAttribution } from "./attribution-service";
 
 export interface IssueCreateInput {
   type: string;
@@ -73,6 +74,7 @@ export async function createIssue(ctx: Ctx, input: IssueCreateInput): Promise<Is
 
   const id = crypto.randomUUID();
   const number = await issueRepo.allocateIssueNumber(ctx.env.DB);
+  const attribution = creationAttribution(ctx);
 
   const record: IssueRecord = {
     id,
@@ -88,7 +90,9 @@ export async function createIssue(ctx: Ctx, input: IssueCreateInput): Promise<Is
     timezone,
     recurrence_rule: recurrenceRule,
     parent_id: parentId,
-    created_by: actorId(ctx),
+    created_by: attribution.actorLabel,
+    created_for: attribution.subjectEmail,
+    created_via: attribution.via,
     created_at: now,
     updated_at: now,
     version: 1,
@@ -102,7 +106,9 @@ export async function createIssue(ctx: Ctx, input: IssueCreateInput): Promise<Is
     title,
     body,
     timezone,
-    createdBy: actorId(ctx),
+    createdBy: attribution.actorLabel,
+    createdFor: attribution.subjectEmail,
+    createdVia: attribution.via,
     now,
   }, {
     priority,

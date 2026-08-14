@@ -5,6 +5,7 @@ import type { McpTokenRecord } from "../../domain/models";
 import type { McpTokenCreatedDto, McpTokenDto, OauthGrantDto } from "../../shared/contracts/issues";
 import { MCP_SCOPES, type McpScope } from "../../shared/limits";
 import { recordAudit } from "./audit-service";
+import { attributionFromCtx } from "../ctx";
 import { generateMcpToken, sha256Hex } from "../auth/token-auth";
 import * as tokenRepo from "../repositories/auth";
 import * as oauthRepo from "../repositories/oauth";
@@ -25,6 +26,8 @@ export async function createToken(
   if (scopes.length === 0) throw new ValidationError("At least one scope is required");
 
   const now = new Date().toISOString();
+  const { subject } = attributionFromCtx(ctx);
+  if (!subject) throw new ValidationError("A human owner is required to create an MCP token");
   const token = generateMcpToken();
   const hash = await sha256Hex(token);
   const record: McpTokenRecord = {
@@ -36,6 +39,8 @@ export async function createToken(
     expires_at: input.expiresInDays ? new Date(Date.now() + input.expiresInDays * 86_400_000).toISOString() : null,
     last_used_at: null,
     revoked_at: null,
+    owner_email: subject.email,
+    owner_display_name: subject.displayName,
   };
   await tokenRepo.insertToken(ctx.env.DB, {
     id: record.id,
@@ -44,6 +49,8 @@ export async function createToken(
     tokenHash: hash,
     scopesJson: record.scopes_json,
     expiresAt: record.expires_at,
+    ownerEmail: subject.email,
+    ownerDisplayName: record.owner_display_name,
     now,
   });
   await recordAudit(ctx, {

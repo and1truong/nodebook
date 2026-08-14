@@ -1,7 +1,7 @@
 /** MCP: protocol tests, one test per tool family, scopes, parity with HTTP. */
 import { describe, expect, it } from "vitest";
 import { env, SELF } from "cloudflare:test";
-import { api, createIssue, createMcpToken, mcpCall, mcpInitialize, patch, post } from "./helpers";
+import { api, createIssue, createMcpToken, mcpCall, mcpInitialize, OWNER, patch, post } from "./helpers";
 
 async function callTool(
   token: string,
@@ -20,10 +20,10 @@ async function callTool(
   return { result: JSON.parse(content) as unknown, structuredResult: toolResult.structuredContent };
 }
 
-async function setupToken(scopes: string[]): Promise<{ token: string; sessionId: string }> {
-  const { token } = await createMcpToken(scopes);
+async function setupToken(scopes: string[]): Promise<{ token: string; tokenId: string; sessionId: string }> {
+  const { token, id: tokenId } = await createMcpToken(scopes);
   const { sessionId } = await mcpInitialize(token);
-  return { token, sessionId };
+  return { token, tokenId, sessionId };
 }
 
 describe("MCP tools", () => {
@@ -33,6 +33,8 @@ describe("MCP tools", () => {
 
     const got = await callTool(token, sessionId, "get_issue", { number: issue.number });
     expect((got.result as { title: string }).title).toBe("mcp readable");
+    const gotByUuid = await callTool(token, sessionId, "get_issue", { issue_id: issue.id });
+    expect(gotByUuid.result).toMatchObject({ id: issue.id, number: issue.number });
 
     const searched = await callTool(token, sessionId, "search_issues", { query: "mcp-token-body-123" });
     expect((searched.result as { count: number }).count).toBeGreaterThanOrEqual(1);
@@ -64,6 +66,9 @@ describe("MCP tools", () => {
 
     const upcoming = await callTool(token, sessionId, "get_upcoming", { timezone: "UTC" });
     expect(Array.isArray(upcoming.result)).toBe(true);
+
+    const invalidTimezone = await callTool(token, sessionId, "get_today", { timezone: "Not/A_Timezone" });
+    expect(invalidTimezone.error?.code).toBe(-32602);
   });
 
   it("create_issue, update_issue, close_issue, complete_task (write issue)", async () => {
@@ -82,12 +87,181 @@ describe("MCP tools", () => {
 
     const closed = await callTool(token, sessionId, "close_issue", { issue_id: issue.id });
     expect((closed.result as { status: string }).status).toBe("closed");
+    const alreadyClosed = await callTool(token, sessionId, "close_issue", { issue_id: issue.number });
+    expect(alreadyClosed.error?.code).toBe(-32008);
 
     // Non-recurring complete_task on an open issue closes it.
     const fresh = await callTool(token, sessionId, "create_issue", { title: "mcp complete" });
     const freshIssue = fresh.result as { id: string };
     const completed = await callTool(token, sessionId, "complete_task", { issue_id: freshIssue.id });
     expect((completed.result as { status: string }).status).toBe("closed");
+  });
+
+  it("persists MCP actor and human owner attribution across write families", async () => {
+    const { token, tokenId, sessionId } = await setupToken([
+      "write:issue",
+      "write:comment",
+      "write:graph",
+      "write:reminder",
+      "write:attachment",
+    ]);
+    const expectedCreator = {
+      actor_type: "mcp",
+      actor_id: tokenId,
+      user_id: OWNER,
+      email: OWNER,
+      display_name: "Test Owner",
+      via: "mcp",
+    };
+
+    const created = await callTool(token, sessionId, "create_issue", { title: "attributed MCP issue" });
+    const issue = created.result as {
+      id: string;
+      number: number;
+      version: number;
+      created_by: string;
+      creator: Record<string, unknown>;
+    };
+    expect(issue.created_by).toBe(`mcp:${tokenId}`);
+    expect(issue.creator).toEqual(expectedCreator);
+    expect(created.structuredResult).toEqual(created.result);
+
+    const comment = await callTool(token, sessionId, "add_comment", {
+      issue_id: issue.id,
+      body: "attributed MCP comment",
+    });
+    expect(comment.result).toMatchObject({
+      author: `mcp:${tokenId}`,
+      author_type: "mcp",
+      creator: expectedCreator,
+    });
+
+    const child = await callTool(token, sessionId, "add_child", {
+      parent_id: issue.id,
+      title: "attributed child",
+    });
+    expect(child.result).toMatchObject({ created_by: `mcp:${tokenId}`, creator: expectedCreator });
+    const childId = (child.result as { id: string }).id;
+
+    const relationship = await callTool(token, sessionId, "link_issues", {
+      source_id: issue.id,
+      target_id: childId,
+      type: "related",
+    });
+    expect(relationship.result).toMatchObject({ created_by: `mcp:${tokenId}`, creator: expectedCreator });
+
+    const reminder = await callTool(token, sessionId, "create_reminder", {
+      issue_id: issue.id,
+      kind: "absolute",
+      trigger_at: new Date(Date.now() + 3_600_000).toISOString(),
+    });
+    expect(reminder.result).toMatchObject({ creator: expectedCreator });
+
+    const attachment = await callTool(token, sessionId, "attach_file", {
+      issue_id: issue.id,
+      filename: "attributed.txt",
+      content_type: "text/plain",
+      data: btoa("attribution"),
+    });
+    expect(attachment.result).toMatchObject({ creator: expectedCreator });
+
+    const updated = await callTool(token, sessionId, "update_issue", {
+      issue_id: issue.id,
+      expected_version: issue.version,
+      title: "attributed MCP issue updated",
+    });
+    const updatedVersion = (updated.result as { version: number }).version;
+    expect(updatedVersion).toBe(issue.version + 1);
+    await callTool(token, sessionId, "close_issue", { issue_id: issue.id });
+
+    const issueRow = await env.DB.prepare(
+      "SELECT created_by, created_for, created_via FROM issues WHERE id = ?",
+    ).bind(issue.id).first<{ created_by: string; created_for: string; created_via: string }>();
+    expect(issueRow).toEqual({ created_by: `mcp:${tokenId}`, created_for: OWNER, created_via: "mcp" });
+
+    const commentRow = await env.DB.prepare(
+      "SELECT author, author_for, author_via FROM comments WHERE issue_id = ?",
+    ).bind(issue.id).first<{ author: string; author_for: string; author_via: string }>();
+    expect(commentRow).toEqual({ author: `mcp:${tokenId}`, author_for: OWNER, author_via: "mcp" });
+
+    const audit = await env.DB.prepare(
+      `SELECT action, actor_type, actor_id, subject_email, via FROM audit_events
+       WHERE actor_type = 'mcp' AND actor_id = ?`,
+    ).bind(tokenId).all<{
+      action: string;
+      actor_type: string;
+      actor_id: string;
+      subject_email: string;
+      via: string;
+    }>();
+    expect(audit.results.map((event) => event.action)).toEqual(expect.arrayContaining([
+      "issue.create",
+      "comment.create",
+      "relationship.create",
+      "reminder.create",
+      "attachment.upload",
+      "issue.update",
+      "issue.close",
+    ]));
+    for (const event of audit.results) {
+      expect(event).toMatchObject({ actor_type: "mcp", actor_id: tokenId, subject_email: OWNER, via: "mcp" });
+    }
+  });
+
+  it("keeps direct human attribution and safely resolves historical MCP principals", async () => {
+    const human = await createIssue({ title: "direct human attribution" });
+    const humanCreator = {
+      actor_type: "human",
+      actor_id: OWNER,
+      user_id: OWNER,
+      email: OWNER,
+      display_name: "Test Owner",
+      via: "web",
+    };
+    expect(human).toMatchObject({ created_by: OWNER, creator: humanCreator });
+    const humanComment = await post(`/api/issues/${human.number}/comments`, { body: "direct human comment" });
+    expect(humanComment.body).toMatchObject({
+      author: OWNER,
+      author_type: "human",
+      creator: humanCreator,
+    });
+
+    const { token, tokenId, sessionId } = await setupToken(["write:issue"]);
+    const created = await callTool(token, sessionId, "create_issue", { title: "historical mapping" });
+    const issue = created.result as { id: string; number: number };
+
+    // Simulate a pre-0010 row, which has only the raw principal. Revocation
+    // retains the canonical connection row and therefore remains readable.
+    await env.DB.prepare("UPDATE issues SET created_for = NULL WHERE id = ?").bind(issue.id).run();
+    await post(`/api/tokens/${tokenId}/revoke`, {});
+    const revoked = (await api(`/api/issues/${issue.number}`)).body as {
+      created_by: string;
+      creator: { display_name: string; actor_id: string; email: string | null; via: string };
+    };
+    expect(revoked.created_by).toBe(`mcp:${tokenId}`);
+    expect(revoked.creator).toMatchObject({
+      actor_id: tokenId,
+      email: OWNER,
+      display_name: "Test Owner",
+      via: "mcp",
+    });
+
+    // If an old connection was hard-deleted, display attribution must not
+    // block or invalidate the content; the auditable principal stays intact.
+    await env.DB.prepare("DELETE FROM mcp_tokens WHERE id = ?").bind(tokenId).run();
+    const missing = (await api(`/api/issues/${issue.number}`)).body as {
+      created_by: string;
+      creator: { display_name: string; actor_id: string; email: string | null; via: string };
+    };
+    expect(missing.created_by).toBe(`mcp:${tokenId}`);
+    expect(missing.creator).toEqual({
+      actor_type: "mcp",
+      actor_id: tokenId,
+      user_id: null,
+      email: null,
+      display_name: "MCP client",
+      via: "mcp",
+    });
   });
 
   it("persists partial issue updates by number and UUID and returns the persisted state", async () => {
@@ -279,7 +453,7 @@ describe("MCP tools", () => {
     const { token, sessionId } = await setupToken(["write:comment", "write:graph"]);
 
     const child = await callTool(token, sessionId, "add_child", {
-      parent_id: parent.id,
+      parent_id: parent.number,
       title: "mcp child",
     });
     const childIssue = child.result as { id: string; number: number; parent_number: number | null };
@@ -290,13 +464,24 @@ describe("MCP tools", () => {
       body: "from mcp",
     });
     expect((comment.result as { body: string }).body).toBe("from mcp");
+    const emptyComment = await callTool(token, sessionId, "add_comment", {
+      issue_id: childIssue.number,
+      body: "   ",
+    });
+    expect(emptyComment.error?.code).toBe(-32602);
 
     const link = await callTool(token, sessionId, "link_issues", {
-      source_id: parent.id,
-      target_id: childIssue.id,
+      source_id: parent.number,
+      target_id: childIssue.number,
       type: "depends_on",
     });
     expect((link.result as { type: string }).type).toBe("depends_on");
+    const duplicate = await callTool(token, sessionId, "link_issues", {
+      source_id: parent.number,
+      target_id: childIssue.number,
+      type: "depends_on",
+    });
+    expect(duplicate.error?.code).toBe(-32008);
   });
 
   it("create_reminder, update_reminder (write reminder)", async () => {
@@ -316,6 +501,35 @@ describe("MCP tools", () => {
       status: "dismissed",
     });
     expect((dismissed.result as { status: string }).status).toBe("dismissed");
+    expect(dismissed.structuredResult).toEqual(dismissed.result);
+
+    for (const invalid of [
+      { reminder_id: reminder.id },
+      { reminder_id: reminder.id, status: "snoozed" },
+      { reminder_id: reminder.id, snooze_until: new Date(Date.now() + 7_200_000).toISOString() },
+      {
+        reminder_id: reminder.id,
+        status: "dismissed",
+        trigger_at: new Date(Date.now() + 7_200_000).toISOString(),
+      },
+    ]) {
+      const rejected = await callTool(token, sessionId, "update_reminder", invalid);
+      expect(rejected.error?.code).toBe(-32602);
+    }
+  });
+
+  it("validates reminder kind-specific arguments at the MCP boundary", async () => {
+    const issue = await createIssue({ title: "mcp reminder validation" });
+    const { token, sessionId } = await setupToken(["write:reminder"]);
+
+    for (const invalid of [
+      { issue_id: issue.number, kind: "absolute" },
+      { issue_id: issue.number, kind: "before_due" },
+      { issue_id: issue.number, kind: "recurring" },
+    ]) {
+      const rejected = await callTool(token, sessionId, "create_reminder", invalid);
+      expect(rejected.error?.code).toBe(-32602);
+    }
   });
 
   it("list_attachments and attach_file (read/write attachment)", async () => {
@@ -324,7 +538,7 @@ describe("MCP tools", () => {
 
     const data = btoa("mcp attachment bytes");
     const attached = await callTool(token, sessionId, "attach_file", {
-      issue_id: issue.id,
+      issue_id: issue.number,
       filename: "from-mcp.txt",
       content_type: "text/plain",
       data,
@@ -337,17 +551,25 @@ describe("MCP tools", () => {
     expect((list.result as { filename: string }[]).map((a) => a.filename)).toContain("from-mcp.txt");
   });
 
-  it("rejects attach_file above the MCP size limit", async () => {
+  it("rejects invalid and oversized attach_file data", async () => {
     const issue = await createIssue({ title: "mcp big file" });
     const { token, sessionId } = await setupToken(["write:attachment"]);
+
+    const invalid = await callTool(token, sessionId, "attach_file", {
+      issue_id: issue.id,
+      filename: "invalid.bin",
+      data: "%%%not-base64%%%",
+    });
+    expect(invalid.error?.code).toBe(-32602);
+
     const big = btoa("x".repeat(5 * 1024 * 1024 + 1024));
-    const res = await callTool(token, sessionId, "attach_file", {
+    const oversized = await callTool(token, sessionId, "attach_file", {
       issue_id: issue.id,
       filename: "big.bin",
       data: big,
     });
-    expect(res.error).toBeTruthy();
-    expect(res.error!.message).toContain("limit");
+    expect(oversized.error?.code).toBe(-32005);
+    expect(oversized.error!.message).toContain("limit");
   });
 
   it("produces equivalent audit events to HTTP mutations", async () => {

@@ -29,6 +29,7 @@ export default defineWorkersConfig(async () => {
             },
             bindings: {
               OWNER_EMAIL: "owner@test.dev",
+              OWNER_DISPLAY_NAME: "Test Owner",
               OWNER_TIMEZONE: "UTC",
               ACCESS_TEAM: "",
               ACCESS_AUD: "",

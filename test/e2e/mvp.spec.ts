@@ -717,8 +717,15 @@ test.describe.serial("MVP acceptance", () => {
     await page.goto(`/issues/${mcpIssue.number}`);
     await expect(page.getByRole("heading", { name: "Created by MCP agent" })).toBeVisible();
 
-    // …with creator attribution sourced from the MCP audit event.
-    await expect(page.locator(".issue-summary")).toContainText("mcp");
+    // …with the owning human rendered through the structured attribution,
+    // while the raw MCP principal remains available in the API payload.
+    await expect(page.locator(".issue-summary")).toContainText("NodeBook Owner via MCP");
+    const attributed = await apiJson(request, "GET", `/api/issues/${mcpIssue.number}`);
+    expect(attributed.json.created_by).toMatch(/^mcp:/);
+    expect(attributed.json.creator).toMatchObject({
+      display_name: "NodeBook Owner",
+      via: "mcp",
+    });
 
     // Revocation takes effect immediately.
     const tokens = (await apiJson(request, "GET", "/api/tokens")).json as unknown as { id: string; name: string }[];

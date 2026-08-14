@@ -4,6 +4,7 @@ import type { IssueRecord } from "../../domain/models";
 import type { IssueDto } from "../../shared/contracts/issues";
 import { getChildCounts, getIssueById, getLabelsForIssues, getNumbersByIds } from "../repositories/issues";
 import { getBacklinkCounts } from "../repositories/graph";
+import { inferStoredActor, resolveAttribution } from "./attribution-service";
 
 export async function toIssueDto(ctx: Ctx, issue: IssueRecord, labels?: string[]): Promise<IssueDto> {
   const [labelNames, childCounts, backlinkCounts, numbers] = await Promise.all([
@@ -12,7 +13,7 @@ export async function toIssueDto(ctx: Ctx, issue: IssueRecord, labels?: string[]
     getBacklinkCounts(ctx.env.DB, [issue.id]),
     issue.parent_id ? getNumbersByIds(ctx.env.DB, [issue.parent_id]) : Promise.resolve(new Map<string, number>()),
   ]);
-  return toIssueDtoWith(issue, labelNames, childCounts.get(issue.id) ?? 0, backlinkCounts.get(issue.id) ?? 0, numbers.get(issue.parent_id ?? "") ?? null);
+  return toIssueDtoWith(ctx, issue, labelNames, childCounts.get(issue.id) ?? 0, backlinkCounts.get(issue.id) ?? 0, numbers.get(issue.parent_id ?? "") ?? null);
 }
 
 /** Batch DTO assembly for a list of issues (single round of label/count queries). */
@@ -28,24 +29,32 @@ export async function toIssueDtos(ctx: Ctx, issues: IssueRecord[]): Promise<Issu
       issues.map((i) => i.parent_id).filter((p): p is string => p !== null),
     ),
   ]);
-  return issues.map((issue) =>
+  return Promise.all(issues.map((issue) =>
     toIssueDtoWith(
+      ctx,
       issue,
       labelsByIssue.get(issue.id) ?? [],
       childCounts.get(issue.id) ?? 0,
       backlinkCounts.get(issue.id) ?? 0,
       issue.parent_id ? (numbers.get(issue.parent_id) ?? null) : null,
     ),
-  );
+  ));
 }
 
-function toIssueDtoWith(
+async function toIssueDtoWith(
+  ctx: Ctx,
   issue: IssueRecord,
   labels: string[],
   childCount: number,
   backlinkCount: number,
   parentNumber: number | null,
-): IssueDto {
+): Promise<IssueDto> {
+  const actor = inferStoredActor(issue.created_by);
+  const creator = await resolveAttribution(ctx, {
+    ...actor,
+    subjectEmail: issue.created_for,
+    via: issue.created_via,
+  });
   return {
     id: issue.id,
     number: issue.number,
@@ -63,6 +72,7 @@ function toIssueDtoWith(
     parent_id: issue.parent_id,
     parent_number: parentNumber,
     created_by: issue.created_by,
+    creator,
     created_at: issue.created_at,
     updated_at: issue.updated_at,
     version: issue.version,

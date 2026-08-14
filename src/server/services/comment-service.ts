@@ -8,6 +8,7 @@ import { recordAudit } from "./audit-service";
 import { refreshCommentReferences } from "./reference-service";
 import { indexComment, deleteIndexEntry } from "./search-service";
 import * as commentRepo from "../repositories/issues";
+import { creationAttribution, resolveAttribution } from "./attribution-service";
 
 export async function addComment(ctx: Ctx, issueRef: string, body: string): Promise<CommentDto> {
   const issue = await commentRepo.getIssueByRef(ctx.env.DB, issueRef);
@@ -15,12 +16,15 @@ export async function addComment(ctx: Ctx, issueRef: string, body: string): Prom
   const trimmed = validateCommentBody(body);
 
   const now = new Date().toISOString();
+  const attribution = creationAttribution(ctx);
   const record: CommentRecord = {
     id: crypto.randomUUID(),
     issue_id: issue.id,
     body: trimmed,
-    author: actorId(ctx),
+    author: attribution.actorLabel,
     author_type: ctx.actor.type,
+    author_for: attribution.subjectEmail,
+    author_via: attribution.via,
     edited_at: null,
     created_at: now,
     updated_at: now,
@@ -31,6 +35,8 @@ export async function addComment(ctx: Ctx, issueRef: string, body: string): Prom
     body: trimmed,
     author: record.author,
     authorType: record.author_type,
+    authorFor: record.author_for,
+    authorVia: record.author_via ?? attribution.via,
     now,
   });
   await refreshCommentReferences(ctx, record.id, trimmed);
@@ -41,7 +47,7 @@ export async function addComment(ctx: Ctx, issueRef: string, body: string): Prom
     entityId: record.id,
     after: { issue_id: issue.id, issue_number: issue.number, body: trimmed },
   });
-  return toDto(record, issue.number);
+  return toDto(ctx, record, issue.number);
 }
 
 export async function updateComment(ctx: Ctx, commentId: string, body: string): Promise<CommentDto> {
@@ -66,21 +72,21 @@ export async function updateComment(ctx: Ctx, commentId: string, body: string): 
 
   const updated = await commentRepo.getCommentById(ctx.env.DB, commentId);
   if (!updated) throw new NotFoundError("Comment not found");
-  return toDto(updated, issue.number);
+  return toDto(ctx, updated, issue.number);
 }
 
 export async function listComments(ctx: Ctx, issueRef: string): Promise<CommentDto[]> {
   const issue = await commentRepo.getIssueByRef(ctx.env.DB, issueRef);
   if (!issue) throw new NotFoundError(`Issue ${issueRef} not found`);
   const records = await commentRepo.listCommentsByIssue(ctx.env.DB, issue.id);
-  return records.map((r) => toDto(r, issue.number));
+  return Promise.all(records.map((r) => toDto(ctx, r, issue.number)));
 }
 
 export async function getComment(ctx: Ctx, commentId: string): Promise<CommentDto> {
   const record = await commentRepo.getCommentById(ctx.env.DB, commentId);
   if (!record) throw new NotFoundError("Comment not found");
   const issue = await commentRepo.getIssueById(ctx.env.DB, record.issue_id);
-  return toDto(record, issue?.number ?? 0);
+  return toDto(ctx, record, issue?.number ?? 0);
 }
 
 function validateCommentBody(body: string): string {
@@ -90,7 +96,13 @@ function validateCommentBody(body: string): string {
   return trimmed;
 }
 
-function toDto(record: CommentRecord, issueNumber: number): CommentDto {
+async function toDto(ctx: Ctx, record: CommentRecord, issueNumber: number): Promise<CommentDto> {
+  const creator = await resolveAttribution(ctx, {
+    actorType: record.author_type,
+    actorId: record.author,
+    subjectEmail: record.author_for,
+    via: record.author_via,
+  });
   return {
     id: record.id,
     issue_id: record.issue_id,
@@ -98,14 +110,11 @@ function toDto(record: CommentRecord, issueNumber: number): CommentDto {
     body: record.body,
     author: record.author,
     author_type: record.author_type,
+    creator,
     edited_at: record.edited_at,
     created_at: record.created_at,
     updated_at: record.updated_at,
   };
-}
-
-function actorId(ctx: Ctx): string {
-  return ctx.actor.type === "human" ? ctx.actor.id : `${ctx.actor.type}:${ctx.actor.id}`;
 }
 
 export { deleteIndexEntry };

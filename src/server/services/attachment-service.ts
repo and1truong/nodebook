@@ -17,6 +17,7 @@ import { recordAudit } from "./audit-service";
 import { indexAttachment, deleteIndexEntry } from "./search-service";
 import * as fileRepo from "../repositories/files";
 import { getCommentById, getIssueById } from "../repositories/issues";
+import { creationAttribution, inferStoredActor, resolveAttribution } from "./attribution-service";
 
 // ---------------------------------------------------------------------------
 // Upload
@@ -57,6 +58,7 @@ export async function uploadAttachment(ctx: Ctx, input: UploadInput): Promise<At
   }
 
   const now = new Date().toISOString();
+  const attribution = creationAttribution(ctx);
   const record: AttachmentRecord = {
     id: crypto.randomUUID(),
     owner_type: input.ownerType,
@@ -67,7 +69,9 @@ export async function uploadAttachment(ctx: Ctx, input: UploadInput): Promise<At
     checksum,
     r2_key: r2Key,
     status: "active",
-    uploaded_by: actorId(ctx),
+    uploaded_by: attribution.actorLabel,
+    uploaded_for: attribution.subjectEmail,
+    uploaded_via: attribution.via,
     created_at: now,
     deleted_at: null,
   };
@@ -81,6 +85,8 @@ export async function uploadAttachment(ctx: Ctx, input: UploadInput): Promise<At
     checksum,
     r2Key,
     uploadedBy: record.uploaded_by,
+    uploadedFor: record.uploaded_for,
+    uploadedVia: record.uploaded_via ?? attribution.via,
     now,
   });
 
@@ -127,7 +133,7 @@ export async function uploadAttachment(ctx: Ctx, input: UploadInput): Promise<At
       checksum,
     },
   });
-  return toDto(record);
+  return toDto(ctx, record);
 }
 
 // ---------------------------------------------------------------------------
@@ -138,12 +144,12 @@ export async function getAttachment(ctx: Ctx, attachmentId: string): Promise<Att
   const record = await fileRepo.getAttachmentById(ctx.env.DB, attachmentId);
   if (!record) throw new NotFoundError("Attachment not found");
   if (record.status !== "active") throw new NotFoundError("Attachment not found");
-  return toDto(record);
+  return toDto(ctx, record);
 }
 
 export async function listAttachments(ctx: Ctx, ownerType: AttachmentOwnerType, ownerId: string): Promise<AttachmentDto[]> {
   const records = await fileRepo.listAttachmentsForOwner(ctx.env.DB, ownerType, ownerId);
-  return records.map(toDto);
+  return Promise.all(records.map((record) => toDto(ctx, record)));
 }
 
 export interface ContentRange {
@@ -289,7 +295,12 @@ function parseRange(header: string | null, size: number): { offset: number; leng
   return { offset: start, length: end - start + 1 };
 }
 
-function toDto(record: AttachmentRecord): AttachmentDto {
+async function toDto(ctx: Ctx, record: AttachmentRecord): Promise<AttachmentDto> {
+  const creator = await resolveAttribution(ctx, {
+    ...inferStoredActor(record.uploaded_by),
+    subjectEmail: record.uploaded_for,
+    via: record.uploaded_via,
+  });
   return {
     id: record.id,
     owner_type: record.owner_type,
@@ -299,11 +310,8 @@ function toDto(record: AttachmentRecord): AttachmentDto {
     size: record.size,
     checksum: record.checksum,
     status: record.status,
+    creator,
     created_at: record.created_at,
     url: `/api/attachments/${record.id}/content`,
   };
-}
-
-function actorId(ctx: Ctx): string {
-  return ctx.actor.type === "human" ? ctx.actor.id : `${ctx.actor.type}:${ctx.actor.id}`;
 }

@@ -12,6 +12,8 @@
 	"vars": {
 		// The single human owner of the workspace.
 		"OWNER_EMAIL": "owner@example.com",
+		// Friendly creator label. Email is used when empty or omitted.
+		"OWNER_DISPLAY_NAME": "NodeBook Owner",
 		"OWNER_TIMEZONE": "UTC",
 		// Cloudflare Access. When both ACCESS_TEAM and ACCESS_AUD are set, every
 		// web/API request must present a valid Access JWT whose email matches

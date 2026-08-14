@@ -4,10 +4,13 @@
  * McpSession Durable Object; tool execution happens with the DO's bindings.
  */
 import {
+  JSONRPC_CONFLICT,
   JSONRPC_INTERNAL_ERROR,
+  JSONRPC_INVALID_PARAMS,
   JSONRPC_INVALID_REQUEST,
   JSONRPC_METHOD_NOT_FOUND,
   JSONRPC_NOT_FOUND,
+  JSONRPC_PAYLOAD_TOO_LARGE,
   JSONRPC_SESSION_NOT_INITIALIZED,
   JSONRPC_VERSION_CONFLICT,
 } from "../domain/errors";
@@ -116,6 +119,15 @@ export async function handleMessage(
         }
         if (e.code === "not_found") {
           return errorResponse(message.id, JSONRPC_NOT_FOUND, e.message);
+        }
+        if (e.code === "validation_error") {
+          return errorResponse(message.id, JSONRPC_INVALID_PARAMS, e.message);
+        }
+        if (e.code === "payload_too_large") {
+          return errorResponse(message.id, JSONRPC_PAYLOAD_TOO_LARGE, e.message);
+        }
+        if (e.code === "conflict") {
+          return errorResponse(message.id, JSONRPC_CONFLICT, e.message);
         }
         return errorResponse(message.id, JSONRPC_INTERNAL_ERROR, `${e.code}: ${e.message}`);
       }

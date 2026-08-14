@@ -39,13 +39,22 @@ export async function getClientByClientId(db: D1Database, clientId: string): Pro
  */
 export async function insertGrant(
   db: D1Database,
-  input: { id: string; clientId: string; scopesJson: string; now: string },
+  input: {
+    id: string;
+    clientId: string;
+    scopesJson: string;
+    ownerEmail: string;
+    ownerDisplayName: string | null;
+    now: string;
+  },
 ): Promise<boolean> {
   const res = await db
     .prepare(
-      "INSERT OR IGNORE INTO oauth_grants (id, client_id, scopes_json, created_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, NULL, NULL)",
+      `INSERT OR IGNORE INTO oauth_grants
+        (id, client_id, scopes_json, owner_email, owner_display_name, created_at, last_used_at, revoked_at)
+       VALUES (?, ?, ?, ?, ?, ?, NULL, NULL)`,
     )
-    .bind(input.id, input.clientId, input.scopesJson, input.now)
+    .bind(input.id, input.clientId, input.scopesJson, input.ownerEmail, input.ownerDisplayName, input.now)
     .run();
   return res.meta.changes > 0;
 }
@@ -74,40 +83,36 @@ export interface GrantWithClient {
 export async function listGrantsWithClients(db: D1Database): Promise<GrantWithClient[]> {
   const res = await db
     .prepare(
-      `SELECT g.id, g.client_id, g.scopes_json, g.created_at, g.last_used_at, g.revoked_at, c.client_id AS client_id, c.client_name
+      `SELECT g.id, g.client_id AS grant_client_id, g.scopes_json, g.owner_email, g.owner_display_name,
+              g.created_at, g.last_used_at, g.revoked_at, c.client_id, c.client_name
        FROM oauth_grants g JOIN oauth_clients c ON c.id = g.client_id
        ORDER BY g.created_at DESC, g.id DESC`,
     )
     .all<Record<string, unknown>>();
-  return res.results.map((row) => ({
-    grant: {
-      id: String(row.id),
-      client_id: String(row.client_id),
-      scopes_json: String(row.scopes_json),
-      created_at: String(row.created_at),
-      last_used_at: (row.last_used_at as string | null) ?? null,
-      revoked_at: (row.revoked_at as string | null) ?? null,
-    },
-    client_id: String(row.client_id),
-    client_name: String(row.client_name),
-  }));
+  return res.results.map(grantWithClientFromRow);
 }
 
 export async function getGrantWithClient(db: D1Database, id: string): Promise<GrantWithClient | null> {
   const row = await db
     .prepare(
-      `SELECT g.id, g.client_id, g.scopes_json, g.created_at, g.last_used_at, g.revoked_at, c.client_id AS client_id, c.client_name
+      `SELECT g.id, g.client_id AS grant_client_id, g.scopes_json, g.owner_email, g.owner_display_name,
+              g.created_at, g.last_used_at, g.revoked_at, c.client_id, c.client_name
        FROM oauth_grants g JOIN oauth_clients c ON c.id = g.client_id
        WHERE g.id = ?`,
     )
     .bind(id)
     .first<Record<string, unknown>>();
-  if (!row) return null;
+  return row ? grantWithClientFromRow(row) : null;
+}
+
+function grantWithClientFromRow(row: Record<string, unknown>): GrantWithClient {
   return {
     grant: {
       id: String(row.id),
-      client_id: String(row.client_id),
+      client_id: String(row.grant_client_id),
       scopes_json: String(row.scopes_json),
+      owner_email: (row.owner_email as string | null) ?? null,
+      owner_display_name: (row.owner_display_name as string | null) ?? null,
       created_at: String(row.created_at),
       last_used_at: (row.last_used_at as string | null) ?? null,
       revoked_at: (row.revoked_at as string | null) ?? null,
@@ -307,6 +312,8 @@ function rowToGrant(row: Record<string, unknown>): OauthGrantRecord {
     id: String(row.id),
     client_id: String(row.client_id),
     scopes_json: String(row.scopes_json),
+    owner_email: (row.owner_email as string | null) ?? null,
+    owner_display_name: (row.owner_display_name as string | null) ?? null,
     created_at: String(row.created_at),
     last_used_at: (row.last_used_at as string | null) ?? null,
     revoked_at: (row.revoked_at as string | null) ?? null,

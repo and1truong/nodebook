@@ -143,11 +143,23 @@ export async function isInSubtree(db: D1Database, rootId: string, issueId: strin
 
 export async function insertRelationship(
   db: D1Database,
-  input: { id: string; sourceId: string; targetId: string; type: string; createdBy: string; now: string },
+  input: {
+    id: string;
+    sourceId: string;
+    targetId: string;
+    type: string;
+    createdBy: string;
+    createdFor: string | null;
+    createdVia: "web" | "mcp" | "system";
+    now: string;
+  },
 ): Promise<void> {
   await db
-    .prepare("INSERT INTO relationships (id, source_id, target_id, type, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-    .bind(input.id, input.sourceId, input.targetId, input.type, input.createdBy, input.now)
+    .prepare(
+      `INSERT INTO relationships (id, source_id, target_id, type, created_by, created_for, created_via, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(input.id, input.sourceId, input.targetId, input.type, input.createdBy, input.createdFor, input.createdVia, input.now)
     .run();
 }
 
@@ -157,15 +169,7 @@ export async function deleteRelationship(db: D1Database, id: string): Promise<vo
 
 export async function getRelationshipById(db: D1Database, id: string): Promise<RelationshipRecord | null> {
   const row = await db.prepare("SELECT * FROM relationships WHERE id = ?").bind(id).first<Record<string, unknown>>();
-  if (!row) return null;
-  return {
-    id: String(row.id),
-    source_id: String(row.source_id),
-    target_id: String(row.target_id),
-    type: row.type as RelationshipRecord["type"],
-    created_by: String(row.created_by),
-    created_at: String(row.created_at),
-  };
+  return row ? rowToRelationship(row) : null;
 }
 
 export async function findRelationship(
@@ -178,15 +182,7 @@ export async function findRelationship(
     .prepare("SELECT * FROM relationships WHERE source_id = ? AND target_id = ? AND type = ?")
     .bind(sourceId, targetId, type)
     .first<Record<string, unknown>>();
-  if (!row) return null;
-  return {
-    id: String(row.id),
-    source_id: String(row.source_id),
-    target_id: String(row.target_id),
-    type: row.type as RelationshipRecord["type"],
-    created_by: String(row.created_by),
-    created_at: String(row.created_at),
-  };
+  return row ? rowToRelationship(row) : null;
 }
 
 export async function listRelationships(db: D1Database, issueId: string): Promise<RelationshipRecord[]> {
@@ -196,14 +192,7 @@ export async function listRelationships(db: D1Database, issueId: string): Promis
     )
     .bind(issueId, issueId)
     .all<Record<string, unknown>>();
-  return res.results.map((row) => ({
-    id: String(row.id),
-    source_id: String(row.source_id),
-    target_id: String(row.target_id),
-    type: row.type as RelationshipRecord["type"],
-    created_by: String(row.created_by),
-    created_at: String(row.created_at),
-  }));
+  return res.results.map(rowToRelationship);
 }
 
 export async function listRelatedIssues(db: D1Database, issueId: string): Promise<RelationshipRecord[]> {
@@ -211,14 +200,20 @@ export async function listRelatedIssues(db: D1Database, issueId: string): Promis
     .prepare("SELECT * FROM relationships WHERE source_id = ? OR target_id = ?")
     .bind(issueId, issueId)
     .all<Record<string, unknown>>();
-  return res.results.map((row) => ({
+  return res.results.map(rowToRelationship);
+}
+
+function rowToRelationship(row: Record<string, unknown>): RelationshipRecord {
+  return {
     id: String(row.id),
     source_id: String(row.source_id),
     target_id: String(row.target_id),
     type: row.type as RelationshipRecord["type"],
     created_by: String(row.created_by),
+    created_for: (row.created_for as string | null) ?? null,
+    created_via: (row.created_via as RelationshipRecord["created_via"]) ?? null,
     created_at: String(row.created_at),
-  }));
+  };
 }
 
 // ---------------------------------------------------------------------------

@@ -4,13 +4,35 @@ import type { McpTokenRecord } from "../../domain/models";
 
 export async function insertToken(
   db: D1Database,
-  input: { id: string; name: string; prefix: string; tokenHash: string; scopesJson: string; expiresAt: string | null; now: string },
+  input: {
+    id: string;
+    name: string;
+    prefix: string;
+    tokenHash: string;
+    scopesJson: string;
+    expiresAt: string | null;
+    ownerEmail: string;
+    ownerDisplayName: string | null;
+    now: string;
+  },
 ): Promise<void> {
   await db
     .prepare(
-      "INSERT INTO mcp_tokens (id, name, prefix, token_hash, scopes_json, created_at, expires_at, last_used_at, revoked_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL)",
+      `INSERT INTO mcp_tokens (id, name, prefix, token_hash, scopes_json, created_at, expires_at,
+        last_used_at, revoked_at, owner_email, owner_display_name)
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?, ?)`,
     )
-    .bind(input.id, input.name, input.prefix, input.tokenHash, input.scopesJson, input.now, input.expiresAt)
+    .bind(
+      input.id,
+      input.name,
+      input.prefix,
+      input.tokenHash,
+      input.scopesJson,
+      input.now,
+      input.expiresAt,
+      input.ownerEmail,
+      input.ownerDisplayName,
+    )
     .run();
 }
 
@@ -40,5 +62,7 @@ function rowToToken(row: Record<string, unknown>): McpTokenRecord {
     expires_at: (row.expires_at as string | null) ?? null,
     last_used_at: (row.last_used_at as string | null) ?? null,
     revoked_at: (row.revoked_at as string | null) ?? null,
+    owner_email: (row.owner_email as string | null) ?? null,
+    owner_display_name: (row.owner_display_name as string | null) ?? null,
   };
 }

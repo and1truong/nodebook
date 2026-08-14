@@ -29,6 +29,7 @@ import {
 } from "../repositories/graph";
 import { getIssueById, getIssueByNumber, getIssueByRef, getIssueLabels, getIssuesByIds, getNumbersByIds, listIssues } from "../repositories/issues";
 import { toIssueDto, toIssueDtos } from "./dto";
+import { creationAttribution, inferStoredActor, resolveAttribution } from "./attribution-service";
 
 // ---------------------------------------------------------------------------
 // Hierarchy
@@ -150,12 +151,15 @@ export async function addRelationship(ctx: Ctx, sourceId: string, targetId: stri
   if (inverse) throw new ConflictError("Inverse relationship already exists");
 
   const now = new Date().toISOString();
+  const attribution = creationAttribution(ctx);
   const record: RelationshipRecord = {
     id: crypto.randomUUID(),
     source_id: sourceId,
     target_id: targetId,
     type,
-    created_by: actorId(ctx),
+    created_by: attribution.actorLabel,
+    created_for: attribution.subjectEmail,
+    created_via: attribution.via,
     created_at: now,
   };
   await insertRelationship(ctx.env.DB, {
@@ -164,6 +168,8 @@ export async function addRelationship(ctx: Ctx, sourceId: string, targetId: stri
     targetId,
     type,
     createdBy: record.created_by,
+    createdFor: record.created_for,
+    createdVia: record.created_via ?? attribution.via,
     now,
   });
   await recordAudit(ctx, {
@@ -196,7 +202,7 @@ export async function getRelationshipsDtos(ctx: Ctx, issueId: string): Promise<R
   }
   const numbers = await getNumbersByIds(ctx.env.DB, [...ids]);
   const titles = await getTitlesByIds(ctx, [...ids]);
-  return records.map((r) => ({
+  return Promise.all(records.map(async (r) => ({
     id: r.id,
     source_id: r.source_id,
     source_number: numbers.get(r.source_id) ?? 0,
@@ -206,8 +212,9 @@ export async function getRelationshipsDtos(ctx: Ctx, issueId: string): Promise<R
     target_title: titles.get(r.target_id) ?? "",
     type: r.type,
     created_by: r.created_by,
+    creator: await relationshipCreator(ctx, r),
     created_at: r.created_at,
-  }));
+  })));
 }
 
 /** Issues related to `issueId` via any relationship (for the wiki related section). */
@@ -220,9 +227,9 @@ export async function getRelatedIssueDtos(ctx: Ctx, issueId: string): Promise<Re
   }
   const numbers = await getNumbersByIds(ctx.env.DB, [...ids]);
   const titles = await getTitlesByIds(ctx, [...ids]);
-  return records
+  const dtos = records
     .filter((r) => r.source_id !== issueId || r.target_id !== issueId)
-    .map((r) => ({
+    .map(async (r) => ({
       id: r.id,
       source_id: r.source_id,
       source_number: numbers.get(r.source_id) ?? 0,
@@ -232,8 +239,10 @@ export async function getRelatedIssueDtos(ctx: Ctx, issueId: string): Promise<Re
       target_title: titles.get(r.target_id) ?? "",
       type: r.type,
       created_by: r.created_by,
+      creator: await relationshipCreator(ctx, r),
       created_at: r.created_at,
     }));
+  return Promise.all(dtos);
 }
 
 async function getTitlesByIds(ctx: Ctx, ids: string[]): Promise<Map<string, string>> {
@@ -262,8 +271,17 @@ async function toRelationshipDto(ctx: Ctx, record: RelationshipRecord): Promise<
     target_title: target?.title ?? "",
     type: record.type,
     created_by: record.created_by,
+    creator: await relationshipCreator(ctx, record),
     created_at: record.created_at,
   };
+}
+
+async function relationshipCreator(ctx: Ctx, record: RelationshipRecord) {
+  return resolveAttribution(ctx, {
+    ...inferStoredActor(record.created_by),
+    subjectEmail: record.created_for,
+    via: record.created_via,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -358,10 +376,6 @@ export async function getBreadcrumbs(ctx: Ctx, issueId: string): Promise<{ id: s
     guard += 1;
   }
   return chain;
-}
-
-function actorId(ctx: Ctx): string {
-  return ctx.actor.type === "human" ? ctx.actor.id : `${ctx.actor.type}:${ctx.actor.id}`;
 }
 
 /** Resolve a `ref` (uuid or number) to a full issue or throw. */

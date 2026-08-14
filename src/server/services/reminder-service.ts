@@ -14,6 +14,7 @@ import { recordAudit } from "./audit-service";
 import { deliverNotification } from "./notification-service";
 import * as planningRepo from "../repositories/planning";
 import { getIssueById, getIssueByRef } from "../repositories/issues";
+import { creationAttribution, inferStoredActor, resolveAttribution } from "./attribution-service";
 
 export interface ReminderCreateInput {
   kind: "absolute" | "before_due" | "recurring";
@@ -65,6 +66,7 @@ export async function createReminder(ctx: Ctx, issueRef: string, input: Reminder
     }
   }
 
+  const attribution = creationAttribution(ctx);
   const reminder: ReminderRecord = {
     id: crypto.randomUUID(),
     issue_id: issue.id,
@@ -75,7 +77,9 @@ export async function createReminder(ctx: Ctx, issueRef: string, input: Reminder
     timezone: tz,
     status: "active",
     snooze_until: null,
-    created_by: actorId(ctx),
+    created_by: attribution.actorLabel,
+    created_for: attribution.subjectEmail,
+    created_via: attribution.via,
     created_at: now,
     last_triggered_at: null,
   };
@@ -89,6 +93,8 @@ export async function createReminder(ctx: Ctx, issueRef: string, input: Reminder
     recurrenceRule,
     timezone: tz,
     createdBy: reminder.created_by,
+    createdFor: reminder.created_for,
+    createdVia: reminder.created_via ?? attribution.via,
     now,
   });
 
@@ -115,7 +121,7 @@ export async function createReminder(ctx: Ctx, issueRef: string, input: Reminder
     },
   });
 
-  return toDto(reminder);
+  return toDto(ctx, reminder);
 }
 
 // ---------------------------------------------------------------------------
@@ -126,13 +132,13 @@ export async function listReminders(ctx: Ctx, issueRef: string): Promise<Reminde
   const issue = await getIssueByRef(ctx.env.DB, issueRef);
   if (!issue) throw new NotFoundError(`Issue ${issueRef} not found`);
   const reminders = await planningRepo.listRemindersForIssue(ctx.env.DB, issue.id);
-  return reminders.map(toDto);
+  return Promise.all(reminders.map((reminder) => toDto(ctx, reminder)));
 }
 
 export async function getReminder(ctx: Ctx, reminderId: string): Promise<ReminderDto> {
   const reminder = await planningRepo.getReminderById(ctx.env.DB, reminderId);
   if (!reminder) throw new NotFoundError("Reminder not found");
-  return toDto(reminder);
+  return toDto(ctx, reminder);
 }
 
 export interface ReminderUpdateInput {
@@ -144,7 +150,20 @@ export interface ReminderUpdateInput {
 export async function updateReminder(ctx: Ctx, reminderId: string, input: ReminderUpdateInput): Promise<ReminderDto> {
   const reminder = await planningRepo.getReminderById(ctx.env.DB, reminderId);
   if (!reminder) throw new NotFoundError("Reminder not found");
-  const before = toDto(reminder);
+  const before = await toDto(ctx, reminder);
+
+  if (input.status === undefined && input.snooze_until === undefined && input.trigger_at === undefined) {
+    throw new ValidationError("At least one reminder field must be provided");
+  }
+  if (input.status === "snoozed" && input.snooze_until === undefined) {
+    throw new ValidationError("snooze_until is required when snoozing");
+  }
+  if (input.snooze_until !== undefined && input.status !== "snoozed") {
+    throw new ValidationError("snooze_until requires status snoozed");
+  }
+  if (input.trigger_at !== undefined && input.status !== undefined && input.status !== "active") {
+    throw new ValidationError("trigger_at cannot be combined with this status");
+  }
 
   const fields: planningRepo.ReminderUpdate = {};
 
@@ -178,7 +197,8 @@ export async function updateReminder(ctx: Ctx, reminderId: string, input: Remind
     });
   }
 
-  await planningRepo.updateReminder(ctx.env.DB, reminderId, fields);
+  const updated = await planningRepo.updateReminder(ctx.env.DB, reminderId, fields);
+  if (!updated) throw new NotFoundError("Reminder not found");
   await recordAudit(ctx, {
     action: "reminder.update",
     entityType: "reminder",
@@ -187,9 +207,7 @@ export async function updateReminder(ctx: Ctx, reminderId: string, input: Remind
     after: fields,
   });
 
-  const updated = await planningRepo.getReminderById(ctx.env.DB, reminderId);
-  if (!updated) throw new NotFoundError("Reminder not found");
-  return toDto(updated);
+  return toDto(ctx, updated);
 }
 
 // ---------------------------------------------------------------------------
@@ -358,7 +376,12 @@ function reminderBody(reminder: ReminderRecord, occurrence: ReminderOccurrenceRe
   }
 }
 
-function toDto(r: ReminderRecord): ReminderDto {
+async function toDto(ctx: Ctx, r: ReminderRecord): Promise<ReminderDto> {
+  const creator = await resolveAttribution(ctx, {
+    ...inferStoredActor(r.created_by),
+    subjectEmail: r.created_for,
+    via: r.created_via,
+  });
   return {
     id: r.id,
     issue_id: r.issue_id,
@@ -369,11 +392,8 @@ function toDto(r: ReminderRecord): ReminderDto {
     timezone: r.timezone,
     status: r.status,
     snooze_until: r.snooze_until,
+    creator,
     created_at: r.created_at,
     last_triggered_at: r.last_triggered_at,
   };
-}
-
-function actorId(ctx: Ctx): string {
-  return ctx.actor.type === "human" ? ctx.actor.id : `${ctx.actor.type}:${ctx.actor.id}`;
 }

@@ -24,7 +24,16 @@ export interface McpTool {
 }
 
 export function toCtx(ctx: ToolContext): Ctx {
-  return { env: ctx.env, actor: { type: "mcp", id: ctx.identity.tokenId }, requestId: ctx.requestId };
+  const email = ctx.identity.ownerEmail;
+  return {
+    env: ctx.env,
+    actor: { type: "mcp", id: ctx.identity.tokenId },
+    subject: email
+      ? { id: email, email, displayName: ctx.identity.ownerDisplayName }
+      : null,
+    via: "mcp",
+    requestId: ctx.requestId,
+  };
 }
 
 export function defineTool<TSchema extends z.ZodTypeAny>(tool: {

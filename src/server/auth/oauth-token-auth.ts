@@ -5,7 +5,7 @@
  * stable across refresh-token rotations.
  */
 import type { Env } from "../../env";
-import { oauthResource } from "../../env";
+import { oauthResource, workspaceOwnerEmail } from "../../env";
 import { AuthError } from "../../domain/errors";
 import type { McpScope } from "../../shared/limits";
 import { sha256Hex } from "./token-auth";
@@ -16,7 +16,7 @@ export async function authenticateOauthAccessToken(env: Env, token: string, requ
   const hash = await sha256Hex(token);
   const row = await env.DB.prepare(
     `SELECT t.kind, t.grant_id, t.scopes_json, t.resource, t.expires_at, t.revoked_at,
-            g.revoked_at AS grant_revoked_at, c.client_name
+            g.revoked_at AS grant_revoked_at, g.owner_email, g.owner_display_name, c.client_name
      FROM oauth_tokens t
      JOIN oauth_grants g ON g.id = t.grant_id
      JOIN oauth_clients c ON c.id = t.client_id
@@ -32,6 +32,8 @@ export async function authenticateOauthAccessToken(env: Env, token: string, requ
       revoked_at: string | null;
       grant_revoked_at: string | null;
       client_name: string;
+      owner_email: string | null;
+      owner_display_name: string | null;
     }>();
   if (!row) throw new AuthError("Unknown token");
   if (row.kind !== "access") throw new AuthError("Invalid token type");
@@ -64,5 +66,14 @@ export async function authenticateOauthAccessToken(env: Env, token: string, requ
     scopes = [];
   }
 
-  return { type: "mcp", kind: "oauth", tokenId: row.grant_id, name: row.client_name, scopes };
+  const ownerEmail = row.owner_email ?? workspaceOwnerEmail(env);
+  return {
+    type: "mcp",
+    kind: "oauth",
+    tokenId: row.grant_id,
+    name: row.client_name,
+    scopes,
+    ownerEmail: ownerEmail || null,
+    ownerDisplayName: row.owner_display_name ?? env.OWNER_DISPLAY_NAME?.trim() ?? null,
+  };
 }

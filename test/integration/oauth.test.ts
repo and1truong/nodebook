@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { SELF } from "cloudflare:test";
-import { api, mcpCall, mcpInitialize, post, testEnv } from "./helpers";
+import { api, mcpCall, mcpInitialize, OWNER, post, testEnv } from "./helpers";
 import { sha256Hex } from "../../src/server/auth/token-auth";
 import { OAUTH_ACCESS_TOKEN_PREFIX, pkceChallenge } from "../../src/server/services/oauth-service";
 
@@ -524,16 +524,24 @@ describe("grant revocation", () => {
       sessionId,
     );
     expect(res.body.error).toBeUndefined();
-    const dto = JSON.parse((res.body.result as { content: { text: string }[] }).content[0]!.text) as { number: number };
+    const dto = JSON.parse((res.body.result as { content: { text: string }[] }).content[0]!.text) as {
+      number: number;
+      created_by: string;
+      creator: { actor_id: string; email: string | null; display_name: string; via: string };
+    };
+    expect(dto.created_by).toBe(`mcp:${dto.creator.actor_id}`);
+    expect(dto.creator).toMatchObject({ email: OWNER, display_name: "Test Owner", via: "mcp" });
 
     const history = (await api(`/api/issues/${dto.number}/history`)).body as {
       actor_type: string;
       actor_id: string;
+      creator: { email: string | null; display_name: string; via: string };
       action: string;
     }[];
     const create = history.find((e) => e.action === "issue.create")!;
     expect(create.actor_type).toBe("mcp");
     expect(create.actor_id).toMatch(/^[0-9a-f-]{36}$/);
+    expect(create.creator).toMatchObject({ email: OWNER, display_name: "Test Owner", via: "mcp" });
 
     // The same grant id appears in the owner settings list.
     const grants = (await api("/api/tokens/oauth-grants")).body as { id: string }[];
