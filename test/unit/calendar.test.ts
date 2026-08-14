@@ -9,11 +9,14 @@ import {
   navigate,
   reconcileCalendarItems,
   reschedulePatch,
+  startOfNextMonth,
+  startOfNextWeek,
   startOfWeek,
   viewLabel,
   viewRange,
   weekDays,
   weekday,
+  weekdayHeaders,
 } from "../../src/client/calendar";
 
 describe("calendar arithmetic", () => {
@@ -69,6 +72,67 @@ describe("calendar arithmetic", () => {
       "2025-02-13", "2025-02-14", "2025-02-15",
     ]);
     expect(weekDays("2025-01-01")[0]).toBe("2024-12-29");
+  });
+
+  it("rotates week starts to the configured day", () => {
+    // Monday-first week containing Wednesday 2025-02-12.
+    expect(startOfWeek("2025-02-12", "monday")).toBe("2025-02-10");
+    expect(startOfWeek("2025-02-10", "monday")).toBe("2025-02-10"); // already the start
+    expect(startOfWeek("2025-02-09", "monday")).toBe("2025-02-03"); // Sunday belongs to the prior week
+    expect(weekDays("2025-02-12", "monday")).toEqual([
+      "2025-02-10", "2025-02-11", "2025-02-12", "2025-02-13",
+      "2025-02-14", "2025-02-15", "2025-02-16",
+    ]);
+    // Saturday-first week containing Wednesday 2025-02-12.
+    expect(startOfWeek("2025-02-12", "saturday")).toBe("2025-02-08");
+    expect(weekDays("2025-02-12", "saturday")[0]).toBe("2025-02-08");
+    // Year boundary: Monday 2024-12-30 starts the Monday-first week of 2025-01-01.
+    expect(startOfWeek("2025-01-01", "monday")).toBe("2024-12-30");
+  });
+
+  it("builds Monday-first month grids and ranges", () => {
+    // February 2025: the 1st is a Saturday, so the Monday-first grid starts Jan 27.
+    const grid = monthGrid("2025-02-10", "monday");
+    expect(grid).toHaveLength(42);
+    expect(grid[0]).toBe("2025-01-27");
+    expect(grid[41]).toBe("2025-03-09");
+    for (let i = 1; i < grid.length; i++) {
+      expect(addDays(grid[i - 1]!, 1)).toBe(grid[i]!);
+    }
+    expect(viewRange("week", "2025-02-12", "monday")).toEqual({ start: "2025-02-10", end: "2025-02-17" });
+    expect(viewRange("month", "2025-02-10", "monday")).toEqual({ start: "2025-01-27", end: "2025-03-10" });
+  });
+
+  it("rotates weekday header labels to the configured start", () => {
+    expect(weekdayHeaders("sunday")).toEqual(["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]);
+    expect(weekdayHeaders("monday")).toEqual(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]);
+    expect(weekdayHeaders("saturday")).toEqual(["Sa", "Su", "Mo", "Tu", "We", "Th", "Fr"]);
+  });
+
+  it("labels Monday-first weeks with their visible range", () => {
+    expect(viewLabel("week", "2025-02-12", "monday")).toBe("Feb 10 – 16, 2025");
+    expect(viewLabel("week", "2025-01-01", "monday")).toBe("Dec 30, 2024 – Jan 5, 2025");
+  });
+
+  it("computes the first day of the next week (strictly following)", () => {
+    // Sunday-first: a Wednesday's next week starts the coming Sunday.
+    expect(startOfNextWeek("2025-02-12", "sunday")).toBe("2025-02-16");
+    // On the week-start day itself, Next week is the following start — not today.
+    expect(startOfNextWeek("2025-02-09", "sunday")).toBe("2025-02-16");
+    expect(startOfNextWeek("2025-02-10", "monday")).toBe("2025-02-17");
+    expect(startOfNextWeek("2025-02-12", "monday")).toBe("2025-02-17");
+    // Year boundary.
+    expect(startOfNextWeek("2024-12-30", "monday")).toBe("2025-01-06");
+    expect(startOfNextWeek("2024-12-31", "sunday")).toBe("2025-01-05");
+  });
+
+  it("computes the first day of the next calendar month", () => {
+    expect(startOfNextMonth("2025-01-15")).toBe("2025-02-01");
+    expect(startOfNextMonth("2025-01-31")).toBe("2025-02-01");
+    expect(startOfNextMonth("2025-02-28")).toBe("2025-03-01");
+    expect(startOfNextMonth("2024-02-29")).toBe("2024-03-01"); // leap year
+    expect(startOfNextMonth("2025-12-31")).toBe("2026-01-01"); // December rollover
+    expect(() => startOfNextMonth("not-a-date")).toThrow();
   });
 
   it("computes end-exclusive view ranges", () => {
@@ -167,6 +231,32 @@ describe("rescheduling patches", () => {
       kind: "scheduled" as const,
     };
     expect(reschedulePatch(item, "2025-06-12", "UTC")).toEqual({ scheduled_date: "2025-06-12T09:00:00.000Z" });
+  });
+
+  it("sets a scheduled entry's time within the same day", () => {
+    const item = {
+      issue: issue({ scheduled_date: "2025-06-10T09:07:42.000Z" }),
+      date: "2025-06-10",
+      kind: "scheduled" as const,
+    };
+    expect(reschedulePatch(item, "2025-06-10", "UTC", "14:45")).toEqual({
+      scheduled_date: "2025-06-10T14:45:00.000Z",
+    });
+    expect(reschedulePatch(item, "2025-06-10", "UTC", "09:07")).toEqual({
+      scheduled_date: "2025-06-10T09:07:00.000Z",
+    });
+    expect(reschedulePatch(item, "2025-06-10", "UTC", "24:00")).toBeNull();
+  });
+
+  it("interprets a day-view time slot in the viewer timezone", () => {
+    const item = {
+      issue: issue({ scheduled_date: "2025-06-10T13:00:00.000Z" }),
+      date: "2025-06-10",
+      kind: "scheduled" as const,
+    };
+    expect(reschedulePatch(item, "2025-06-10", "America/New_York", "14:45")).toEqual({
+      scheduled_date: "2025-06-10T18:45:00.000Z",
+    });
   });
 
   it("preserves viewer-local wall-clock time when moving a scheduled entry", () => {

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, CircleDot, GitBranch, Pencil, X } from "lucide-react";
 import { api, formatInstant } from "../api";
 import type { AuditEventDto, CommentDto, IssueDto } from "../../shared/contracts/issues";
+import type { WeekStartDay } from "../../shared/contracts/config";
 import { Markdown } from "../components/Markdown";
 import {
   IssueEditor,
@@ -26,11 +27,14 @@ export function IssueDetailPage({
   issueRef,
   wiki = false,
   createType,
+  weekStartDay = "sunday",
 }: {
   mode: "view" | "create";
   issueRef?: string;
   wiki?: boolean;
   createType?: IssueFormValues["type"];
+  /** First day of the calendar week (default Sunday). */
+  weekStartDay?: WeekStartDay;
 }) {
   const { navigate } = useRouter();
   const [issue, setIssue] = useState<IssueDto | null>(null);
@@ -68,6 +72,7 @@ export function IssueDetailPage({
         title={creatingWikiPage ? "New wiki page" : "New issue"}
         onCreated={(issue) => navigate(creatingWikiPage ? `/wiki/${issue.number}` : `/issues/${issue.number}`)}
         onCancel={() => navigate(creatingWikiPage ? "/wiki" : "/issues")}
+        weekStartDay={weekStartDay}
       />
     );
   }
@@ -203,6 +208,7 @@ export function IssueDetailPage({
           onSubmit={submitEdit}
           onCancel={() => setEditing(false)}
           variant="inline"
+          weekStartDay={weekStartDay}
         />
       ) : (
         <div className="issue-layout grid grid-cols-1 gap-6 min-[1200px]:grid-cols-[minmax(0,1fr)_280px]">
@@ -416,11 +422,13 @@ function CreateIssueForm({
   onCancel,
   initialType,
   title,
+  weekStartDay = "sunday",
 }: {
   onCreated: (issue: IssueDto) => void;
   onCancel: () => void;
   initialType?: IssueFormValues["type"];
   title: string;
+  weekStartDay?: WeekStartDay;
 }) {
   const [initial] = useState(() => ({ ...emptyFormValues(), type: initialType ?? "task" }));
   return (
@@ -430,6 +438,7 @@ function CreateIssueForm({
         initial={initial}
         submitLabel="Create"
         onCancel={onCancel}
+        weekStartDay={weekStartDay}
         onSubmit={async (values) => {
           const issue = await api.createIssue({
             type: values.type,

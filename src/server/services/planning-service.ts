@@ -2,7 +2,8 @@
 import type { Ctx } from "../ctx";
 import type { IssueRecord } from "../../domain/models";
 import type { CalendarItemDto, PlanningItemDto } from "../../shared/contracts/issues";
-import { civilDateString, daysBetween, instantFromCivil, isValidTimezone, parseCivilDate, todayCivil } from "../../shared/time";
+import { calendarEntriesForIssues } from "../../shared/calendar";
+import { daysBetween, instantFromCivil, isValidTimezone, parseCivilDate, todayCivil } from "../../shared/time";
 import { ValidationError } from "../../domain/errors";
 import { toIssueDtos } from "./dto";
 import { issueRepo } from "./issue-service";
@@ -159,27 +160,7 @@ export async function getCalendar(
   if (issues.length === 0) return [];
 
   const dtos = await toIssueDtos(ctx, issues);
-  const dtoById = new Map(dtos.map((d) => [d.id, d]));
-  const entries: CalendarItemDto[] = [];
-  for (const issue of issues) {
-    const dto = dtoById.get(issue.id);
-    if (!dto) continue;
-    if (issue.due_date && issue.due_date >= start && issue.due_date < end) {
-      entries.push({ issue: dto, date: issue.due_date, kind: "due" });
-    }
-    if (issue.scheduled_date) {
-      const date = civilDateString(new Date(issue.scheduled_date), timezone);
-      if (date >= start && date < end) {
-        entries.push({ issue: dto, date, kind: "scheduled" });
-      }
-    }
-  }
-  entries.sort((a, b) => {
-    if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-    if (a.kind !== b.kind) return a.kind === "due" ? -1 : 1;
-    return a.issue.number - b.issue.number;
-  });
-  return entries;
+  return calendarEntriesForIssues(dtos, { start, end }, timezone);
 }
 
 function matchDay(issue: IssueRecord, timezone: string, now: Date, today: string): "today" | "overdue" | null {

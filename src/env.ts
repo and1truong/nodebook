@@ -25,6 +25,8 @@ export interface Env {
   MCP_CORS_ORIGINS?: string;
   /** Initial calendar view: "day", "week", or "month" (default "week"). */
   CALENDAR_DEFAULT_VIEW?: string;
+  /** First day of the calendar week: "sunday"…"saturday" (default "sunday"). */
+  WEEK_START_DAY?: string;
 }
 
 export function uploadLimitBytes(env: Env): number {

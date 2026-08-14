@@ -3,15 +3,21 @@
  *
  * Every calculation works on YYYY-MM-DD strings and Date.UTC so results never
  * depend on the host's local timezone or a timezone database — month grids,
- * week starts, and navigation are pure calendar math (proleptic Gregorian,
- * Sunday-first weeks to match DatePicker).
+ * week starts, and navigation are pure calendar math (proleptic Gregorian).
+ * Weeks are configurable (WeekStartDay, default Sunday) so the same
+ * arithmetic drives the inbox planning shortcuts, the Calendar workspace, and
+ * the date pickers.
  */
-import { civilDateString, civilFromInstant, daysInMonth, instantFromCivil, parseCivilDate } from "../shared/time";
+import { civilFromInstant, daysInMonth, instantFromCivil, parseCivilDate } from "../shared/time";
 import type { CalendarItemDto, IssueDto } from "../shared/contracts/issues";
-import type { CalendarView } from "../shared/contracts/config";
+import type { CalendarDateRange } from "../shared/calendar";
+import { calendarEntriesForIssue, calendarEntryOrder } from "../shared/calendar";
+import type { CalendarView, WeekStartDay } from "../shared/contracts/config";
+import { weekStartIndex } from "../shared/contracts/config";
 
 /** Re-exported for callers that previously imported the union here. */
 export type { CalendarView };
+export type { WeekStartDay };
 
 export const WEEKDAY_SHORT = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 export const WEEKDAY_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -55,9 +61,23 @@ export function weekday(date: string): number {
   return new Date(Date.UTC(parts.year, parts.month - 1, parts.day)).getUTCDay();
 }
 
-/** The Sunday on or before `date` (start of the Sunday-first week). */
-export function startOfWeek(date: string): string {
-  return addDays(date, -weekday(date));
+/** The configured week-start day on or before `date` (default Sunday). */
+export function startOfWeek(date: string, weekStart: WeekStartDay = "sunday"): string {
+  return addDays(date, -((weekday(date) - weekStartIndex(weekStart) + 7) % 7));
+}
+
+/** First day of the week strictly following the week containing `date`. */
+export function startOfNextWeek(date: string, weekStart: WeekStartDay = "sunday"): string {
+  return addDays(startOfWeek(date, weekStart), 7);
+}
+
+/** First day of the calendar month strictly following `date`'s month. */
+export function startOfNextMonth(date: string): string {
+  const parts = parseDate(date);
+  if (!parts) throw new Error(`Invalid civil date: ${date}`);
+  const year = parts.month === 12 ? parts.year + 1 : parts.year;
+  const month = parts.month === 12 ? 1 : parts.month + 1;
+  return toIso({ year, month, day: 1 });
 }
 
 /**
@@ -75,37 +95,44 @@ export function addMonths(date: string, delta: number): string {
 }
 
 /**
- * The 42 dates of the six-week Sunday-first grid containing `date`'s month:
- * leading/trailing days from the adjacent months are included so the grid is
- * always exactly 6 rows.
+ * The 42 dates of the six-week grid containing `date`'s month, starting on
+ * the configured week-start day: leading/trailing days from the adjacent
+ * months are included so the grid is always exactly 6 rows.
  */
-export function monthGrid(date: string): string[] {
+export function monthGrid(date: string, weekStart: WeekStartDay = "sunday"): string[] {
   const parts = parseDate(date);
   if (!parts) throw new Error(`Invalid civil date: ${date}`);
   const first = toIso({ year: parts.year, month: parts.month, day: 1 });
-  const start = startOfWeek(first);
+  const start = startOfWeek(first, weekStart);
   return Array.from({ length: 42 }, (_, i) => addDays(start, i));
 }
 
-/** The seven dates of the Sunday-first week containing `date`. */
-export function weekDays(date: string): string[] {
-  const start = startOfWeek(date);
+/** The seven dates of the week containing `date`, from the configured start. */
+export function weekDays(date: string, weekStart: WeekStartDay = "sunday"): string[] {
+  const start = startOfWeek(date, weekStart);
   return Array.from({ length: 7 }, (_, i) => addDays(start, i));
 }
 
-/** End-exclusive civil range a view must fetch for `date`. */
-export interface DateRange {
-  start: string;
-  end: string;
+/** WEEKDAY_SHORT rotated so the configured week-start day comes first. */
+export function weekdayHeaders(weekStart: WeekStartDay = "sunday"): string[] {
+  const i = weekStartIndex(weekStart);
+  return [...WEEKDAY_SHORT.slice(i), ...WEEKDAY_SHORT.slice(0, i)];
 }
 
-export function viewRange(view: CalendarView, date: string): DateRange {
+/** End-exclusive civil range a view must fetch for `date`. */
+export type DateRange = CalendarDateRange;
+
+export function viewRange(
+  view: CalendarView,
+  date: string,
+  weekStart: WeekStartDay = "sunday",
+): DateRange {
   if (view === "day") return { start: date, end: addDays(date, 1) };
   if (view === "week") {
-    const start = startOfWeek(date);
+    const start = startOfWeek(date, weekStart);
     return { start, end: addDays(start, 7) };
   }
-  const start = monthGrid(date)[0]!;
+  const start = monthGrid(date, weekStart)[0]!;
   return { start, end: addDays(start, 42) };
 }
 
@@ -130,7 +157,7 @@ export function isSameMonth(date: string, anchor: string): boolean {
 }
 
 /** Human label for a view's visible range, e.g. "February 2025". */
-export function viewLabel(view: CalendarView, date: string): string {
+export function viewLabel(view: CalendarView, date: string, weekStart: WeekStartDay = "sunday"): string {
   if (view === "month") return monthLabel(date);
   const parts = parseDate(date);
   if (!parts) return "";
@@ -139,7 +166,7 @@ export function viewLabel(view: CalendarView, date: string): string {
     return `${longName}, ${MONTH_NAMES[parts.month - 1] ?? ""} ${parts.day}, ${parts.year}`;
   }
   // Week: "Feb 9 – 15, 2025" or "Dec 29, 2024 – Jan 4, 2025".
-  const days = weekDays(date);
+  const days = weekDays(date, weekStart);
   const start = parseDate(days[0]!)!;
   const end = parseDate(days[6]!)!;
   const fmt = (p: DateParts, withYear: boolean) =>
@@ -167,18 +194,24 @@ export type IssuePatch = {
  * Patch for moving `item` to `targetDate` (viewer-local civil date), or null
  * for same-date and invalid drops (no-op). Due entries move only `due_date`;
  * scheduled entries move only `scheduled_date`, preserving the viewer-local
- * wall-clock time via civil-time helpers (DST-safe: spring-forward gaps land
- * on the post-transition instant, fall-back overlaps pick the first one).
+ * wall-clock time unless `targetTime` (HH:mm) is supplied by the day timeline.
+ * Civil-time conversion is DST-safe: spring-forward gaps land on the
+ * post-transition instant and fall-back overlaps pick the first occurrence.
  */
 export function reschedulePatch(
   item: CalendarItemDto,
   targetDate: string,
   timezone: string,
+  targetTime?: string,
 ): IssuePatch | null {
-  if (item.date === targetDate) return null;
   const target = parseDate(targetDate);
   if (!target) return null;
-  if (item.kind === "due") return { due_date: targetDate };
+  if (item.kind === "due") {
+    return item.date === targetDate ? null : { due_date: targetDate };
+  }
+  const timeMatch = targetTime === undefined ? null : /^([01]\d|2[0-3]):([0-5]\d)$/.exec(targetTime);
+  if (targetTime !== undefined && !timeMatch) return null;
+  if (item.date === targetDate && targetTime === undefined) return null;
   const iso = item.issue.scheduled_date;
   if (!iso) return null;
   const instant = new Date(iso);
@@ -188,39 +221,18 @@ export function reschedulePatch(
     year: target.year,
     month: target.month,
     day: target.day,
-    hour: civil.hour,
-    minute: civil.minute,
-    second: civil.second,
+    hour: timeMatch ? Number(timeMatch[1]) : civil.hour,
+    minute: timeMatch ? Number(timeMatch[2]) : civil.minute,
+    second: timeMatch ? 0 : civil.second,
   });
   const nextIso = next.toISOString();
   if (nextIso === iso) return null;
   return { scheduled_date: nextIso };
 }
 
-/** Server-compatible deterministic ordering: date, kind, then issue number. */
-export function calendarEntryOrder(a: CalendarItemDto, b: CalendarItemDto): number {
-  if (a.date !== b.date) return a.date < b.date ? -1 : 1;
-  if (a.kind !== b.kind) return a.kind === "due" ? -1 : 1;
-  return a.issue.number - b.issue.number;
-}
-
-/** The calendar entries of `issue` (both kinds) within the visible range. */
-export function entriesForIssue(issue: IssueDto, range: DateRange, timezone: string): CalendarItemDto[] {
-  const out: CalendarItemDto[] = [];
-  if (issue.due_date && issue.due_date >= range.start && issue.due_date < range.end) {
-    out.push({ issue, date: issue.due_date, kind: "due" });
-  }
-  if (issue.scheduled_date) {
-    const instant = new Date(issue.scheduled_date);
-    if (!Number.isNaN(instant.getTime())) {
-      const date = civilDateString(instant, timezone);
-      if (date >= range.start && date < range.end) {
-        out.push({ issue, date, kind: "scheduled" });
-      }
-    }
-  }
-  return out;
-}
+/** Backward-compatible names for the shared API/client expansion rules. */
+export { calendarEntryOrder };
+export const entriesForIssue = calendarEntriesForIssue;
 
 /**
  * Replace every entry of `issue` with entries recomputed from its (possibly
@@ -233,7 +245,7 @@ export function reconcileCalendarItems(
   range: DateRange,
   timezone: string,
 ): CalendarItemDto[] {
-  return [...items.filter((i) => i.issue.id !== issue.id), ...entriesForIssue(issue, range, timezone)].sort(
+  return [...items.filter((i) => i.issue.id !== issue.id), ...calendarEntriesForIssue(issue, range, timezone)].sort(
     calendarEntryOrder,
   );
 }

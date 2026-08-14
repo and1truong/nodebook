@@ -9,11 +9,12 @@ describe("web authentication", () => {
     // verify the API is reachable with the dev identity.
     const res = await api("/api/me");
     expect(res.status).toBe(200);
-    const body = res.body as { email: string; calendar_default_view: string };
+    const body = res.body as { email: string; calendar_default_view: string; week_start_day: string };
     expect(body.email).toBe(OWNER);
-    // Runtime configuration is exposed through /api/me; the test binding
-    // resolves to "week".
+    // Runtime configuration is exposed through /api/me; the test bindings
+    // resolve to "week" and the sunday fallback (WEEK_START_DAY unset).
     expect(body.calendar_default_view).toBe("week");
+    expect(body.week_start_day).toBe("sunday");
   });
 
   it("rejects MCP calls without a bearer token", async () => {

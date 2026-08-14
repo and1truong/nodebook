@@ -2,8 +2,10 @@
 import { useState } from "react";
 import { CalendarDays, Check, X } from "lucide-react";
 import type { IssueDto } from "../../shared/contracts/issues";
+import type { WeekStartDay } from "../../shared/contracts/config";
 import { PRIORITIES } from "../../shared/limits";
-import { addCivilMonths, todayCivil } from "../../shared/time";
+import { todayCivil } from "../../shared/time";
+import { startOfNextMonth, startOfNextWeek } from "../calendar";
 import { api } from "../api";
 import { DatePicker } from "./DatePicker";
 import { Button } from "./ui/button";
@@ -18,11 +20,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 export function InboxItemActions({
   issue,
   timezone,
+  weekStartDay,
   onUpdated,
   onRemoved,
 }: {
   issue: IssueDto;
   timezone: string;
+  /** Resolved week start; undefined while /api/me config is still loading. */
+  weekStartDay?: WeekStartDay;
   onUpdated: (issue: IssueDto) => void;
   onRemoved: (issueId: string) => void;
 }) {
@@ -112,8 +117,15 @@ export function InboxItemActions({
           <DropdownMenuContent align="end">
             <DropdownMenuItem onSelect={() => void assignDueDate(today)}>Today</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void assignDueDate(addCivilDays(today, 1))}>Tomorrow</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void assignDueDate(addCivilDays(today, 7))}>Next week</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => void assignDueDate(addCivilMonths(today, 1))}>Next month</DropdownMenuItem>
+            <DropdownMenuItem
+              disabled={!weekStartDay}
+              onSelect={() => {
+                if (weekStartDay) void assignDueDate(startOfNextWeek(today, weekStartDay));
+              }}
+            >
+              Next week
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void assignDueDate(startOfNextMonth(today))}>Next month</DropdownMenuItem>
             <DropdownMenuItem
               onSelect={() => {
                 setCustomDate(today);
@@ -146,6 +158,7 @@ export function InboxItemActions({
             today={today}
             onChange={setCustomDate}
             ariaLabel={`Due date for #${issue.number}`}
+            weekStartDay={weekStartDay}
           />
           <Button
             type="button"

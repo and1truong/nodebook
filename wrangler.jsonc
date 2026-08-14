@@ -26,7 +26,9 @@
     // Allowed CORS origins for the MCP endpoint (comma separated). Empty = *.
     "MCP_CORS_ORIGINS": "",
     // Initial calendar view: "day", "week", or "month" (invalid/missing → week).
-    "CALENDAR_DEFAULT_VIEW": "week"
+    "CALENDAR_DEFAULT_VIEW": "week",
+    // First day of the calendar week: "sunday"…"saturday" (invalid/missing → sunday).
+    "WEEK_START_DAY": "sunday"
   },
   "d1_databases": [
     {

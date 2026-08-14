@@ -1,18 +1,19 @@
 /**
- * Calendar view renderers: a Sunday-first month grid with compact issue
- * links, seven dated week columns, and a day agenda that separates timed
- * scheduled entries from all-day due entries. Entries link to their issues;
+ * Calendar view renderers: a deployment-configured week/month grid with
+ * compact issue links, seven dated week columns, and a day timeline that
+ * separates timed scheduled entries from all-day due entries. Entries link to their issues;
  * keys include issue, kind, and occurrence so dual due/scheduled entries of
  * the same issue never collide.
  *
  * Dragging: entries (pointer with a movement threshold, delayed touch, and
- * keyboard) are draggable onto month cells and week columns; the day agenda
- * is the non-drag fallback with a "Move date…" picker per entry. Drags only
- * start after the activation threshold, so ordinary link clicks still
+ * keyboard) are draggable onto month cells and week columns. In the day view,
+ * scheduled entries are draggable onto 15-minute slots to set their time; a
+ * "Move date…" picker remains available per entry. Drags only start after the
+ * activation threshold, so ordinary link clicks still
  * navigate. A drag overlay, active/target styling, auto-scroll, and screen
  * reader announcements accompany the interaction.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
   DndContext,
@@ -29,8 +30,9 @@ import {
 } from "@dnd-kit/core";
 import type { CollisionDetection, DragEndEvent, DragStartEvent, KeyboardCoordinateGetter } from "@dnd-kit/core";
 import type { CalendarItemDto } from "../../shared/contracts/issues";
-import type { CalendarView } from "../calendar";
-import { MONTH_NAMES, WEEKDAY_LONG, WEEKDAY_SHORT, addDays, isSameMonth, monthGrid, parseDate, weekday, weekDays } from "../calendar";
+import { civilFromInstant } from "../../shared/time";
+import type { CalendarView, WeekStartDay } from "../calendar";
+import { MONTH_NAMES, WEEKDAY_LONG, WEEKDAY_SHORT, addDays, isSameMonth, monthGrid, parseDate, weekday, weekDays, weekdayHeaders } from "../calendar";
 import { Link } from "../router";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "./ui";
@@ -48,6 +50,28 @@ function formatTime(iso: string | null | undefined): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+const DAY_SLOT_MINUTES = 15;
+const DAY_HEIGHT = 1_440; // one CSS pixel per minute
+
+function scheduledMinutes(item: CalendarItemDto, timezone: string): number | null {
+  if (!item.issue.scheduled_date) return null;
+  const instant = new Date(item.issue.scheduled_date);
+  if (Number.isNaN(instant.getTime())) return null;
+  const civil = civilFromInstant(instant, timezone);
+  return civil.hour * 60 + civil.minute;
+}
+
+function timeValue(minutes: number): string {
+  return `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+}
+
+function timeLabel(minutes: number): string {
+  const hour = Math.floor(minutes / 60);
+  const minute = minutes % 60;
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${String(minute).padStart(2, "0")} ${hour < 12 ? "AM" : "PM"}`;
 }
 
 function groupByDate(items: CalendarItemDto[]): Map<string, CalendarItemDto[]> {
@@ -118,6 +142,28 @@ function DroppableDate({
   );
 }
 
+/** A 15-minute target in the day timeline. */
+function DroppableTime({ date, minutes }: { date: string; minutes: number }) {
+  const time = timeValue(minutes);
+  const { setNodeRef, isOver } = useDroppable({
+    id: `time:${date}:${time}`,
+    data: { date, time, timeMinutes: minutes },
+  });
+  return (
+    <div
+      ref={setNodeRef}
+      data-time={time}
+      aria-label={`${timeLabel(minutes)} time slot`}
+      className={cn(
+        "calendar-time-slot absolute left-16 right-0 border-t border-border/30",
+        minutes % 60 === 0 && "border-border/70",
+        isOver && "calendar-time-drop-target z-10 bg-primary/15 ring-2 ring-inset ring-primary/60",
+      )}
+      style={{ top: minutes, height: DAY_SLOT_MINUTES }}
+    />
+  );
+}
+
 /** Draggable entry: drags only after the activation threshold, so the inner
  *  issue link keeps normal click navigation. Keyboard users focus the entry
  *  (role="button"), press Space/Enter to pick up, arrows to move, Space to
@@ -126,14 +172,17 @@ function DraggableEntry({
   item,
   compact,
   busy,
+  timeMinutes,
 }: {
   item: CalendarItemDto;
   compact: boolean;
   busy: boolean;
+  /** Present for a scheduled entry rendered in the day timeline. */
+  timeMinutes?: number;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `${item.issue.id}:${item.kind}:${item.date}`,
-    data: { item },
+    data: { item, timeMinutes },
     disabled: busy,
   });
   return (
@@ -154,19 +203,38 @@ function DraggableEntry({
   );
 }
 
-/** Move keyboard drags by calendar date rather than fragile pixel steps.
- * Left/right select adjacent dates; up/down select the same weekday in the
- * previous/next week when that date is present in the rendered range. */
+/** Move keyboard drags by semantic targets rather than fragile pixel steps.
+ * Day timelines use up/down for adjacent 15-minute slots. Date grids use
+ * left/right for adjacent dates and up/down for the previous/next week. */
 const calendarCollisionDetection: CollisionDetection = (args) => {
   const pointerCollisions = pointerWithin(args);
   return pointerCollisions.length > 0 ? pointerCollisions : closestCorners(args);
 };
 
 const keyboardCoordinatesGetter: KeyboardCoordinateGetter = (event, { currentCoordinates, context }) => {
-  const overDate = context.over?.data.current?.date;
   const activeItem = context.active?.data.current?.item as CalendarItemDto | undefined;
+  const overDate = context.over?.data.current?.date;
   const date = typeof overDate === "string" ? overDate : activeItem?.date;
   if (!date) return undefined;
+
+  const overMinutes = context.over?.data.current?.timeMinutes;
+  const activeMinutes = context.active?.data.current?.timeMinutes;
+  const timelineMinutes = typeof overMinutes === "number" ? overMinutes : activeMinutes;
+  if (typeof timelineMinutes === "number") {
+    const delta = event.code === "ArrowDown" ? DAY_SLOT_MINUTES : event.code === "ArrowUp" ? -DAY_SLOT_MINUTES : 0;
+    if (!delta) return undefined;
+    const targetMinutes = Math.max(0, Math.min(24 * 60 - DAY_SLOT_MINUTES, timelineMinutes + delta));
+    const target = context.droppableContainers
+      .getEnabled()
+      .find((container) => container.data.current?.date === date && container.data.current?.timeMinutes === targetMinutes);
+    const targetRect = target ? context.droppableRects.get(target.id) ?? target.rect.current : undefined;
+    const collisionRect = context.collisionRect;
+    if (!targetRect || !collisionRect) return currentCoordinates;
+    return {
+      x: targetRect.left + (targetRect.width - collisionRect.width) / 2,
+      y: targetRect.top + (targetRect.height - collisionRect.height) / 2,
+    };
+  }
 
   const dayDelta =
     event.code === "ArrowRight" ? 1
@@ -179,7 +247,7 @@ const keyboardCoordinatesGetter: KeyboardCoordinateGetter = (event, { currentCoo
   const targetDate = addDays(date, dayDelta);
   const target = context.droppableContainers
     .getEnabled()
-    .find((container) => container.data.current?.date === targetDate);
+    .find((container) => container.data.current?.date === targetDate && container.data.current?.time === undefined);
   const targetRect = target ? context.droppableRects.get(target.id) ?? target.rect.current : undefined;
   const collisionRect = context.collisionRect;
   if (!targetRect || !collisionRect) return currentCoordinates;
@@ -195,10 +263,12 @@ const keyboardCoordinatesGetter: KeyboardCoordinateGetter = (event, { currentCoo
 function MoveDateControl({
   item,
   today,
+  weekStartDay,
   onMove,
 }: {
   item: CalendarItemDto;
   today: string;
+  weekStartDay: WeekStartDay;
   onMove: (item: CalendarItemDto, date: string) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -220,6 +290,7 @@ function MoveDateControl({
             value={item.date}
             today={today}
             ariaLabel="Move date"
+            weekStartDay={weekStartDay}
             onChange={(date) => {
               if (date) onMove(item, date);
               setOpen(false);
@@ -240,20 +311,22 @@ function MonthGrid({
   today,
   items,
   busyIssueIds,
+  weekStartDay,
   onSelectDay,
 }: {
   selected: string;
   today: string;
   items: CalendarItemDto[];
   busyIssueIds: ReadonlySet<string>;
+  weekStartDay: WeekStartDay;
   onSelectDay: (date: string) => void;
 }) {
-  const grid = monthGrid(selected);
+  const grid = monthGrid(selected, weekStartDay);
   const byDate = groupByDate(items);
   return (
     <div className="overflow-x-auto">
       <div className="calendar-grid grid min-w-[560px] grid-cols-7 gap-px overflow-hidden rounded-lg border border-border bg-border">
-        {WEEKDAY_SHORT.map((w) => (
+        {weekdayHeaders(weekStartDay).map((w) => (
           <div key={w} className="bg-card px-1 py-1.5 text-center text-[11px] font-medium text-muted-foreground">
             {w}
           </div>
@@ -301,15 +374,17 @@ function WeekView({
   today,
   items,
   busyIssueIds,
+  weekStartDay,
   onSelectDay,
 }: {
   selected: string;
   today: string;
   items: CalendarItemDto[];
   busyIssueIds: ReadonlySet<string>;
+  weekStartDay: WeekStartDay;
   onSelectDay: (date: string) => void;
 }) {
-  const days = weekDays(selected);
+  const days = weekDays(selected, weekStartDay);
   const byDate = groupByDate(items);
   return (
     <div className="overflow-x-auto">
@@ -358,53 +433,102 @@ function DayAgenda({
   selected,
   today,
   items,
+  busyIssueIds,
+  weekStartDay,
+  timezone,
   onMove,
 }: {
   selected: string;
   today: string;
   items: CalendarItemDto[];
-  onMove: (item: CalendarItemDto, date: string) => void;
+  busyIssueIds: ReadonlySet<string>;
+  weekStartDay: WeekStartDay;
+  timezone: string;
+  onMove: (item: CalendarItemDto, date: string, time?: string) => void;
 }) {
+  const timelineRef = useRef<HTMLDivElement>(null);
   const dayItems = groupByDate(items).get(selected) ?? [];
   const scheduled = dayItems
     .filter((i) => i.kind === "scheduled")
-    .sort((a, b) => {
-      const ta = new Date(a.issue.scheduled_date ?? 0).getTime();
-      const tb = new Date(b.issue.scheduled_date ?? 0).getTime();
-      return ta - tb;
-    });
+    .map((item) => ({ item, minutes: scheduledMinutes(item, timezone) }))
+    .filter((entry): entry is { item: CalendarItemDto; minutes: number } => entry.minutes !== null)
+    .sort((a, b) => a.minutes - b.minutes || a.item.issue.number - b.item.issue.number);
   const allDay = dayItems.filter((i) => i.kind === "due");
+  const firstScheduledMinute = scheduled[0]?.minutes;
 
-  const section = (title: string, entries: CalendarItemDto[], empty: ReactNode) => (
-    <section aria-label={title}>
-      <h2 className="mb-2 mt-4 text-xs font-semibold uppercase tracking-wider text-muted-foreground first:mt-0">
-        {title}
-      </h2>
-      {entries.length === 0 ? (
-        <EmptyState>{empty}</EmptyState>
-      ) : (
-        <ul className="divide-y divide-border rounded-lg border border-border bg-card">
-          {entries.map((item) => (
-            <li key={`${item.issue.id}:${item.kind}:${item.date}`} className="flex items-center justify-between gap-2 px-2 py-1.5">
-              <div className="min-w-0 flex-1">
-                <EntryLink item={item} />
-              </div>
-              <MoveDateControl item={item} today={today} onMove={onMove} />
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
+  // Put the first appointment in context; empty days start at a useful
+  // morning hour rather than midnight.
+  useEffect(() => {
+    const viewport = timelineRef.current;
+    if (!viewport) return;
+    viewport.scrollTop = Math.max(0, (firstScheduledMinute ?? 9 * 60) - 60);
+  }, [selected, firstScheduledMinute]);
 
   return (
     <div>
-      {section(
-        "Scheduled",
-        scheduled,
-        <>Nothing timed is scheduled for this day.</>,
-      )}
-      {section("All day", allDay, <>Nothing is due on this day.</>)}
+      <section aria-label="All day">
+        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">All day</h2>
+        {allDay.length === 0 ? (
+          <EmptyState>Nothing is due on this day.</EmptyState>
+        ) : (
+          <ul className="divide-y divide-border rounded-lg border border-border bg-card">
+            {allDay.map((item) => (
+              <li key={`${item.issue.id}:${item.kind}:${item.date}`} className="flex items-center justify-between gap-2 px-2 py-1.5">
+                <div className="min-w-0 flex-1">
+                  <EntryLink item={item} />
+                </div>
+                <MoveDateControl item={item} today={today} weekStartDay={weekStartDay} onMove={onMove} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section aria-label="Scheduled">
+        <div className="mb-2 mt-4 flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Scheduled</h2>
+          <p className="text-xs text-muted-foreground">Drag an entry to a 15-minute slot to set its time.</p>
+        </div>
+        {scheduled.length === 0 && <EmptyState>Nothing timed is scheduled for this day.</EmptyState>}
+        <div
+          ref={timelineRef}
+          className="calendar-day-timeline max-h-[65vh] overflow-y-auto rounded-lg border border-border bg-card"
+          aria-label={`Schedule for ${fullDateLabel(selected)}`}
+        >
+          <div className="relative min-w-[320px]" style={{ height: DAY_HEIGHT }}>
+            {Array.from({ length: 24 }, (_, hour) => (
+              <span
+                key={hour}
+                aria-hidden="true"
+                className="absolute left-0 w-14 -translate-y-1/2 pr-2 text-right font-mono text-[10px] text-muted-foreground"
+                style={{ top: hour * 60 }}
+              >
+                {timeLabel(hour * 60).replace(":00", "")}
+              </span>
+            ))}
+            {Array.from({ length: (24 * 60) / DAY_SLOT_MINUTES }, (_, index) => (
+              <DroppableTime key={index} date={selected} minutes={index * DAY_SLOT_MINUTES} />
+            ))}
+            {scheduled.map(({ item, minutes }, index) => (
+              <div
+                key={`${item.issue.id}:${item.kind}:${item.date}`}
+                className="pointer-events-auto absolute left-[4.5rem] right-2 z-20 flex min-w-0 items-center gap-1 rounded-md border border-warning/40 bg-card p-0.5 shadow-sm"
+                style={{ top: Math.min(minutes, DAY_HEIGHT - 46) + (index > 0 && scheduled[index - 1]?.minutes === minutes ? 6 : 0) }}
+              >
+                <div className="min-w-0 flex-1">
+                  <DraggableEntry
+                    item={item}
+                    compact={false}
+                    busy={busyIssueIds.has(item.issue.id)}
+                    timeMinutes={Math.floor(minutes / DAY_SLOT_MINUTES) * DAY_SLOT_MINUTES}
+                  />
+                </div>
+                <MoveDateControl item={item} today={today} weekStartDay={weekStartDay} onMove={onMove} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
     </div>
   );
 }
@@ -419,6 +543,8 @@ export function CalendarViewRenderer({
   today,
   items,
   busyIssueIds,
+  weekStartDay,
+  timezone,
   onSelectDay,
   onMove,
 }: {
@@ -426,11 +552,13 @@ export function CalendarViewRenderer({
   selected: string;
   today: string;
   items: CalendarItemDto[];
-  /** Viewer timezone: passed through for callers that derive patches. */
-  timezone: string;
   busyIssueIds: ReadonlySet<string>;
+  /** Resolved first day of the calendar week. */
+  weekStartDay: WeekStartDay;
+  /** IANA timezone used by the calendar range and day timeline. */
+  timezone: string;
   onSelectDay: (date: string) => void;
-  onMove: (item: CalendarItemDto, date: string) => void;
+  onMove: (item: CalendarItemDto, date: string, time?: string) => void;
 }) {
   const [activeItem, setActiveItem] = useState<CalendarItemDto | null>(null);
   const sensors = useSensors(
@@ -447,12 +575,16 @@ export function CalendarViewRenderer({
     setActiveItem(null);
     const item = event.active.data.current?.item as CalendarItemDto | undefined;
     const date = event.over?.data.current?.date as string | undefined;
-    if (item && date) onMove(item, date);
+    const time = event.over?.data.current?.time as string | undefined;
+    if (item && date) onMove(item, date, time);
   };
 
-  const announcementFor = (date: unknown) => {
+  const announcementFor = (date: unknown, time?: unknown) => {
     const d = typeof date === "string" ? date : "";
-    return d ? fullDateLabel(d) : "an unknown date";
+    if (!d) return "an unknown date";
+    const t = typeof time === "string" ? time : "";
+    const minutes = t ? Number(t.slice(0, 2)) * 60 + Number(t.slice(3, 5)) : null;
+    return `${fullDateLabel(d)}${minutes !== null && Number.isFinite(minutes) ? ` at ${timeLabel(minutes)}` : ""}`;
   };
 
   if (view === "month" && items.length === 0) {
@@ -478,10 +610,10 @@ export function CalendarViewRenderer({
               : "Picked up a calendar entry.";
           },
           onDragOver({ over }) {
-            return `Moved over ${announcementFor(over?.data.current?.date)}.`;
+            return `Moved over ${announcementFor(over?.data.current?.date, over?.data.current?.time)}.`;
           },
           onDragEnd({ over }) {
-            return `Dropped on ${announcementFor(over?.data.current?.date)}.`;
+            return `Dropped on ${announcementFor(over?.data.current?.date, over?.data.current?.time)}.`;
           },
           onDragCancel() {
             return "Drop cancelled.";
@@ -490,13 +622,22 @@ export function CalendarViewRenderer({
       }}
     >
         {view === "day" ? (
-          <DayAgenda selected={selected} today={today} items={items} onMove={onMove} />
+          <DayAgenda
+            selected={selected}
+            today={today}
+            items={items}
+            busyIssueIds={busyIssueIds}
+            weekStartDay={weekStartDay}
+            timezone={timezone}
+            onMove={onMove}
+          />
         ) : view === "month" ? (
           <MonthGrid
             selected={selected}
             today={today}
             items={items}
             busyIssueIds={busyIssueIds}
+            weekStartDay={weekStartDay}
             onSelectDay={onSelectDay}
           />
         ) : (
@@ -505,6 +646,7 @@ export function CalendarViewRenderer({
             today={today}
             items={items}
             busyIssueIds={busyIssueIds}
+            weekStartDay={weekStartDay}
             onSelectDay={onSelectDay}
           />
         )}

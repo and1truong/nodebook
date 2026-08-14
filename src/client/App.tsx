@@ -14,7 +14,8 @@ import { SearchPage } from "./pages/SearchPage";
 import { TokenSettingsPage } from "./pages/TokenSettingsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
 import type { AppConfigDto } from "../shared/contracts/config";
-import type { CalendarView } from "../shared/contracts/config";
+import type { CalendarView, WeekStartDay } from "../shared/contracts/config";
+import { DEFAULT_WEEK_START_DAY } from "../shared/contracts/config";
 
 export function App() {
   const { path, navigate } = useRouter();
@@ -48,6 +49,11 @@ export function App() {
   const calendarDefaultView: CalendarView | undefined =
     config === undefined ? undefined : (config?.calendar_default_view ?? "week");
 
+  // Same gating for the week start: undefined while loading, the deployment
+  // value once resolved, and the Sunday default after /api/me failure.
+  const weekStartDay: WeekStartDay | undefined =
+    config === undefined ? undefined : (config?.week_start_day ?? DEFAULT_WEEK_START_DAY);
+
   // /upcoming is a compatibility alias: replace the URL in place so the
   // canonical /calendar route is what the address bar and history hold.
   useEffect(() => {
@@ -55,16 +61,16 @@ export function App() {
   }, [path]);
 
   let content: React.ReactNode;
-  if (path === "/" || path === "/inbox") content = <InboxPage />;
+  if (path === "/" || path === "/inbox") content = <InboxPage weekStartDay={weekStartDay} />;
   else if (path === "/today") content = <TodayPage />;
-  else if (path === "/calendar" || path === "/upcoming") content = <CalendarPage defaultView={calendarDefaultView} />;
+  else if (path === "/calendar" || path === "/upcoming") content = <CalendarPage defaultView={calendarDefaultView} weekStartDay={weekStartDay} />;
   else if (path === "/issues") content = <IssuesPage />;
-  else if (matchPath("/issues/new", path)) content = <IssueDetailPage mode="create" />;
+  else if (matchPath("/issues/new", path)) content = <IssueDetailPage mode="create" weekStartDay={weekStartDay} />;
   else if (matchPath("/issues/:ref", path)) {
     const { ref } = matchPath("/issues/:ref", path)!;
-    content = <IssueDetailPage mode="view" issueRef={ref} />;
+    content = <IssueDetailPage mode="view" issueRef={ref} weekStartDay={weekStartDay} />;
   } else if (path === "/wiki") content = <WikiPage />;
-  else if (path === "/wiki/new") content = <IssueDetailPage mode="create" createType="wiki" />;
+  else if (path === "/wiki/new") content = <IssueDetailPage mode="create" createType="wiki" weekStartDay={weekStartDay} />;
   else if (matchPath("/wiki/:ref", path)) {
     const { ref } = matchPath("/wiki/:ref", path)!;
     content = <WikiPage selectedRef={ref} />;

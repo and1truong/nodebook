@@ -36,13 +36,28 @@ function addCivilDays(date: string, days: number): string {
   return next.toISOString().slice(0, 10);
 }
 
-/** Add one calendar month, clamping month-end dates. */
-function nextCivilMonth(date: string): string {
-  const [year, month, day] = date.split("-").map(Number);
-  const firstOfTarget = new Date(Date.UTC(year!, month!, 1));
-  const lastDay = new Date(Date.UTC(firstOfTarget.getUTCFullYear(), firstOfTarget.getUTCMonth() + 1, 0)).getUTCDate();
-  firstOfTarget.setUTCDate(Math.min(day!, lastDay));
-  return firstOfTarget.toISOString().slice(0, 10);
+const WEEKDAY_INDEX: Record<string, number> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+};
+
+/** The configured week-start day on or before `date`. */
+function startOfWeek(date: string, weekStartDay: string): string {
+  const startIndex = WEEKDAY_INDEX[weekStartDay];
+  if (startIndex === undefined) throw new Error(`Invalid week start from /api/me: ${weekStartDay}`);
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return addCivilDays(date, -((weekday - startIndex + 7) % 7));
+}
+
+/** First day of the calendar month following `date`'s month. */
+function firstOfNextMonth(date: string): string {
+  const [year, month] = date.split("-").map(Number);
+  return month === 12 ? `${year! + 1}-01-01` : `${year}-${String(month! + 1).padStart(2, "0")}-01`;
 }
 
 test.describe.serial("MVP acceptance", () => {
@@ -141,22 +156,28 @@ test.describe.serial("MVP acceptance", () => {
     expect(plannedTomorrow.json.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(plannedTomorrow.json.due_date).not.toBe(plannedToday.json.due_date);
 
+    const me = await apiJson(request, "GET", "/api/me");
+    expect(me.status).toBe(200);
+    const weekStartDay = String(me.json.week_start_day);
+
     const nextWeekRow = page.locator(".issue-row", { hasText: "Inbox next week task" });
     await nextWeekRow.getByRole("button", { name: `Plan issue #${nextWeekTask.number}` }).click();
     await page.getByRole("menuitem", { name: "Next week", exact: true }).click();
     await expect(nextWeekRow).toHaveCount(0);
     const plannedNextWeek = await apiJson(request, "GET", `/api/issues/${nextWeekTask.number}`);
-    // Next week is exactly seven civil days after today in the browser's timezone;
-    // Date.UTC arithmetic handles month/year rollover (e.g. Dec 28 → Jan 4).
-    expect(plannedNextWeek.json.due_date).toBe(addCivilDays(civilToday(), 7));
-    expect(plannedNextWeek.json.due_date).not.toBe(plannedTomorrow.json.due_date);
+    // Next week is the first configured day of the following week. Derive
+    // the expectation from /api/me so changing the deployment's week start
+    // does not silently invalidate this acceptance test.
+    expect(plannedNextWeek.json.due_date).toBe(addCivilDays(startOfWeek(civilToday(), weekStartDay), 7));
+    expect(plannedNextWeek.json.due_date).not.toBe(plannedToday.json.due_date);
 
     const nextMonthRow = page.locator(".issue-row", { hasText: "Inbox next month task" });
     await nextMonthRow.getByRole("button", { name: `Plan issue #${nextMonthTask.number}` }).click();
     await page.getByRole("menuitem", { name: "Next month", exact: true }).click();
     await expect(nextMonthRow).toHaveCount(0);
     const plannedNextMonth = await apiJson(request, "GET", `/api/issues/${nextMonthTask.number}`);
-    expect(plannedNextMonth.json.due_date).toBe(nextCivilMonth(civilToday()));
+    // Next month is the first day of the following calendar month.
+    expect(plannedNextMonth.json.due_date).toBe(firstOfNextMonth(civilToday()));
 
     const customRow = page.locator(".issue-row", { hasText: "Inbox custom date task" });
     await customRow.getByRole("button", { name: `Plan issue #${customDateTask.number}` }).click();

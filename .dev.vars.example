@@ -15,3 +15,6 @@ AUTH_DEV_EMAIL=owner@nodebook.local
 
 # Initial calendar view: day, week, or month (missing/invalid values fall back to week).
 # CALENDAR_DEFAULT_VIEW=week
+
+# First day of the calendar week: sunday, monday, …, saturday (missing/invalid values fall back to sunday).
+# WEEK_START_DAY=sunday

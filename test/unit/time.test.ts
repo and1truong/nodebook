@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  addCivilMonths,
   civilDateTimeString,
   civilFromInstant,
   civilDateString,
@@ -64,20 +63,6 @@ describe("civil time helpers", () => {
 
     const [nyStart] = dayRange("2025-03-08", "America/New_York");
     expect(nyStart.toISOString()).toBe("2025-03-08T05:00:00.000Z");
-  });
-
-  it("adds calendar months and clamps month-end dates", () => {
-    expect(addCivilMonths("2025-01-15", 1)).toBe("2025-02-15");
-    expect(addCivilMonths("2025-01-31", 1)).toBe("2025-02-28");
-    expect(addCivilMonths("2024-01-31", 1)).toBe("2024-02-29");
-    expect(addCivilMonths("2025-12-31", 1)).toBe("2026-01-31");
-    expect(addCivilMonths("2025-03-31", -1)).toBe("2025-02-28");
-  });
-
-  it("rejects invalid input to addCivilMonths", () => {
-    expect(() => addCivilMonths("2025-02-30", 1)).toThrow();
-    expect(() => addCivilMonths("not-a-date", 1)).toThrow();
-    expect(() => addCivilMonths("2025-01-15", 1.5)).toThrow();
   });
 
   it("validates timezones", () => {

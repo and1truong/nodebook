@@ -2,12 +2,13 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { PlanningItemDto } from "../../shared/contracts/issues";
+import type { WeekStartDay } from "../../shared/contracts/config";
 import { PageHeader, PlanningList, Loading, ErrorState } from "../components/ui";
 import { InboxItemActions } from "../components/InboxItemActions";
 import { buttonVariants } from "../components/ui/button";
 import { Link } from "../router";
 
-export function InboxPage() {
+export function InboxPage({ weekStartDay }: { weekStartDay?: WeekStartDay }) {
   const [items, setItems] = useState<PlanningItemDto[] | null>(null);
   const [error, setError] = useState<unknown>(null);
   const [timezone] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
@@ -44,6 +45,7 @@ export function InboxPage() {
             <InboxItemActions
               issue={issue}
               timezone={timezone}
+              weekStartDay={weekStartDay}
               onUpdated={(updated) =>
                 setItems((current) =>
                   current?.map((item) => (item.issue.id === updated.id ? { ...item, issue: updated } : item)) ?? null,

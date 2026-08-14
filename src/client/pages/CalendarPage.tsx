@@ -4,8 +4,9 @@
  * view (CALENDAR_DEFAULT_VIEW, resolved through /api/me; fallback "week") —
  * the first range fetch waits for configuration so a temporary Week request
  * never fires when another view is configured. View switches stay
- * session-local. Entries can be dragged between dates (or moved with the
- * day-view "Move date…" picker); moves update optimistically, are reconciled
+ * session-local. Entries can be dragged between dates, while scheduled
+ * entries can also be dragged to a time in the day view; moves update
+ * optimistically, are reconciled
  * with the PATCH response, and roll back with a non-destructive alert on
  * failure.
  */
@@ -14,7 +15,7 @@ import { ChevronLeft, ChevronRight } from "lucide-react";
 import { api } from "../api";
 import { todayCivil } from "../../shared/time";
 import type { CalendarItemDto, IssueDto } from "../../shared/contracts/issues";
-import type { CalendarView } from "../calendar";
+import type { CalendarView, WeekStartDay } from "../calendar";
 import { navigate, reconcileCalendarItems, reschedulePatch, viewLabel, viewRange } from "../calendar";
 import { CalendarViewRenderer } from "../components/CalendarView";
 import { ErrorState, Loading, PageHeader } from "../components/ui";
@@ -27,7 +28,14 @@ const VIEWS: { value: CalendarView; label: string }[] = [
   { value: "month", label: "Month" },
 ];
 
-export function CalendarPage({ defaultView }: { defaultView?: CalendarView }) {
+export function CalendarPage({
+  defaultView,
+  weekStartDay,
+}: {
+  defaultView?: CalendarView;
+  /** Resolved week start; undefined while /api/me config is still loading. */
+  weekStartDay?: WeekStartDay;
+}) {
   const [tz] = useState(() => Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC");
   // null = user has not switched; the configured default (once resolved) applies.
   const [sessionView, setSessionView] = useState<CalendarView | null>(null);
@@ -39,9 +47,16 @@ export function CalendarPage({ defaultView }: { defaultView?: CalendarView }) {
   const [busyIssueIds, setBusyIssueIds] = useState<ReadonlySet<string>>(new Set());
   const fetchSeq = useRef(0);
 
-  // null until the deployment default resolves (config still loading).
+  // null until the deployment defaults resolve (config still loading): the
+  // first range fetch must wait for both the view and the week start so a
+  // request for the wrong week never fires.
   const view: CalendarView | null = sessionView ?? defaultView ?? null;
-  const range = view ? viewRange(view, selected) : null;
+  const range = view && weekStartDay ? viewRange(view, selected, weekStartDay) : null;
+  // Mutation callbacks can settle after the user changes view/range. Always
+  // reconcile against the range visible when each callback runs, never the
+  // one captured when the drag began.
+  const rangeRef = useRef(range);
+  rangeRef.current = range;
   const today = todayCivil(new Date(), tz);
 
   useEffect(() => {
@@ -68,21 +83,26 @@ export function CalendarPage({ defaultView }: { defaultView?: CalendarView }) {
   const goToday = () => setSelected(today);
 
   const moveEntry = useCallback(
-    async (item: CalendarItemDto, targetDate: string) => {
+    async (item: CalendarItemDto, targetDate: string, targetTime?: string) => {
       if (!range) return;
-      const patch = reschedulePatch(item, targetDate, tz);
+      const patch = reschedulePatch(item, targetDate, tz, targetTime);
       if (!patch) return; // same-date / invalid drop: no-op
       if (busyIssueIds.has(item.issue.id)) return; // no concurrent moves per issue
       setBusyIssueIds((prev) => new Set(prev).add(item.issue.id));
       setNotice(null);
+      const reconcileVisible = (current: CalendarItemDto[] | null, issue: IssueDto) => {
+        const visibleRange = rangeRef.current;
+        return current && visibleRange ? reconcileCalendarItems(current, issue, visibleRange, tz) : current;
+      };
       const optimistic: IssueDto = { ...item.issue, ...patch };
-      setItems((prev) => (prev ? reconcileCalendarItems(prev, optimistic, range, tz) : prev));
+      setItems((prev) => reconcileVisible(prev, optimistic));
       try {
         const updated = await api.updateIssue(String(item.issue.number), patch);
-        setItems((prev) => (prev ? reconcileCalendarItems(prev, updated, range, tz) : prev));
+        setItems((prev) => reconcileVisible(prev, updated));
       } catch (err) {
-        // Roll back just this issue to its pre-move DTO.
-        setItems((prev) => (prev ? reconcileCalendarItems(prev, item.issue, range, tz) : prev));
+        // Roll back just this issue to its pre-move DTO in the currently
+        // visible range, which may differ from the drag's original range.
+        setItems((prev) => reconcileVisible(prev, item.issue));
         setNotice(
           `Couldn't move "#${item.issue.number} ${item.issue.title}" — ${
             err instanceof Error ? err.message : "update failed"
@@ -132,9 +152,9 @@ export function CalendarPage({ defaultView }: { defaultView?: CalendarView }) {
         }
       />
       <p className="mb-3 text-sm font-medium text-muted-foreground" aria-live="polite">
-        {view ? viewLabel(view, selected) : ""}
+        {view && weekStartDay ? viewLabel(view, selected, weekStartDay) : ""}
         <span className="ml-2 hidden text-xs font-normal sm:inline">
-          Open work planned in <code>{tz}</code>. Drag entries to reschedule.
+          Open work planned in <code>{tz}</code>. Drag entries to reschedule dates and times.
         </span>
       </p>
       {notice && (
@@ -155,14 +175,15 @@ export function CalendarPage({ defaultView }: { defaultView?: CalendarView }) {
       )}
       {error ? <ErrorState error={error} onRetry={() => setReloadKey((k) => k + 1)} /> : null}
       {!error && !items && <Loading label="Loading calendar…" />}
-      {!error && items && view && (
+      {!error && items && view && weekStartDay && (
         <CalendarViewRenderer
           view={view}
           selected={selected}
           today={today}
           items={items}
-          timezone={tz}
           busyIssueIds={busyIssueIds}
+          weekStartDay={weekStartDay}
+          timezone={tz}
           onSelectDay={(date) => {
             setSelected(date);
             setSessionView("day");

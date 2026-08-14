@@ -1,7 +1,7 @@
 /**
  * Calendar workspace (browser): routing, configurable default view, views,
  * drag-and-drop rescheduling (pointer + keyboard), failure rollback, the
- * day-view "Move date…" fallback, accessibility selectors, and
+ * day-view time-slot dragging and "Move date…" fallback, accessibility selectors, and
  * narrow-screen rendering.
  *
  * The context runs in UTC (timezoneId) so fixture dates computed in the test
@@ -27,6 +27,11 @@ function weekday(date: string): number {
 
 function startOfWeek(date: string): string {
   return addDays(date, -weekday(date));
+}
+
+/** The Monday on or before `date`. */
+function startOfWeekMonday(date: string): string {
+  return addDays(date, -((weekday(date) + 6) % 7));
 }
 
 /** A date in the current Sunday-first week that is not `today`. */
@@ -141,7 +146,7 @@ test.describe.serial("Calendar workspace", () => {
     const today = todayUtc();
     await page.route("**/api/me", (route) =>
       route.fulfill({
-        json: { email: "owner@test.dev", actor_type: "human", calendar_default_view: "month" },
+        json: { email: "owner@test.dev", actor_type: "human", calendar_default_view: "month", week_start_day: "sunday" },
       }),
     );
 
@@ -163,7 +168,7 @@ test.describe.serial("Calendar workspace", () => {
     await page.unroute("**/api/me");
     await page.route("**/api/me", (route) =>
       route.fulfill({
-        json: { email: "owner@test.dev", actor_type: "human", calendar_default_view: "day" },
+        json: { email: "owner@test.dev", actor_type: "human", calendar_default_view: "day", week_start_day: "sunday" },
       }),
     );
     const dayRequests: string[] = [];
@@ -177,6 +182,79 @@ test.describe.serial("Calendar workspace", () => {
     const dayUrl = new URL(dayRequests[0]!);
     expect(dayUrl.searchParams.get("start")).toBe(today);
     expect(dayUrl.searchParams.get("end")).toBe(addDays(today, 1));
+  });
+
+  test("keeps config-dependent inbox shortcuts disabled until /api/me resolves", async ({ page, request }) => {
+    const created = await createIssue(request, { title: "Config loading inbox item", type: "task" });
+    let releaseConfig!: () => void;
+    const configPending = new Promise<void>((resolve) => {
+      releaseConfig = resolve;
+    });
+    await page.route("**/api/me", async (route) => {
+      await configPending;
+      await route.fulfill({
+        json: { email: "owner@test.dev", actor_type: "human", calendar_default_view: "week", week_start_day: "monday" },
+      });
+    });
+
+    await page.goto("/inbox");
+    const row = page.locator(".issue-row", { hasText: "Config loading inbox item" });
+    await row.getByRole("button", { name: `Plan issue #${created.number}` }).click();
+    const nextWeek = page.getByRole("menuitem", { name: "Next week", exact: true });
+    try {
+      await expect(nextWeek).toHaveAttribute("aria-disabled", "true");
+    } finally {
+      // Never leave the intercepted request pending during test teardown.
+      releaseConfig();
+    }
+    await expect(nextWeek).not.toHaveAttribute("aria-disabled", "true");
+    await page.keyboard.press("Escape");
+  });
+
+  test("Monday-first configuration rotates weeks, ranges, and inbox shortcuts", async ({ page, request }) => {
+    const today = todayUtc();
+    const monday = startOfWeekMonday(today);
+    await page.route("**/api/me", (route) =>
+      route.fulfill({
+        json: { email: "owner@test.dev", actor_type: "human", calendar_default_view: "week", week_start_day: "monday" },
+      }),
+    );
+
+    const calendarRequests: string[] = [];
+    page.on("request", (req) => {
+      if (req.url().includes("/api/planning/calendar")) calendarRequests.push(req.url());
+    });
+
+    // The week view renders Monday first: columns are ordered and labelled
+    // Monday…Sunday, and the initial range fetch is the Monday-first week.
+    await page.goto("/calendar");
+    const week = page.locator(".calendar-week");
+    await expect(week.locator(".calendar-week-col")).toHaveCount(7);
+    await expect(week.locator(".calendar-week-col").first()).toHaveAttribute("data-date", monday);
+    await expect(week.locator(".calendar-week-col").last()).toHaveAttribute("data-date", addDays(monday, 6));
+    await expect(week.locator(".calendar-week-col").first()).toContainText("Mo");
+    await expect(week.locator(".calendar-week-col").last()).toContainText("Su");
+
+    expect(calendarRequests).toHaveLength(1);
+    const url = new URL(calendarRequests[0]!);
+    expect(url.searchParams.get("start")).toBe(monday);
+    expect(url.searchParams.get("end")).toBe(addDays(monday, 7));
+
+    // The month grid's weekday header row also starts on Monday.
+    await page.getByRole("button", { name: "Month", exact: true }).click();
+    await expect(page.locator(".calendar-grid > div").first()).toHaveText("Mo");
+    await expect(page.locator(".calendar-grid > div").nth(6)).toHaveText("Su");
+
+    // Inbox: Next week schedules to the first day of the following
+    // Monday-first week, and the issue leaves the inbox.
+    const created = await createIssue(request, { title: "Monday first item", type: "task" });
+    await page.goto("/inbox");
+    const row = page.locator(".issue-row", { hasText: "Monday first item" });
+    await row.getByRole("button", { name: `Plan issue #${created.number}` }).click();
+    await page.getByRole("menuitem", { name: "Next week", exact: true }).click();
+    await expect(row).toHaveCount(0);
+    const stored = await getIssue(request, created.number);
+    expect(stored.due_date).toBe(addDays(monday, 7));
   });
 
   test("month view shows due and scheduled entries, dual entries, and today", async ({ page, request }) => {
@@ -231,6 +309,31 @@ test.describe.serial("Calendar workspace", () => {
     await expect(allDay.getByRole("link", { name: /Day scheduled issue/ })).toHaveCount(0);
   });
 
+  test("drags a scheduled entry in day view to set its time", async ({ page, request }) => {
+    const today = todayUtc();
+    const scheduled = await createIssue(request, {
+      title: "Day timeline drag",
+      scheduled_date: `${today}T09:00:00.000Z`,
+    });
+
+    await page.goto("/calendar");
+    await page.getByRole("button", { name: "Day", exact: true }).click();
+
+    const timeline = page.locator(".calendar-day-timeline");
+    const entry = timeline.locator(".calendar-entry", { hasText: "Day timeline drag" });
+    const target = timeline.locator('.calendar-time-slot[data-time="10:30"]');
+    await expect(entry).toBeVisible();
+    await target.scrollIntoViewIfNeeded();
+    await pointerDrag(page, entry, target, async () => {
+      await expect(target).toHaveClass(/calendar-time-drop-target/);
+    });
+
+    await expect(entry.getByText("10:30 AM")).toBeVisible();
+    await expect(page).toHaveURL(/\/calendar$/);
+    const stored = await getIssue(request, scheduled.number);
+    expect(stored.scheduled_date).toBe(`${today}T10:30:00.000Z`);
+  });
+
   test("week view renders seven dated columns and entry times", async ({ page, request }) => {
     const today = todayUtc();
     const target = weekTarget(today);
@@ -277,6 +380,45 @@ test.describe.serial("Calendar workspace", () => {
     await page.getByRole("button", { name: "Today" }).click();
     await expect(page.getByText(currentLabel)).toBeVisible();
     await expect(page.locator(`.calendar-day-cell[data-date="${today}"]`)).toBeVisible();
+  });
+
+  test("reconciles an in-flight move against the latest range after a view change", async ({ page, request }) => {
+    const today = todayUtc();
+    const target = weekTarget(today);
+    const due = await createIssue(request, { title: "Navigate during move", due_date: today });
+    let releasePatch!: () => void;
+    const patchPending = new Promise<void>((resolve) => {
+      releasePatch = resolve;
+    });
+    await page.route("**/api/issues/*", async (route) => {
+      if (route.request().method() !== "PATCH") return route.continue();
+      await patchPending;
+      await route.continue();
+    });
+
+    try {
+      await page.goto("/calendar");
+      await page.getByRole("button", { name: "Day", exact: true }).click();
+      const row = page.locator("li", { hasText: "Navigate during move" });
+      await row.getByRole("button", { name: "Move date…" }).click();
+      await page.getByRole("textbox", { name: "Move date" }).fill(target);
+      await expect(row).toHaveCount(0); // optimistic move leaves the day range
+
+      // Change range while PATCH is pending. This fetch still sees the original
+      // date; when PATCH settles, reconciliation must use the now-visible week.
+      await page.getByRole("button", { name: "Week", exact: true }).click();
+      const todayColumn = page.locator(`.calendar-week-col[data-date="${today}"]`);
+      const targetColumn = page.locator(`.calendar-week-col[data-date="${target}"]`);
+      await expect(todayColumn.getByRole("link", { name: /Navigate during move/ })).toBeVisible();
+      releasePatch();
+      await expect(targetColumn.getByRole("link", { name: /Navigate during move/ })).toBeVisible();
+      await expect(todayColumn.getByRole("link", { name: /Navigate during move/ })).toHaveCount(0);
+      const stored = await getIssue(request, due.number);
+      expect(stored.due_date).toBe(target);
+    } finally {
+      // Never leave the intercepted request pending during test teardown.
+      releasePatch();
+    }
   });
 
   test("drags a due entry to another date (pointer, with target styling)", async ({ page, request }) => {

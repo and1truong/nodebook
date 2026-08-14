@@ -149,19 +149,6 @@ export function daysBetween(a: string, b: string): number {
   return Math.round((db - da) / 86_400_000);
 }
 
-/** Add whole calendar months, clamping to the target month's last day. */
-export function addCivilMonths(date: string, months: number): string {
-  const parsed = parseCivilDate(date);
-  if (!parsed) throw new Error(`Invalid civil date: ${date}`);
-  if (!Number.isInteger(months)) throw new Error("months must be an integer");
-
-  const monthIndex = parsed.month - 1 + months;
-  const year = parsed.year + Math.floor(monthIndex / 12);
-  const month = ((monthIndex % 12) + 12) % 12 + 1;
-  const day = Math.min(parsed.day, daysInMonth(year, month));
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
 /** ISO instant (UTC) for "now". */
 export function nowIso(): string {
   return new Date().toISOString();
