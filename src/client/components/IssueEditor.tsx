@@ -6,6 +6,7 @@ import { ISSUE_TYPES, PRIORITIES, type IssueType } from "../../shared/limits";
 import type { IssueDto } from "../../shared/contracts/issues";
 import { buildRecurrenceRule, serializeRecurrenceRule, weekdayOfDate } from "../../shared/recurrence";
 import { civilDateTimeString, instantFromCivil, parseCivilDateTime, todayCivil } from "../../shared/time";
+import type { WeekStartDay } from "../../shared/contracts/config";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
@@ -170,12 +171,15 @@ export function IssueEditor({
   onCancel,
   submitLabel = "Save",
   variant = "standalone",
+  weekStartDay = "sunday",
 }: {
   initial: IssueFormValues;
   onSubmit: (values: IssueFormValues) => Promise<void>;
   onCancel?: () => void;
   submitLabel?: string;
   variant?: "standalone" | "inline";
+  /** First day of the calendar week (default Sunday). */
+  weekStartDay?: WeekStartDay;
 }) {
   const [values, setValues] = useState<IssueFormValues>(initial);
   const [saving, setSaving] = useState(false);
@@ -397,7 +401,7 @@ export function IssueEditor({
         </button>
         {planningOpen && (
           <div id="issue-planning" className="border-t border-border p-3">
-            <PlanningFields values={values} set={set} today={today} />
+            <PlanningFields values={values} set={set} today={today} weekStartDay={weekStartDay} />
           </div>
         )}
       </section>
@@ -431,10 +435,12 @@ function PlanningFields({
   values,
   set,
   today,
+  weekStartDay = "sunday",
 }: {
   values: IssueFormValues;
   set: <K extends keyof IssueFormValues>(key: K, value: IssueFormValues[K]) => void;
   today: string;
+  weekStartDay?: WeekStartDay;
 }) {
   const r = values.recurrence;
   const weekdays = ["MO", "TU", "WE", "TH", "FR", "SA", "SU"];
@@ -450,6 +456,7 @@ function PlanningFields({
             today={today}
             onChange={(v) => set("start_date", v)}
             ariaLabel="Start date"
+            weekStartDay={weekStartDay}
           />
         </Field>
         <Field label="Due date" htmlFor="due-date">
@@ -459,6 +466,7 @@ function PlanningFields({
             today={today}
             onChange={(v) => set("due_date", v)}
             ariaLabel="Due date"
+            weekStartDay={weekStartDay}
           />
         </Field>
         <Field label="Scheduled" htmlFor="scheduled-date">
@@ -468,6 +476,7 @@ function PlanningFields({
             today={today}
             onChange={(v) => set("scheduled_date", v)}
             ariaLabel="Scheduled"
+            weekStartDay={weekStartDay}
           />
         </Field>
       </div>

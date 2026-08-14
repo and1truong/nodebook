@@ -90,20 +90,28 @@ export const issueCreateSchema = z.object({
   parent_id: z.string().uuid().nullable().optional(),
 });
 
-export const issueUpdateSchema = issueCreateSchema.partial().extend({
-  // partial() keeps .default() semantics; make every field optional.
-  type: issueTypeSchema.optional(),
-  title: titleSchema.optional(),
-  body: bodySchema.optional(),
-  priority: prioritySchema,
-  labels: z.array(labelNameSchema).max(20).optional(),
-  start_date: civilDateSchema,
-  due_date: civilDateSchema,
-  scheduled_date: isoInstantSchema,
-  timezone: timezoneSchema.optional(),
-  recurrence_rule: recurrenceRuleSchema,
-  parent_id: z.string().uuid().nullable().optional(),
-});
+export const issueUpdateSchema = issueCreateSchema
+  .partial()
+  .extend({
+    // Optimistic-lock token from the IssueDto the editor read.
+    expected_version: z.number().int().positive(),
+    // partial() keeps .default() semantics; make every field optional.
+    type: issueTypeSchema.optional(),
+    title: titleSchema.optional(),
+    body: bodySchema.optional(),
+    priority: prioritySchema,
+    labels: z.array(labelNameSchema).max(20).optional(),
+    start_date: civilDateSchema,
+    due_date: civilDateSchema,
+    scheduled_date: isoInstantSchema,
+    timezone: timezoneSchema.optional(),
+    recurrence_rule: recurrenceRuleSchema,
+    parent_id: z.string().uuid().nullable().optional(),
+  })
+  .refine(
+    (input) => Object.entries(input).some(([key, value]) => key !== "expected_version" && value !== undefined),
+    { message: "At least one issue field must be provided" },
+  );
 
 export const commentCreateSchema = z.object({
   body: z.string().trim().min(1, "Comment must not be empty").max(50_000, "Comment is too long"),
@@ -214,6 +222,7 @@ export interface IssueDto {
   created_by: string;
   created_at: string;
   updated_at: string;
+  version: number;
   closed_at: string | null;
   completed_at: string | null;
   child_count: number;
@@ -341,6 +350,20 @@ export interface PlanningItemDto {
   /** For Today/Upcoming: the instant that matched, or the due date string. */
   matched: string;
   matched_kind: "due" | "scheduled" | "overdue";
+}
+
+/**
+ * One calendar occurrence of an open issue: a due date (all-day) or a
+ * scheduled instant (timed). An issue with both planning values expands into
+ * two entries so neither signal is hidden. `date` is the viewer-local civil
+ * date (YYYY-MM-DD) the entry is shown on; the timed instant is available on
+ * the embedded issue DTO (`scheduled_date`) for scheduled entries.
+ */
+export interface CalendarItemDto {
+  issue: IssueDto;
+  /** Viewer-local occurrence date (YYYY-MM-DD). */
+  date: string;
+  kind: "due" | "scheduled";
 }
 
 export interface OccurrenceDto {

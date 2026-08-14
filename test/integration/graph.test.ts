@@ -32,16 +32,16 @@ describe("hierarchy", () => {
     await post(`/api/graph/${b.number}/parent`, { parent_id: a.id });
 
     // PATCHing b as a's parent would create a two-node cycle: rejected.
-    const cycle = await patch(`/api/issues/${a.number}`, { parent_id: b.id });
+    const cycle = await patch(`/api/issues/${a.number}`, { expected_version: a.version, parent_id: b.id });
     expect(cycle.status).toBe(409);
 
     // Self-parent via PATCH is rejected too.
-    const self = await patch(`/api/issues/${a.number}`, { parent_id: a.id });
+    const self = await patch(`/api/issues/${a.number}`, { expected_version: a.version, parent_id: a.id });
     expect(self.status).toBe(400);
 
     // Valid reparenting through PATCH still works.
     const c = await createIssue({ title: "cycle c" });
-    const ok = await patch(`/api/issues/${b.number}`, { parent_id: c.id });
+    const ok = await patch(`/api/issues/${b.number}`, { expected_version: Number(b.version) + 1, parent_id: c.id });
     expect(ok.status).toBe(200);
     expect((ok.body as { parent_number: number | null }).parent_number).toBe(c.number);
   });
@@ -127,7 +127,10 @@ describe("references", () => {
     const commentHost = await createIssue({ title: "comment ref host" });
     const targetNumber = allocator.number + 3;
 
-    await patch(`/api/issues/${source.number}`, { body: `depends on #${targetNumber}` });
+    await patch(`/api/issues/${source.number}`, {
+      expected_version: source.version,
+      body: `depends on #${targetNumber}`,
+    });
     const commentRes = await post(`/api/issues/${commentHost.number}/comments`, {
       body: `waiting on #${targetNumber}`,
     });
@@ -363,18 +366,27 @@ describe("sub-issues tree", () => {
 });
 
 describe("wiki projection", () => {
-  it("builds the tree and breadcrumbs", async () => {
+  it("builds the tree from wiki roots only, keeping mixed-type descendants", async () => {
     const root = await createIssue({ title: "wiki root", type: "wiki" });
     const section = await createIssue({ title: "section", type: "wiki" });
-    const page = await createIssue({ title: "page", type: "wiki" });
+    // Non-wiki descendants stay visible beneath a wiki root.
+    const page = await createIssue({ title: "page", type: "task" });
     await post(`/api/graph/${section.number}/parent`, { parent_id: root.id });
     await post(`/api/graph/${page.number}/parent`, { parent_id: section.id });
+
+    // A non-wiki root and its branch must not appear in the wiki tree.
+    const nonWikiRoot = await createIssue({ title: "non-wiki root", type: "task" });
+    const nonWikiChild = await createIssue({ title: "non-wiki child", type: "wiki" });
+    await post(`/api/graph/${nonWikiChild.number}/parent`, { parent_id: nonWikiRoot.id });
 
     const tree = await api("/api/wiki/tree");
     const nodes = tree.body as {
       issue: { number: number };
       children: { issue: { number: number }; children: { issue: { number: number } }[] }[];
     }[];
+    expect(nodes.some((n) => n.issue.number === nonWikiRoot.number)).toBe(false);
+    // Branches beneath a non-wiki root are not promoted, even wiki-typed ones.
+    expect(nodes.some((n) => n.issue.number === nonWikiChild.number)).toBe(false);
     const rootNode = nodes.find((n) => n.issue.number === root.number)!;
     expect(rootNode.children.length).toBe(1);
     expect(rootNode.children[0]!.issue.number).toBe(section.number);
