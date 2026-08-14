@@ -55,9 +55,12 @@ export const api = {
   me: () => request<AppConfigDto>("/api/me"),
 
   // Issues
-  listIssues: (params: Record<string, string | undefined> = {}) => {
+  listIssues: (params: Record<string, string | string[] | undefined> = {}) => {
     const qs = new URLSearchParams();
-    for (const [k, v] of Object.entries(params)) if (v) qs.set(k, v);
+    for (const [key, value] of Object.entries(params)) {
+      if (Array.isArray(value)) value.forEach((item) => qs.append(key, item));
+      else if (value) qs.set(key, value);
+    }
     return request<IssueListResult>(`/api/issues?${qs.toString()}`);
   },
   getIssue: (ref: string) => request<IssueDto>(`/api/issues/${ref}`),

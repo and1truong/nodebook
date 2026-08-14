@@ -13,9 +13,9 @@ function ctx(c: { env: AppEnv["Bindings"]; get: (k: "actor") => AppEnv["Variable
 }
 
 issuesRoutes.get("/", async (c) => {
-  const type = c.req.query("type");
+  const types = c.req.queries("type");
   const status = c.req.query("status");
-  const label = c.req.query("label");
+  const labels = c.req.queries("label");
   const query = c.req.query("q");
   const limitParam = Number(c.req.query("limit") ?? 100);
   const offsetParam = Number(c.req.query("offset") ?? 0);
@@ -24,9 +24,9 @@ issuesRoutes.get("/", async (c) => {
   const limit = Number.isFinite(limitParam) ? Math.min(Math.max(limitParam, 1), 200) : 100;
   const offset = Number.isFinite(offsetParam) ? Math.max(offsetParam, 0) : 0;
   const result = await issueService.listIssues(ctx(c), {
-    type,
+    type: types,
     status,
-    label,
+    label: labels,
     query,
     limit,
     offset,

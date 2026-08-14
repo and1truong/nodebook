@@ -150,9 +150,9 @@ export async function getIssue(ctx: Ctx, ref: string): Promise<IssueDto> {
 }
 
 export interface ListIssuesFilters {
-  type?: string;
+  type?: string | string[];
   status?: string;
-  label?: string;
+  label?: string | string[];
   query?: string;
   limit?: number;
   offset?: number;

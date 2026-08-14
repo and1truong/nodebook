@@ -210,6 +210,29 @@ describe("issue lifecycle", () => {
     const closed = await api("/api/issues?status=closed");
     expect((closed.body as { issues: unknown[] }).issues).toHaveLength(0);
   });
+
+  it("supports multiple types, multiple labels, and keyword filters", async () => {
+    const marker = `multi-${crypto.randomUUID().slice(0, 8)}`;
+    const red = `${marker}-red`;
+    const blue = `${marker}-blue`;
+    await createIssue({ title: `${marker} bug needle`, body: "first searchable body", type: "bug", labels: [red] });
+    await createIssue({ title: `${marker} wiki`, body: "second searchable needle", type: "wiki", labels: [blue] });
+    await createIssue({ title: `${marker} task needle`, type: "task", labels: [`${marker}-other`] });
+
+    const types = await api(`/api/issues?q=${marker}&type=bug&type=wiki`);
+    const typedBody = types.body as { issues: { type: string }[]; total: number };
+    expect(typedBody.issues.map((issue) => issue.type).sort()).toEqual(["bug", "wiki"]);
+    expect(typedBody.total).toBe(2);
+
+    const labels = await api(`/api/issues?q=${marker}&label=${red}&label=${blue}`);
+    const labelledBody = labels.body as { issues: { labels: string[] }[]; total: number };
+    expect(labelledBody.issues).toHaveLength(2);
+    expect(labelledBody.issues.every((issue) => issue.labels.includes(red) || issue.labels.includes(blue))).toBe(true);
+    expect(labelledBody.total).toBe(2);
+
+    const keyword = await api(`/api/issues?q=${encodeURIComponent("second searchable needle")}`);
+    expect((keyword.body as { issues: { type: string }[] }).issues.map((issue) => issue.type)).toContain("wiki");
+  });
 });
 
 describe("comments", () => {

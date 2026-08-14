@@ -120,21 +120,24 @@ export async function getIssueByRef(db: D1Database, ref: string): Promise<IssueR
 }
 
 export interface IssueFilters {
-  type?: string;
+  type?: string | string[];
   status?: string;
-  label?: string;
+  label?: string | string[];
   parent_id?: string | null;
   query?: string;
   limit?: number;
   offset?: number;
 }
 
-export async function listIssues(db: D1Database, filters: IssueFilters = {}): Promise<IssueRecord[]> {
+function issueFilterSql(filters: IssueFilters): { where: string[]; args: string[] } {
   const where: string[] = [];
   const args: string[] = [];
-  if (filters.type) {
-    where.push("type = ?");
-    args.push(filters.type);
+  const types = Array.isArray(filters.type) ? filters.type : filters.type ? [filters.type] : [];
+  const labels = Array.isArray(filters.label) ? filters.label : filters.label ? [filters.label] : [];
+
+  if (types.length > 0) {
+    where.push(`type IN (${types.map(() => "?").join(", ")})`);
+    args.push(...types);
   }
   if (filters.status) {
     where.push("status = ?");
@@ -147,16 +150,26 @@ export async function listIssues(db: D1Database, filters: IssueFilters = {}): Pr
       args.push(filters.parent_id);
     }
   }
-  if (filters.label) {
+  if (labels.length > 0) {
     where.push(
-      "id IN (SELECT il.issue_id FROM issue_labels il JOIN labels l ON l.id = il.label_id WHERE l.name = ? COLLATE NOCASE)",
+      `id IN (
+        SELECT il.issue_id FROM issue_labels il
+        JOIN labels l ON l.id = il.label_id
+        WHERE ${labels.map(() => "l.name = ? COLLATE NOCASE").join(" OR ")}
+      )`,
     );
-    args.push(filters.label);
+    args.push(...labels);
   }
   if (filters.query) {
     where.push("(title LIKE ? OR body LIKE ?)");
     args.push(`%${filters.query}%`, `%${filters.query}%`);
   }
+
+  return { where, args };
+}
+
+export async function listIssues(db: D1Database, filters: IssueFilters = {}): Promise<IssueRecord[]> {
+  const { where, args } = issueFilterSql(filters);
   const sql = `SELECT ${ISSUE_COLUMNS} FROM issues ${where.length ? "WHERE " + where.join(" AND ") : ""} ORDER BY number DESC LIMIT ? OFFSET ?`;
   const limit = filters.limit ?? 100;
   const offset = filters.offset ?? 0;
@@ -165,16 +178,7 @@ export async function listIssues(db: D1Database, filters: IssueFilters = {}): Pr
 }
 
 export async function countIssues(db: D1Database, filters: IssueFilters = {}): Promise<number> {
-  const where: string[] = [];
-  const args: string[] = [];
-  if (filters.type) {
-    where.push("type = ?");
-    args.push(filters.type);
-  }
-  if (filters.status) {
-    where.push("status = ?");
-    args.push(filters.status);
-  }
+  const { where, args } = issueFilterSql(filters);
   const sql = `SELECT COUNT(*) AS n FROM issues ${where.length ? "WHERE " + where.join(" AND ") : ""}`;
   const row = await db.prepare(sql).bind(...args).first<{ n: number }>();
   return Number(row?.n ?? 0);
