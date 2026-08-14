@@ -549,7 +549,7 @@ test.describe.serial("MVP acceptance", () => {
     expect(content.headers()["content-disposition"]).toContain("inline");
   });
 
-  test("issue details sidebar: desktop placement and responsive stacking", async ({ page }) => {
+  test("issue details sidebar: desktop placement and responsive stacking", async ({ page, request }) => {
     await page.goto(`/issues/${issueNumber}`);
     const aside = page.getByRole("complementary", { name: "Issue details" });
 
@@ -558,6 +558,15 @@ test.describe.serial("MVP acceptance", () => {
     await expect(aside).toBeVisible();
     await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
     await expect(aside.getByText("due 2099-01-01")).toBeVisible();
+
+    // Priority can be changed in place without opening the full edit form.
+    const prioritySelect = aside.getByLabel(`Priority for #${issueNumber}`);
+    await expect(prioritySelect).toContainText("None");
+    await prioritySelect.click();
+    await page.getByRole("option", { name: /high/i }).click();
+    await expect(prioritySelect).toContainText(/high/i);
+    const prioritized = await apiJson(request, "GET", `/api/issues/${issueNumber}`);
+    expect(prioritized.json.priority).toBe("high");
     await expect(aside.locator(".uploader")).toHaveCount(0);
     await expect(aside.getByText("Backlinks", { exact: true })).toHaveCount(0);
     await expect(aside.locator(".reminder-form")).toHaveCount(0);

@@ -265,7 +265,13 @@ export function IssueDetailPage({
           </div>
 
           <IssueLinkPreview>
-            <IssueSidebar issue={issue} />
+            <IssueSidebar
+              issue={issue}
+              onIssueUpdated={(updated) => {
+                setIssue(updated);
+                void api.history(updated.number.toString()).then(setHistory).catch(() => undefined);
+              }}
+            />
           </IssueLinkPreview>
         </div>
       )}
