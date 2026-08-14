@@ -267,6 +267,7 @@ export function IssueDetailPage({
           <IssueLinkPreview>
             <IssueSidebar
               issue={issue}
+              weekStartDay={weekStartDay}
               onIssueUpdated={(updated) => {
                 setIssue(updated);
                 void api.history(updated.number.toString()).then(setHistory).catch(() => undefined);
