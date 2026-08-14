@@ -30,6 +30,12 @@ export interface Env {
    * so they never depend on an untrusted request host.
    */
   OAUTH_ISSUER?: string;
+  /** Initial calendar view: "day", "week", or "month" (default "week"). */
+  CALENDAR_DEFAULT_VIEW?: string;
+  /** First day of the calendar week: "sunday"…"saturday" (default "sunday"). */
+  WEEK_START_DAY?: string;
+  /** Initial number of rows on the Issues page: "20", "50", or "100" (default 20). */
+  ISSUES_DEFAULT_LIMIT?: string;
 }
 
 export function uploadLimitBytes(env: Env): number {

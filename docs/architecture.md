@@ -44,7 +44,8 @@ The OAuth `issuer` is the configured `OAUTH_ISSUER` variable (production) or the
 - `0004_planning.sql` — `occurrences` (recurring-task completions, unique per issue+instant).
 - `0005_reminders.sql` — `reminders`, `reminder_occurrences` (materialized deliveries with expiring claim locks), `notifications`, `notification_deliveries` (idempotency keys).
 - `0006_attachments.sql` — `attachments` metadata (soft-delete + R2 key = blob checksum).
-- `0008_oauth.sql` — `oauth_clients` (public clients + exact redirect-URI allowlists), `oauth_grants` (stable owner-approved connections, scopes, usage, revocation), `oauth_codes` (one-time hashed codes with PKCE challenges, resource, expiry, consumed state), `oauth_tokens` (hashed access/refresh tokens, kind, grant ownership, expiry, rotation/revocation state). Grant revocation cascades to every token via `revokeTokensForGrant`.
+- `0008_issue_version.sql` — monotonic `issues.version` revision for optimistic locking across browser and MCP edits.
+- `0009_oauth.sql` — `oauth_clients` (public clients + exact redirect-URI allowlists), `oauth_grants` (stable owner-approved connections, scopes, usage, revocation), `oauth_codes` (one-time hashed codes with PKCE challenges, resource, expiry, consumed state), `oauth_tokens` (hashed access/refresh tokens, kind, grant ownership, expiry, rotation/revocation state). Grant revocation cascades to every token via `revokeTokensForGrant`.
 
 ## Key algorithms
 

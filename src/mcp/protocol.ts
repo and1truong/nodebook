@@ -3,7 +3,13 @@
  * handshake, tools/list, tools/call, ping. Session state is owned by the
  * McpSession Durable Object; tool execution happens with the DO's bindings.
  */
-import { JSONRPC_INVALID_REQUEST, JSONRPC_METHOD_NOT_FOUND, JSONRPC_SESSION_NOT_INITIALIZED, JSONRPC_INTERNAL_ERROR } from "../domain/errors";
+import {
+  JSONRPC_INTERNAL_ERROR,
+  JSONRPC_INVALID_REQUEST,
+  JSONRPC_METHOD_NOT_FOUND,
+  JSONRPC_SESSION_NOT_INITIALIZED,
+  JSONRPC_VERSION_CONFLICT,
+} from "../domain/errors";
 import { isMcpError } from "./errors";
 import { tools, getToolByName } from "./tools";
 import { toolList, parseToolArgs } from "./tool-auth";
@@ -100,6 +106,9 @@ export async function handleMessage(
         return errorResponse(message.id, e.code, e.message, e.data);
       }
       if (isAppError(e)) {
+        if (e.code === "version_conflict") {
+          return errorResponse(message.id, JSONRPC_VERSION_CONFLICT, e.message, e.details);
+        }
         return errorResponse(message.id, JSONRPC_INTERNAL_ERROR, `${e.code}: ${e.message}`);
       }
       console.error("tools/call failed", params.name, e);
@@ -153,6 +162,6 @@ export function errorResponse(id: string | number | null | undefined, code: numb
   };
 }
 
-function isAppError(e: unknown): e is { code: string; message: string } {
+function isAppError(e: unknown): e is { code: string; message: string; details?: unknown } {
   return typeof e === "object" && e !== null && "code" in e && "message" in e;
 }

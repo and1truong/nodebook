@@ -1,4 +1,4 @@
--- 0008_oauth.sql
+-- 0009_oauth.sql
 -- OAuth 2.1 authorization server tables: dynamically registered public
 -- clients, owner-approved grants, one-time authorization codes, and hashed
 -- access/refresh tokens.

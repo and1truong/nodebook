@@ -17,6 +17,49 @@ async function apiJson(request: APIRequestContext, method: string, path: string,
   return { status: res.status(), json };
 }
 
+/** Wall-clock date (YYYY-MM-DD) of now in the host timezone — matches the client's todayCivil. */
+function civilToday(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/** Add civil days via UTC arithmetic, so month/year rollover is handled. */
+function addCivilDays(date: string, days: number): string {
+  const [year, month, day] = date.split("-").map(Number);
+  const next = new Date(Date.UTC(year!, month! - 1, day! + days));
+  return next.toISOString().slice(0, 10);
+}
+
+const WEEKDAY_INDEX: Record<string, number> = {
+  sunday: 0,
+  monday: 1,
+  tuesday: 2,
+  wednesday: 3,
+  thursday: 4,
+  friday: 5,
+  saturday: 6,
+};
+
+/** The configured week-start day on or before `date`. */
+function startOfWeek(date: string, weekStartDay: string): string {
+  const startIndex = WEEKDAY_INDEX[weekStartDay];
+  if (startIndex === undefined) throw new Error(`Invalid week start from /api/me: ${weekStartDay}`);
+  const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+  return addCivilDays(date, -((weekday - startIndex + 7) % 7));
+}
+
+/** First day of the calendar month following `date`'s month. */
+function firstOfNextMonth(date: string): string {
+  const [year, month] = date.split("-").map(Number);
+  return month === 12 ? `${year! + 1}-01-01` : `${year}-${String(month! + 1).padStart(2, "0")}-01`;
+}
+
 test.describe.serial("MVP acceptance", () => {
   let issueNumber: number;
   let childNumber: number;
@@ -27,7 +70,9 @@ test.describe.serial("MVP acceptance", () => {
     await page.goto("/inbox");
     await expect(page.getByRole("heading", { name: "Inbox" })).toBeVisible();
 
-    // Quick create from the top bar.
+    // Quick create from the top bar as a wiki root (drives the wiki home).
+    await page.getByLabel("Issue type").click();
+    await page.getByRole("option", { name: "wiki" }).click();
     await page.getByLabel("Quick create title").fill("Set up the NodeBook workspace");
     await page.getByRole("button", { name: "Add" }).click();
 
@@ -77,6 +122,8 @@ test.describe.serial("MVP acceptance", () => {
     const priorityTask = await createInboxIssue("Inbox priority task");
     const todayTask = await createInboxIssue("Inbox today task");
     const tomorrowTask = await createInboxIssue("Inbox tomorrow task");
+    const nextWeekTask = await createInboxIssue("Inbox next week task");
+    const nextMonthTask = await createInboxIssue("Inbox next month task");
     const customDateTask = await createInboxIssue("Inbox custom date task");
     const closeNote = await createInboxIssue("Inbox note to close", "note");
 
@@ -110,6 +157,29 @@ test.describe.serial("MVP acceptance", () => {
     const plannedTomorrow = await apiJson(request, "GET", `/api/issues/${tomorrowTask.number}`);
     expect(plannedTomorrow.json.due_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     expect(plannedTomorrow.json.due_date).not.toBe(plannedToday.json.due_date);
+
+    const me = await apiJson(request, "GET", "/api/me");
+    expect(me.status).toBe(200);
+    const weekStartDay = String(me.json.week_start_day);
+
+    const nextWeekRow = page.locator(".issue-row", { hasText: "Inbox next week task" });
+    await nextWeekRow.getByRole("button", { name: `Plan issue #${nextWeekTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Next week", exact: true }).click();
+    await expect(nextWeekRow).toHaveCount(0);
+    const plannedNextWeek = await apiJson(request, "GET", `/api/issues/${nextWeekTask.number}`);
+    // Next week is the first configured day of the following week. Derive
+    // the expectation from /api/me so changing the deployment's week start
+    // does not silently invalidate this acceptance test.
+    expect(plannedNextWeek.json.due_date).toBe(addCivilDays(startOfWeek(civilToday(), weekStartDay), 7));
+    expect(plannedNextWeek.json.due_date).not.toBe(plannedToday.json.due_date);
+
+    const nextMonthRow = page.locator(".issue-row", { hasText: "Inbox next month task" });
+    await nextMonthRow.getByRole("button", { name: `Plan issue #${nextMonthTask.number}` }).click();
+    await page.getByRole("menuitem", { name: "Next month", exact: true }).click();
+    await expect(nextMonthRow).toHaveCount(0);
+    const plannedNextMonth = await apiJson(request, "GET", `/api/issues/${nextMonthTask.number}`);
+    // Next month is the first day of the following calendar month.
+    expect(plannedNextMonth.json.due_date).toBe(firstOfNextMonth(civilToday()));
 
     const customRow = page.locator(".issue-row", { hasText: "Inbox custom date task" });
     await customRow.getByRole("button", { name: `Plan issue #${customDateTask.number}` }).click();
@@ -481,7 +551,7 @@ test.describe.serial("MVP acceptance", () => {
     expect(content.headers()["content-disposition"]).toContain("inline");
   });
 
-  test("issue details sidebar: desktop placement and responsive stacking", async ({ page }) => {
+  test("issue details sidebar: desktop placement and responsive stacking", async ({ page, request }) => {
     await page.goto(`/issues/${issueNumber}`);
     const aside = page.getByRole("complementary", { name: "Issue details" });
 
@@ -489,7 +559,29 @@ test.describe.serial("MVP acceptance", () => {
     // backlinks now live in the main-column tab set.
     await expect(aside).toBeVisible();
     await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
-    await expect(aside.getByText("due 2099-01-01")).toBeVisible();
+    await expect(aside.getByRole("textbox", { name: `Due date for #${issueNumber}` })).toHaveValue("2099-01-01");
+
+    // Type, priority, and planning dates can be changed in place without opening the full edit form.
+    const typeSelect = aside.getByLabel(`Type for #${issueNumber}`);
+    await expect(typeSelect).toContainText(/wiki/i);
+    await typeSelect.click();
+    await page.getByRole("option", { name: /^bug$/i }).click();
+    await expect(typeSelect).toContainText(/bug/i);
+    const retyped = await apiJson(request, "GET", `/api/issues/${issueNumber}`);
+    expect(retyped.json.type).toBe("bug");
+
+    // Restore the type because later acceptance tests use this issue as a wiki root.
+    await typeSelect.click();
+    await page.getByRole("option", { name: /^wiki$/i }).click();
+    await expect(typeSelect).toContainText(/wiki/i);
+
+    const prioritySelect = aside.getByLabel(`Priority for #${issueNumber}`);
+    await expect(prioritySelect).toContainText("None");
+    await prioritySelect.click();
+    await page.getByRole("option", { name: /high/i }).click();
+    await expect(prioritySelect).toContainText(/high/i);
+    const prioritized = await apiJson(request, "GET", `/api/issues/${issueNumber}`);
+    expect(prioritized.json.priority).toBe("high");
     await expect(aside.locator(".uploader")).toHaveCount(0);
     await expect(aside.getByText("Backlinks", { exact: true })).toHaveCount(0);
     await expect(aside.locator(".reminder-form")).toHaveCount(0);
@@ -523,7 +615,7 @@ test.describe.serial("MVP acceptance", () => {
     await expect(page.locator("html")).toHaveClass(/dark/);
     await expect(aside).toBeVisible();
     await expect(aside.locator(".chip", { hasText: "setup" })).toBeVisible();
-    await expect(aside.getByText("due 2099-01-01")).toBeVisible();
+    await expect(aside.getByRole("textbox", { name: `Due date for #${issueNumber}` })).toHaveValue("2099-01-01");
     const darkTokens = await page.evaluate(() => {
       const s = getComputedStyle(document.documentElement);
       return { bg: s.getPropertyValue("--background").trim(), card: s.getPropertyValue("--card").trim() };
@@ -550,12 +642,39 @@ test.describe.serial("MVP acceptance", () => {
 
     await page.goto(`/issues/${recurring.number}`);
     await page.getByRole("button", { name: "✓ Complete" }).click();
-    await expect(page.getByText("due 2099-01-08")).toBeVisible();
+    await expect(page.getByRole("textbox", { name: `Due date for #${recurring.number}` })).toHaveValue("2099-01-08");
 
     // Non-recurring close still works.
     await page.goto(`/issues/${issueNumber}`);
     await page.getByRole("button", { name: "✓ Complete" }).click();
     await expect(page.getByRole("button", { name: "Reopen" })).toBeVisible();
+  });
+
+  test("a stale browser draft is preserved and rejected", async ({ page, request }) => {
+    const created = await apiJson(request, "POST", "/api/issues", {
+      title: "Optimistic locking browser test",
+      body: "original body",
+    });
+    expect(created.status).toBe(201);
+    const issue = created.json as { number: number; version: number };
+
+    await page.goto(`/issues/${issue.number}`);
+    await page.getByRole("button", { name: "Edit" }).click();
+    const body = page.locator("#issue-body");
+    await body.fill("human draft that must survive");
+
+    const external = await apiJson(request, "PATCH", `/api/issues/${issue.number}`, {
+      expected_version: issue.version,
+      body: "external edit won",
+    });
+    expect(external.status).toBe(200);
+
+    await page.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("alert")).toContainText("Issue changed since it was loaded");
+    await expect(body).toHaveValue("human draft that must survive");
+
+    const current = await apiJson(request, "GET", `/api/issues/${issue.number}`);
+    expect(current.json.body).toBe("external edit won");
   });
 
   test("MCP mutation is visible in the web UI with audit attribution", async ({ page, request }) => {
@@ -622,6 +741,10 @@ test.describe.serial("MVP acceptance", () => {
     const childPage = page.locator(".tree-link", { hasText: "Write deployment guide" });
     await expect(rootPage).toBeVisible();
     await expect(childPage).toHaveCount(0);
+
+    // Non-wiki roots are excluded from the wiki home and its tree.
+    await expect(page.locator(".tree-link", { hasText: "Inbox priority task" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: /Inbox priority task/ })).toHaveCount(0);
 
     await page.getByRole("button", { name: "Expand Set up the NodeBook workspace" }).click();
     await expect(childPage).toBeVisible();

@@ -2,8 +2,10 @@
 import { useState } from "react";
 import { CalendarDays, Check, X } from "lucide-react";
 import type { IssueDto } from "../../shared/contracts/issues";
+import type { WeekStartDay } from "../../shared/contracts/config";
 import { PRIORITIES } from "../../shared/limits";
 import { todayCivil } from "../../shared/time";
+import { startOfNextMonth, startOfNextWeek } from "../calendar";
 import { api } from "../api";
 import { DatePicker } from "./DatePicker";
 import { Button } from "./ui/button";
@@ -18,11 +20,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 export function InboxItemActions({
   issue,
   timezone,
+  weekStartDay,
   onUpdated,
   onRemoved,
 }: {
   issue: IssueDto;
   timezone: string;
+  /** Resolved week start; undefined while /api/me config is still loading. */
+  weekStartDay?: WeekStartDay;
   onUpdated: (issue: IssueDto) => void;
   onRemoved: (issueId: string) => void;
 }) {
@@ -37,7 +42,7 @@ export function InboxItemActions({
     setPending(true);
     setError(null);
     try {
-      const updated = await api.updateIssue(String(issue.number), {
+      const updated = await api.updateIssue(String(issue.number), issue.version, {
         priority: priority === "none" ? null : priority,
       });
       onUpdated(updated);
@@ -52,7 +57,7 @@ export function InboxItemActions({
     setPending(true);
     setError(null);
     try {
-      await api.updateIssue(String(issue.number), { due_date: dueDate });
+      await api.updateIssue(String(issue.number), issue.version, { due_date: dueDate });
       onRemoved(issue.id);
     } catch (err) {
       setError(messageOf(err, "Could not set due date"));
@@ -113,6 +118,15 @@ export function InboxItemActions({
             <DropdownMenuItem onSelect={() => void assignDueDate(today)}>Today</DropdownMenuItem>
             <DropdownMenuItem onSelect={() => void assignDueDate(addCivilDays(today, 1))}>Tomorrow</DropdownMenuItem>
             <DropdownMenuItem
+              disabled={!weekStartDay}
+              onSelect={() => {
+                if (weekStartDay) void assignDueDate(startOfNextWeek(today, weekStartDay));
+              }}
+            >
+              Next week
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => void assignDueDate(startOfNextMonth(today))}>Next month</DropdownMenuItem>
+            <DropdownMenuItem
               onSelect={() => {
                 setCustomDate(today);
                 setCustomDateOpen(true);
@@ -144,6 +158,7 @@ export function InboxItemActions({
             today={today}
             onChange={setCustomDate}
             ariaLabel={`Due date for #${issue.number}`}
+            weekStartDay={weekStartDay}
           />
           <Button
             type="button"

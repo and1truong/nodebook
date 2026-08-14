@@ -23,6 +23,7 @@ import { tokensRoutes } from "./server/routes/tokens";
 import { oauthRoutes } from "./server/routes/oauth";
 import { runScheduledReminders } from "./server/scheduled/reminders";
 import { runScheduledAttachmentGc } from "./server/scheduled/attachment-gc";
+import { resolveCalendarDefaultView, resolveIssuesDefaultLimit, resolveWeekStartDay } from "./shared/contracts/config";
 
 // Durable Object classes must be exported from the entrypoint module.
 export { McpSession } from "./mcp/McpSession";
@@ -46,10 +47,16 @@ app.route("/api/tokens", tokensRoutes);
 // OAuth 2.1 authorization server: discovery, registration, authorize, token.
 app.route("/", oauthRoutes);
 
-// Me endpoint: current identity for the web UI.
+// Me endpoint: current identity + runtime configuration for the web UI.
 app.get("/api/me", (c) => {
   const actor = c.get("actor");
-  return c.json({ email: actor.id, actor_type: actor.type });
+  return c.json({
+    email: actor.id,
+    actor_type: actor.type,
+    calendar_default_view: resolveCalendarDefaultView(c.env.CALENDAR_DEFAULT_VIEW),
+    week_start_day: resolveWeekStartDay(c.env.WEEK_START_DAY),
+    issues_default_limit: resolveIssuesDefaultLimit(c.env.ISSUES_DEFAULT_LIMIT),
+  });
 });
 
 // ---------------------------------------------------------------------------

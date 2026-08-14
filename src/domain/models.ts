@@ -33,6 +33,7 @@ export interface IssueRecord {
   created_by: string;
   created_at: string;
   updated_at: string;
+  version: number;
   closed_at: string | null;
   completed_at: string | null;
 }

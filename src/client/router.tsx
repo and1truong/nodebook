@@ -23,6 +23,14 @@ export function navigate(to: string) {
   window.scrollTo(0, 0);
 }
 
+/** Navigate without adding a history entry (compatibility redirects). */
+export function navigateReplace(to: string) {
+  window.history.replaceState(null, "", to);
+  currentPath = window.location.pathname + window.location.search;
+  emit();
+  window.scrollTo(0, 0);
+}
+
 export function useRouter(): RouterState {
   const [path, setPath] = useState(currentPath);
 
@@ -62,14 +70,16 @@ export const Link = forwardRef<HTMLAnchorElement, {
   className?: string;
   children: React.ReactNode;
   title?: string;
+  "aria-current"?: "page" | "step" | "location" | "date" | "time" | "true" | "false";
   onClick?: () => void;
-}>(function Link({ to, className, children, title, onClick }, ref) {
+}>(function Link({ to, className, children, title, onClick, ...rest }, ref) {
   return (
     <a
       href={to}
       className={className}
       title={title}
       ref={ref}
+      {...rest}
       onClick={(e) => {
         if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
         e.preventDefault();

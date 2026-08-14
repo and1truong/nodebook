@@ -29,7 +29,13 @@
 		// "https://nodebook.example.com"). Must be the stable custom domain;
 		// discovery and redirect validation are anchored to it. Empty in
 		// local development (the request origin is used instead).
-		"OAUTH_ISSUER": ""
+		"OAUTH_ISSUER": "",
+		// Initial calendar view: "day", "week", or "month" (invalid/missing → week).
+		"CALENDAR_DEFAULT_VIEW": "week",
+		// First day of the calendar week: "sunday"…"saturday" (invalid/missing → sunday).
+		"WEEK_START_DAY": "sunday",
+		// Initial Issues page size: 20, 50, or 100 (invalid/missing → 20).
+		"ISSUES_DEFAULT_LIMIT": "20"
 	},
 	"d1_databases": [
 		{

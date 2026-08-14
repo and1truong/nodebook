@@ -1,12 +1,14 @@
-/** Themed date picker: calendar popover with Sunday-first weeks and theme tokens. */
+/** Themed date picker: calendar popover with configurable week start and theme tokens. */
 import { useEffect, useState } from "react";
 import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import { Popover } from "radix-ui";
+import type { WeekStartDay } from "../../shared/contracts/config";
+import { weekStartIndex } from "../../shared/contracts/config";
+import { weekdayHeaders } from "../calendar";
 import { Input } from "./ui/input";
 import { Button } from "./ui/button";
 import { cn } from "@/lib/utils";
 
-const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"]; // Sunday-first
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
   "July", "August", "September", "October", "November", "December",
@@ -36,6 +38,9 @@ export function DatePicker({
   onChange,
   ariaLabel,
   className,
+  inputClassName,
+  disabled = false,
+  weekStartDay = "sunday",
 }: {
   id?: string;
   value: string;
@@ -44,6 +49,10 @@ export function DatePicker({
   onChange: (date: string) => void;
   ariaLabel: string;
   className?: string;
+  inputClassName?: string;
+  disabled?: boolean;
+  /** First day of the calendar week (default Sunday). */
+  weekStartDay?: WeekStartDay;
 }) {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState(value);
@@ -73,15 +82,17 @@ export function DatePicker({
 
   const daysInMonth = new Date(view.y, view.m, 0).getDate();
   const firstDow = new Date(view.y, view.m - 1, 1).getDay(); // 0 = Sunday
+  // Leading blanks offset the 1st to the column of the configured week start.
+  const leadingBlanks = (firstDow - weekStartIndex(weekStartDay) + 7) % 7;
   const cells: (number | null)[] = [];
   for (let i = 0; i < 42; i++) {
-    const d = i - firstDow + 1;
+    const d = i - leadingBlanks + 1;
     cells.push(d >= 1 && d <= daysInMonth ? d : null);
   }
 
   const isSelected = (d: number) => parsed !== null && parsed.y === view.y && parsed.m === view.m && parsed.d === d;
   const isToday = (d: number) => todayParsed !== null && todayParsed.y === view.y && todayParsed.m === view.m && todayParsed.d === d;
-  const isDisabled = (d: number) => min !== undefined && toIso(view.y, view.m, d) < min;
+  const isDisabled = (d: number) => disabled || (min !== undefined && toIso(view.y, view.m, d) < min);
 
   return (
     <div className={cn("relative w-40", className)}>
@@ -91,6 +102,7 @@ export function DatePicker({
             <Input
               id={id}
               value={text}
+              disabled={disabled}
               onChange={(e) => {
                 const nextText = e.target.value;
                 setText(nextText);
@@ -109,11 +121,12 @@ export function DatePicker({
               onClick={() => handleOpenChange(true)}
               placeholder="YYYY-MM-DD"
               aria-label={ariaLabel}
-              className="cursor-pointer pr-10"
+              className={cn("cursor-pointer pr-10", inputClassName)}
             />
             <Popover.Trigger asChild>
               <button
                 type="button"
+                disabled={disabled}
                 aria-label={`${ariaLabel} calendar`}
                 className="absolute right-1 top-1/2 flex size-7 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
@@ -134,6 +147,7 @@ export function DatePicker({
               variant="ghost"
               size="sm"
               className="h-7 w-7 px-0"
+              disabled={disabled}
               aria-label="Previous month"
               onClick={() => setView((v) => (v.m === 1 ? { y: v.y - 1, m: 12 } : { y: v.y, m: v.m - 1 }))}
             >
@@ -147,6 +161,7 @@ export function DatePicker({
               variant="ghost"
               size="sm"
               className="h-7 w-7 px-0"
+              disabled={disabled}
               aria-label="Next month"
               onClick={() => setView((v) => (v.m === 12 ? { y: v.y + 1, m: 1 } : { y: v.y, m: v.m + 1 }))}
             >
@@ -154,7 +169,7 @@ export function DatePicker({
             </Button>
           </div>
           <div className="grid grid-cols-7 gap-0.5 text-center">
-            {WEEKDAYS.map((w) => (
+            {weekdayHeaders(weekStartDay).map((w) => (
               <span key={w} className="py-1 text-[11px] font-medium text-muted-foreground">
                 {w}
               </span>
@@ -190,6 +205,7 @@ export function DatePicker({
                 type="button"
                 variant="ghost"
                 size="sm"
+                disabled={disabled}
                 className="h-6 px-2 text-xs text-muted-foreground"
                 onClick={() => {
                   onChange("");

@@ -27,7 +27,10 @@ export function createApp(): Hono<AppEnv> {
       return c.json({ error: { code: "validation_error", message } }, 400);
     }
     if (err instanceof AppError) {
-      return c.json({ error: { code: err.code, message: err.message } }, err.status as ContentfulStatusCode);
+      return c.json(
+        { error: { code: err.code, message: err.message, ...(err.details !== undefined ? { details: err.details } : {}) } },
+        err.status as ContentfulStatusCode,
+      );
     }
     console.error("Unhandled error", err);
     return c.json({ error: { code: "internal_error", message: "Internal error" } }, 500);

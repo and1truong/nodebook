@@ -8,11 +8,11 @@ Canonical PRD: https://github.com/and1truong/wiki/issues/229
 
 NodeBook is a single-owner workspace where every issue is a first-class node in a wiki graph:
 
-- **Issues** — all PRD types (`task`, `bug`, `epic`, `story`, `decision`, `finding`, `incident`, `learning`, `wiki`, `note`) with open/closed state, labels, priorities, Markdown bodies, and durable audit history.
+- **Issues** — all PRD types (`task`, `bug`, `epic`, `story`, `decision`, `finding`, `incident`, `learning`, `wiki`, `note`) with open/closed state, labels, priorities, Markdown bodies, durable audit history, and a paginated list with selectable 20/50/100-row pages (`ISSUES_DEFAULT_LIMIT`, default **20**).
 - **Graph** — parent/child hierarchy, typed relationships (`related`, `depends_on`, `blocks`, `supersedes`, `duplicates`), and `#123` references that resolve even when the target is created later.
 - **Wiki** — hierarchy tree navigation, breadcrumbs, backlinks, and related-content panels.
 - **Search** — FTS5 full-text search over titles, bodies, comments, labels, and attachment metadata, with type/state/label filters and PRD `search_knowledge` semantics.
-- **Planning** — Inbox / Today / Upcoming / Overdue views in the owner's timezone; recurring tasks (RFC 5545 rules) record occurrences and advance planning dates instead of closing.
+- **Planning** — Inbox / Today / Calendar / Overdue views in the owner's timezone; recurring tasks (RFC 5545 rules) record occurrences and advance planning dates instead of closing. The Calendar workspace (`/calendar`, day/week/month views) opens in a deployment-configurable default view (`CALENDAR_DEFAULT_VIEW`, default **week**) and shows due dates and scheduled instants in the viewer's timezone via a bounded range API; entries are created from a date/time popup by clicking month/week dates or day timeline slots, rescheduled by dragging between dates, and the day timeline sets scheduled times in 15-minute increments (with **Move date…** shortcuts for Today, Tomorrow, Next week, and Next month plus a custom picker as a fallback). The week start is deployment-configurable too (`WEEK_START_DAY`, default **sunday**): it rotates Calendar views, the date pickers, the inbox **Plan** shortcuts, and the day-view **Move date…** shortcuts — **Next week** schedules for the first day of the following week and **Next month** for the first day of the following month. `/upcoming` redirects to `/calendar` for compatibility.
 - **Reminders & notifications** — absolute, before-due, and recurring reminders delivered to an in-app notification inbox by a one-minute Cron Trigger, with idempotent delivery and expiring claim locks.
 - **Attachments** — private R2 blobs with checksum deduplication, inline previews or forced downloads, range support, soft deletion, and daily garbage collection.
 - **Theming** — light, dark, and system themes (Tailwind CSS v4 + CSS-variable tokens on shadcn/ui components) with a topbar switcher, localStorage persistence, no flash-of-wrong-theme on load, and live following of the OS preference in system mode. The palette is derived from TabTerm's warm parchment/brown/gold theme (light `#f5f0e8`/`#fffcf6`/`#7a5c00`, dark `#1a1200`/`#251a00`/`#ffd000`), with light-mode text tokens darkened to stay ≥ 4.5:1 (WCAG AA).
@@ -36,15 +36,13 @@ One TypeScript project, one deployable Worker. No Node.js runtime (`nodejs_compa
 npm ci
 cp .dev.vars.example .dev.vars        # local identity (owner@nodebook.local)
 
-# Terminal 1 — the Worker (API + MCP + UI on :8787)
+# Terminal 1 — the Worker (API + MCP + a fresh UI build on :8787)
 npm run db:migrate:local
 npm run dev:worker
 
-# Terminal 2 — the Vite dev server with API proxy (optional, hot reload on :5173)
+# Terminal 2 — the Vite dev server with API proxy (recommended for client
+# development and hot reload; open http://localhost:5173)
 npm run dev:web
-
-# Or run the built SPA directly through the Worker:
-npm run build                          # then just use http://localhost:8787
 ```
 
 ## Quality gates
@@ -94,7 +92,14 @@ URL:   https://<your-worker>/mcp
 Auth:  Authorization: Bearer nbk_…
 ```
 
-Tokens are stored as SHA-256 hashes with display prefixes, support expiration, and revoke immediately. Every tool call is re-checked against the database on each request. `get_today`/`get_upcoming` accept an optional `timezone` argument (IANA).
+Tokens are stored as SHA-256 hashes with display prefixes, support expiration, and revoke immediately. Every tool call is re-checked against the database on each request. `get_today`/`get_upcoming` accept an optional `timezone` argument (IANA); `get_upcoming` is retained unchanged for compatibility with the retired Upcoming browser page.
+
+Issue edits use optimistic locking across the browser and MCP. Read the current issue first, then pass its `version` as `expected_version` to `update_issue`. A `-32009` conflict means another editor changed the issue; refetch and deliberately reapply the intended changes rather than retrying the stale payload.
+
+### API/MCP migration notes
+
+- Optimistic locking is a **breaking contract change**: `PATCH /api/issues/:ref` and MCP `update_issue` require `expected_version` and at least one field to change. Existing MCP clients must reconnect or refresh their cached tool schema, then read an issue before updating it. Missing arguments fail with HTTP `400` or MCP `-32602`; stale versions fail with HTTP `409` or MCP `-32009`.
+- `GET /api/issues` preserves its historical default limit of 100 for compatibility. The web UI sends its deployment-configured `ISSUES_DEFAULT_LIMIT` explicitly; API consumers can paginate with `limit`, `offset`, and the response's `total`.
 
 ## Production notes
 

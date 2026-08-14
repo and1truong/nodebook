@@ -1,5 +1,6 @@
 /** Themed date/time control that avoids the browser-owned datetime popup. */
 import { useEffect, useState } from "react";
+import type { WeekStartDay } from "../../shared/contracts/config";
 import { DatePicker } from "./DatePicker";
 import { Input } from "./ui/input";
 import { cn } from "@/lib/utils";
@@ -24,6 +25,7 @@ export function DateTimePicker({
   onChange,
   ariaLabel,
   className,
+  weekStartDay = "sunday",
 }: {
   id?: string;
   value: string;
@@ -31,6 +33,8 @@ export function DateTimePicker({
   onChange: (dateTime: string) => void;
   ariaLabel: string;
   className?: string;
+  /** First day of the calendar week (default Sunday). */
+  weekStartDay?: WeekStartDay;
 }) {
   const parsed = parts(value);
   const [timeText, setTimeText] = useState(parsed.time);
@@ -55,6 +59,7 @@ export function DateTimePicker({
         }}
         ariaLabel={`${ariaLabel} date`}
         className="w-40 shrink-0"
+        weekStartDay={weekStartDay}
       />
       <Input
         id={id ? `${id}-time` : undefined}

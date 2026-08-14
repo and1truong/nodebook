@@ -17,3 +17,12 @@ AUTH_DEV_EMAIL=owner@nodebook.local
 # https://nodebook.example.com). Leave unset for local development, where the
 # request origin is used instead. Must be the stable custom domain, never workers.dev.
 # OAUTH_ISSUER=https://nodebook.example.com
+
+# Initial calendar view: day, week, or month (missing/invalid values fall back to week).
+# CALENDAR_DEFAULT_VIEW=week
+
+# First day of the calendar week: sunday, monday, …, saturday (missing/invalid values fall back to sunday).
+# WEEK_START_DAY=sunday
+
+# Initial number of rows on the Issues page: 20, 50, or 100 (missing/invalid values fall back to 20).
+# ISSUES_DEFAULT_LIMIT=20
