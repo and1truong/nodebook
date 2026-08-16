@@ -7,6 +7,8 @@ import type {
   CommentDto,
   IssueDto,
   IssueListResult,
+  IssueViewDto,
+  IssueViewFilters,
   McpTokenCreatedDto,
   McpTokenDto,
   NotificationDto,
@@ -76,6 +78,14 @@ export const api = {
   reopenIssue: (ref: string) => request<IssueDto>(`/api/issues/${ref}/reopen`, { method: "POST" }),
   completeTask: (ref: string) => request<IssueDto>(`/api/issues/${ref}/complete`, { method: "POST" }),
   history: (ref: string) => request<AuditEventDto[]>(`/api/issues/${ref}/history`),
+
+  // Saved issue views
+  issueViews: () => request<IssueViewDto[]>("/api/issue-views"),
+  createIssueView: (input: { name: string; filters: IssueViewFilters }) =>
+    request<IssueViewDto>("/api/issue-views", { method: "POST", body: JSON.stringify(input) }),
+  updateIssueView: (id: string, input: { name?: string; filters?: IssueViewFilters }) =>
+    request<IssueViewDto>(`/api/issue-views/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  deleteIssueView: (id: string) => request<void>(`/api/issue-views/${id}`, { method: "DELETE" }),
 
   // Comments
   comments: (ref: string) => request<CommentDto[]>(`/api/issues/${ref}/comments`),

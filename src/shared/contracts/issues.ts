@@ -181,6 +181,43 @@ export const searchQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+export const issueViewNameSchema = z
+  .string()
+  .trim()
+  .min(1, "View name must not be empty")
+  .max(64, "View name is too long")
+  .transform((name) => name.replace(/\s+/g, " "));
+
+export const issueViewFiltersSchema = z
+  .object({
+    query: z.string().trim().max(200).default(""),
+    status: issueStatusSchema.nullable().default(null),
+    types: z.array(issueTypeSchema).max(ISSUE_TYPES.length).default([]),
+    labels: z.array(labelNameSchema).max(20).default([]),
+  })
+  .transform((filters) => ({
+    query: filters.query,
+    status: filters.status,
+    types: [...new Set(filters.types)],
+    labels: filters.labels.filter(
+      (label, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === label.toLowerCase()) === index,
+    ),
+  }));
+
+export const issueViewCreateSchema = z.object({
+  name: issueViewNameSchema,
+  filters: issueViewFiltersSchema,
+});
+
+export const issueViewUpdateSchema = z
+  .object({
+    name: issueViewNameSchema.optional(),
+    filters: issueViewFiltersSchema.optional(),
+  })
+  .refine((input) => input.name !== undefined || input.filters !== undefined, {
+    message: "At least one view field must be provided",
+  });
+
 export const tokenCreateSchema = z.object({
   name: z.string().trim().min(1).max(64),
   scopes: z.array(z.enum(MCP_SCOPES)).min(1, "At least one scope is required"),
@@ -253,6 +290,16 @@ export interface IssueDto {
 export interface IssueListResult {
   issues: IssueDto[];
   total: number;
+}
+
+export type IssueViewFilters = z.infer<typeof issueViewFiltersSchema>;
+
+export interface IssueViewDto {
+  id: string;
+  name: string;
+  filters: IssueViewFilters;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CommentDto {

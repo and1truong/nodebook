@@ -12,6 +12,7 @@ import type { Request as CfRequest } from "@cloudflare/workers-types";
 import type { Env } from "./env";
 import { createApp, accessAuthMiddleware, mcpAuthMiddleware } from "./server/routes/helpers";
 import { issuesRoutes } from "./server/routes/issues";
+import { issueViewsRoutes } from "./server/routes/issue-views";
 import { commentsRoutes } from "./server/routes/comments";
 import { graphRoutes, wikiRoutes } from "./server/routes/graph";
 import { searchRoutes } from "./server/routes/search";
@@ -34,6 +35,7 @@ app.use("/api/*", accessAuthMiddleware);
 app.use("/mcp", mcpAuthMiddleware);
 
 app.route("/api/issues", issuesRoutes);
+app.route("/api/issue-views", issueViewsRoutes);
 app.route("/api/comments", commentsRoutes);
 app.route("/api/graph", graphRoutes);
 app.route("/api/wiki", wikiRoutes);
