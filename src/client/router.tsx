@@ -14,6 +14,25 @@ type NavigationBlocker = (to: string) => boolean | Promise<boolean>;
 let navigationBlocker: NavigationBlocker | null = null;
 let transitionPending = false;
 
+// Position of the current entry in the browser history stack. The History
+// API exposes no index, so every entry we create carries a stamped `{ idx }`;
+// the initial entry is stamped here and foreign entries (external sites)
+// fall back to `history.length - 1`.
+let historyIndex = 0;
+// When a blocked Back/Forward is canceled we compensate with history.go()
+// (pushState would discard every forward entry). The compensating popstate
+// must be ignored, not re-blocked.
+let blockedPopDelta: number | null = null;
+
+if (typeof window !== "undefined") {
+  const state = window.history.state as Record<string, unknown> | null;
+  if (typeof state?.idx === "number") {
+    historyIndex = state.idx;
+  } else {
+    window.history.replaceState({ ...state, idx: 0 }, "");
+  }
+}
+
 function emit() {
   for (const listener of listeners) listener();
 }
@@ -41,8 +60,8 @@ async function transition(to: string, replace: boolean, bypassBlocker: boolean):
   transitionPending = true;
   try {
     if (!bypassBlocker && navigationBlocker && !(await navigationBlocker(to))) return;
-    if (replace) window.history.replaceState(null, "", to);
-    else window.history.pushState(null, "", to);
+    if (replace) window.history.replaceState({ idx: historyIndex }, "", to);
+    else window.history.pushState({ idx: ++historyIndex }, "", to);
     currentPath = window.location.pathname + window.location.search;
     emit();
     window.scrollTo(0, 0);
@@ -56,13 +75,29 @@ export function useRouter(): RouterState {
 
   useEffect(() => {
     const onChange = () => setPath(currentPath);
-    const onPop = async () => {
-      const previousPath = currentPath;
-      const nextPath = window.location.pathname + window.location.search;
-      if (navigationBlocker && !(await navigationBlocker(nextPath))) {
-        window.history.pushState(null, "", previousPath);
+    const onPop = async (event: PopStateEvent) => {
+      // Ignore the popstate from our own compensating history.go() after a
+      // blocked Back/Forward; the blocker already ruled on that navigation.
+      if (blockedPopDelta !== null) {
+        blockedPopDelta = null;
         return;
       }
+      const nextPath = window.location.pathname + window.location.search;
+      const nextIndex = typeof (event.state as { idx?: unknown } | null)?.idx === "number"
+        ? (event.state as { idx: number }).idx
+        : window.history.length - 1;
+      if (navigationBlocker && !(await navigationBlocker(nextPath))) {
+        // Restore the prior entry without pushState: pushing from the blocked
+        // destination would discard every forward entry, permanently losing
+        // the canceled destination. history.go() keeps the stack intact.
+        const delta = historyIndex - nextIndex;
+        if (delta !== 0) {
+          blockedPopDelta = delta;
+          window.history.go(delta);
+        }
+        return;
+      }
+      historyIndex = nextIndex;
       currentPath = nextPath;
       setPath(nextPath);
       window.scrollTo(0, 0);

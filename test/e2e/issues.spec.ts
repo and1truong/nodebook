@@ -250,3 +250,38 @@ test("falls back to Open when the URL references a missing view", async ({ page 
   await expect(page).toHaveURL(/\/issues$/);
   await expect(page.getByRole("tab", { name: "Open" })).toHaveAttribute("data-state", "active");
 });
+
+test("canceling a blocked Forward keeps the forward entry reachable", async ({ page }) => {
+  const saved: SavedView = {
+    id: "view-work",
+    name: "Work",
+    filters: { query: "", status: "open", types: [], labels: [] },
+    created_at: "2025-01-01T00:00:00.000Z",
+    updated_at: "2025-01-01T00:00:00.000Z",
+  };
+  await mockSavedViews(page, [saved]);
+  await page.route("**/api/planning/inbox", (route) => route.fulfill({ json: [] }));
+  await page.goto("/issues?view=view-work");
+
+  // Leave the Issues page so there is a forward entry to return to.
+  await page.getByRole("navigation", { name: "Primary" }).getByRole("link", { name: "Inbox" }).click();
+  await expect(page).toHaveURL(/\/inbox$/);
+
+  // Come back and make the filters dirty.
+  await page.goBack();
+  await expect(page).toHaveURL(/view=view-work$/);
+  await page.getByRole("searchbox", { name: "Keyword" }).fill("unsaved");
+
+  // Forward onto the Inbox: the guard fires; canceling must restore the
+  // Issues page without pushing (which would discard the forward entry).
+  await page.goForward();
+  await expect(page.getByRole("dialog", { name: "Save filter changes?" })).toBeVisible();
+  await page.getByRole("button", { name: "Cancel", exact: true }).click();
+  await expect(page).toHaveURL(/view=view-work$/);
+
+  // The canceled destination is still there: forward again and discard.
+  await page.goForward();
+  await expect(page.getByRole("dialog", { name: "Save filter changes?" })).toBeVisible();
+  await page.getByRole("button", { name: "Discard", exact: true }).click();
+  await expect(page).toHaveURL(/\/inbox$/);
+});
