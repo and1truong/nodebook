@@ -106,7 +106,9 @@ export function AppShell({
       <header className="sticky top-0 z-50 border-b border-border bg-card">
         <div className="flex items-center md:grid md:grid-cols-[190px_1fr]">
           <Link to="/inbox" className="flex h-[52px] flex-none items-center gap-1 px-3 text-[15px] font-bold text-foreground hover:no-underline md:px-2.5">
-            <span className="text-primary">◈</span><span className="hidden md:inline">NodeBook</span>
+            <img src="/brand/nodebook-mark.svg" alt="" className="size-7 shrink-0 dark:hidden" />
+            <img src="/brand/nodebook-mark-dark.svg" alt="" className="hidden size-7 shrink-0 dark:block" />
+            <span className="hidden md:inline">NodeBook</span>
           </Link>
           <div className="flex h-[52px] min-w-0 flex-1 items-center gap-2 px-2 md:gap-4 md:px-4">
         <form className="flex min-w-0 max-w-[560px] flex-1 gap-1.5" onSubmit={submitQuick}>
@@ -204,7 +206,8 @@ export function AppShell({
         className="fixed inset-x-0 bottom-0 z-40 hidden h-7 grid-cols-[190px_1fr] border-t border-border bg-card/95 text-[11px] text-muted-foreground shadow-lg backdrop-blur md:grid"
       >
         <div className="flex items-center gap-1.5 border-r border-border px-2.5 font-semibold tracking-wide">
-          <span className="text-primary">◈</span>
+          <img src="/brand/nodebook-mark.svg" alt="" className="size-4 dark:hidden" />
+          <img src="/brand/nodebook-mark-dark.svg" alt="" className="hidden size-4 dark:block" />
           <span>NODEBOOK</span>
         </div>
         <div className="flex min-w-0 items-center gap-2.5 px-4">

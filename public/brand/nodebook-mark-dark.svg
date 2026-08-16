@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title desc">
+  <title id="title">NodeBook mark for dark backgrounds</title>
+  <desc id="desc">Four golden nodes connected in the shape of the letter N</desc>
+  <g fill="none" stroke="#f5f0e8" stroke-linecap="round" stroke-width="28">
+    <path d="M62 62v132M194 62v132M62 62l132 132"/>
+  </g>
+  <g fill="#f5f0e8">
+    <circle cx="62" cy="62" r="42"/>
+    <circle cx="194" cy="62" r="42"/>
+    <circle cx="62" cy="194" r="42"/>
+    <circle cx="194" cy="194" r="42"/>
+  </g>
+  <g fill="#ffd000">
+    <circle cx="62" cy="62" r="20"/>
+    <circle cx="194" cy="62" r="20"/>
+    <circle cx="62" cy="194" r="20"/>
+    <circle cx="194" cy="194" r="20"/>
+  </g>
+</svg>
