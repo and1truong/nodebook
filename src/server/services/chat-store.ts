@@ -1,6 +1,6 @@
 import type { Ctx } from "../ctx";
 import type {
-  ChatActionDto, ChatActionType, ChatConnectionDto, ChatConversationDetailDto, ChatConversationDto,
+  ChatActionDto, ChatActionType, ChatActivityDto, ChatConnectionDto, ChatConversationDetailDto, ChatConversationDto,
   ChatMessageDto, ChatProvider, ChatToolSupport,
 } from "../../shared/contracts/chat";
 import { ConflictError, NotFoundError } from "../../domain/errors";
@@ -137,7 +137,9 @@ export async function conversationDetail(ctx: Ctx, id: string): Promise<ChatConv
 }
 
 export async function listMessages(ctx: Ctx, conversationId: string): Promise<ChatMessageDto[]> {
-  const result = await ctx.env.DB.prepare("SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY created_at, id").bind(conversationId).all<Row>();
+  // rowid reflects the append order. UUID ordering is random and can place an
+  // assistant response before the user message when both share a timestamp.
+  const result = await ctx.env.DB.prepare("SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY rowid").bind(conversationId).all<Row>();
   const messages: ChatMessageDto[] = [];
   for (const row of result.results) messages.push(await hydrateMessage(ctx, row));
   return messages;
@@ -149,11 +151,17 @@ export async function hydrateMessage(ctx: Ctx, rowOrId: Row | string): Promise<C
   const sources = await ctx.env.DB.prepare(`SELECT s.issue_id, i.number AS issue_number, i.title, s.rank FROM chat_message_sources s
     JOIN issues i ON i.id = s.issue_id WHERE s.message_id = ? ORDER BY s.rank`).bind(text(row.id)).all<Row>();
   const actions = await ctx.env.DB.prepare("SELECT * FROM chat_actions WHERE message_id = ? ORDER BY created_at").bind(text(row.id)).all<Row>();
+  const activities = await ctx.env.DB.prepare("SELECT * FROM chat_message_activities WHERE message_id = ? ORDER BY rowid").bind(text(row.id)).all<Row>();
   return {
     id: text(row.id), conversation_id: text(row.conversation_id), role: text(row.role) as "user" | "assistant",
     content: text(row.content), status: text(row.status) as ChatMessageDto["status"],
     error_message: row.error_message == null ? null : text(row.error_message),
     sources: sources.results.map((source) => ({ issue_id: text(source.issue_id), issue_number: Number(source.issue_number), title: text(source.title), rank: Number(source.rank) })),
+    activities: activities.results.map((activity) => ({
+      id: text(activity.id), tool_name: text(activity.tool_name), label: text(activity.label),
+      input: activity.input_json ? (parseJson(activity.input_json) as Record<string, unknown>) : null,
+      status: text(activity.status) as ChatActivityDto["status"], created_at: text(activity.created_at),
+    })),
     actions: actions.results.map(actionDto), created_at: text(row.created_at), updated_at: text(row.updated_at),
   };
 }
@@ -183,6 +191,18 @@ export async function insertGenerationMessages(ctx: Ctx, ids: { userMessageId: s
 export async function persistPartialMessage(ctx: Ctx, messageId: string, content: string): Promise<void> {
   await ctx.env.DB.prepare("UPDATE chat_messages SET content = ?, updated_at = ? WHERE id = ? AND status = 'streaming'")
     .bind(content, new Date().toISOString(), messageId).run();
+}
+
+export async function insertActivity(ctx: Ctx, messageId: string, input: { toolName: string; label: string; input: Record<string, unknown> }): Promise<ChatActivityDto> {
+  const activity: ChatActivityDto = {
+    id: crypto.randomUUID(), tool_name: input.toolName, label: input.label, input: input.input,
+    status: "complete", created_at: new Date().toISOString(),
+  };
+  await ctx.env.DB.prepare(`INSERT INTO chat_message_activities (id, message_id, tool_name, label, input_json, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(
+      activity.id, messageId, activity.tool_name, activity.label, JSON.stringify(activity.input), activity.status, activity.created_at,
+    ).run();
+  return activity;
 }
 
 export async function finishGeneration(ctx: Ctx, input: { conversationId: string; generationId: string; messageId: string; content: string; status: "complete" | "stopped" | "error"; error?: string; sourceIds?: string[] }): Promise<ChatMessageDto> {

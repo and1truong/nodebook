@@ -60,6 +60,11 @@ export interface ChatConversationDto {
 
 export interface ChatSourceDto { issue_id: string; issue_number: number; title: string; rank: number }
 
+export interface ChatActivityDto {
+  id: string; tool_name: string; label: string; input: Record<string, unknown> | null;
+  status: "complete" | "error"; created_at: string;
+}
+
 export interface ChatActionDto {
   id: string; action_type: ChatActionType; payload: Record<string, unknown>; review: Record<string, unknown>;
   status: ChatActionStatus; result: unknown; error_message: string | null; created_at: string; updated_at: string;
@@ -67,7 +72,7 @@ export interface ChatActionDto {
 
 export interface ChatMessageDto {
   id: string; conversation_id: string; role: "user" | "assistant"; content: string;
-  status: ChatMessageStatus; error_message: string | null; sources: ChatSourceDto[];
+  status: ChatMessageStatus; error_message: string | null; sources: ChatSourceDto[]; activities: ChatActivityDto[];
   actions: ChatActionDto[]; created_at: string; updated_at: string;
 }
 
@@ -76,6 +81,7 @@ export interface ChatConversationDetailDto { conversation: ChatConversationDto; 
 export type ChatStreamEvent =
   | { type: "start"; user_message_id: string; assistant_message_id: string }
   | { type: "delta"; delta: string }
+  | { type: "activity"; activity: ChatActivityDto }
   | { type: "proposal"; proposal: ChatActionDto }
   | { type: "done"; message: ChatMessageDto }
   | { type: "error"; message: string; code?: string };

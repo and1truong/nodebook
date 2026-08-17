@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { api, createIssue, patch, post, testEnv } from "./helpers";
 import type { ChatConnectionDto, ChatConversationDto } from "../../src/shared/contracts/chat";
 import { prepareAction } from "../../src/server/services/chat-actions";
-import { insertAction } from "../../src/server/services/chat-store";
+import { insertAction, listMessages } from "../../src/server/services/chat-store";
 import { buildChatContext } from "../../src/server/services/chat-context";
 import type { Ctx } from "../../src/server/ctx";
 
@@ -68,5 +68,33 @@ describe("chat persistence", () => {
     expect(context.system.length).toBeLessThan(25_000);
     expect(context.system).toContain("untrusted reference data");
     expect(context.system).toContain("<nodebook_context>");
+    expect(context.activity?.toolName).toBe("get_issues");
+  });
+
+  it("does not retrieve issues for greetings and deliberately lists recent issues", async () => {
+    for (let index = 0; index < 5; index++) await createIssue({ title: `Recent context ${index}` });
+    const ctx: Ctx = { env: testEnv(), actor: { type: "human", id: "owner@test.dev" }, requestId: crypto.randomUUID() };
+
+    const greeting = await buildChatContext(ctx, crypto.randomUUID(), "hi");
+    expect(greeting.issueIds).toEqual([]);
+    expect(greeting.activity).toBeNull();
+
+    const recent = await buildChatContext(ctx, crypto.randomUUID(), "show my 4 recent issues");
+    expect(recent.issueIds).toHaveLength(4);
+    expect(recent.activity).toMatchObject({ toolName: "list_recent_issues", label: "Listed recent issues · 4 issues" });
+  });
+
+  it("keeps user and assistant messages in append order when timestamps match", async () => {
+    const now = new Date().toISOString(); const connectionId = crypto.randomUUID(); const conversationId = crypto.randomUUID();
+    await testEnv().DB.prepare("INSERT INTO chat_connections (id, name, provider, base_url, api_key_ciphertext, api_key_iv, default_model, created_at, updated_at) VALUES (?, 'ordering', 'openai', 'https://example.com/v1', 'x', 'x', 'model', ?, ?)").bind(connectionId, now, now).run();
+    await testEnv().DB.prepare("INSERT INTO chat_conversations (id, connection_id, model, created_at, updated_at) VALUES (?, ?, 'model', ?, ?)").bind(conversationId, connectionId, now, now).run();
+    await testEnv().DB.batch([
+      testEnv().DB.prepare("INSERT INTO chat_messages (id, conversation_id, role, content, status, created_at, updated_at) VALUES ('ffffffff-ffff-4fff-8fff-ffffffffffff', ?, 'user', 'third message', 'complete', ?, ?)").bind(conversationId, now, now),
+      testEnv().DB.prepare("INSERT INTO chat_messages (id, conversation_id, role, content, status, created_at, updated_at) VALUES ('00000000-0000-4000-8000-000000000000', ?, 'assistant', 'third answer', 'complete', ?, ?)").bind(conversationId, now, now),
+    ]);
+
+    const ctx: Ctx = { env: testEnv(), actor: { type: "human", id: "owner@test.dev" }, requestId: crypto.randomUUID() };
+    const messages = await listMessages(ctx, conversationId);
+    expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
   });
 });

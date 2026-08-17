@@ -48,12 +48,16 @@ chatRoutes.post("/conversations/:id/messages", async (c) => {
   ]);
   const lease = await store.acquireGeneration(ctx, conversationId);
   await store.insertGenerationMessages(ctx, lease, conversationId, input.content);
+  const activity = nodebookContext.activity
+    ? await store.insertActivity(ctx, lease.assistantMessageId, nodebookContext.activity)
+    : null;
 
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       const emit = (event: ChatStreamEvent) => controller.enqueue(encoder.encode(`event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`));
       emit({ type: "start", user_message_id: lease.userMessageId, assistant_message_id: lease.assistantMessageId });
+      if (activity) emit({ type: "activity", activity });
       const abort = new AbortController();
       let abortKind: "client" | "timeout" | null = null;
       const timeout = setTimeout(() => { abortKind = "timeout"; abort.abort("timeout"); }, 5 * 60_000);

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, ArrowLeft, MessageSquarePlus, Plus, Send, Settings2, Square, Trash2 } from "lucide-react";
+import { Archive, ArrowLeft, MessageSquarePlus, Plus, Search, Send, Settings2, Square, Trash2 } from "lucide-react";
 import { api, streamChatMessage } from "../api";
 import type { ChatActionDto, ChatConnectionDto, ChatConversationDetailDto, ChatConversationDto, ChatMessageDto } from "../../shared/contracts/chat";
 import { Markdown } from "../components/Markdown";
@@ -33,12 +33,13 @@ export function ChatPage({ conversationId, navigate }: { conversationId?: string
     setDraft(""); setError(null); setSending(true);
     const controller = new AbortController(); abortRef.current = controller;
     const now = new Date().toISOString();
-    const user: ChatMessageDto = { id: crypto.randomUUID(), conversation_id: conversationId, role: "user", content, status: "complete", error_message: null, sources: [], actions: [], created_at: now, updated_at: now };
+    const user: ChatMessageDto = { id: crypto.randomUUID(), conversation_id: conversationId, role: "user", content, status: "complete", error_message: null, sources: [], activities: [], actions: [], created_at: now, updated_at: now };
     const assistant: ChatMessageDto = { ...user, id: crypto.randomUUID(), role: "assistant", content: "", status: "streaming" };
     setDetail((current) => current ? { ...current, messages: [...current.messages, user, assistant] } : current);
     try {
       await streamChatMessage(conversationId, content, controller.signal, (event) => {
         if (event.type === "delta") setDetail((current) => current ? { ...current, messages: current.messages.map((message, index) => index === current.messages.length - 1 ? { ...message, content: message.content + event.delta } : message) } : current);
+        if (event.type === "activity") setDetail((current) => current ? { ...current, messages: current.messages.map((message, index) => index === current.messages.length - 1 ? { ...message, activities: [...message.activities, event.activity] } : message) } : current);
         if (event.type === "proposal") setDetail((current) => current ? { ...current, messages: current.messages.map((message, index) => index === current.messages.length - 1 ? { ...message, actions: [...message.actions, event.proposal] } : message) } : current);
         if (event.type === "done") setDetail((current) => current ? { ...current, messages: [...current.messages.slice(0, -1), event.message] } : current);
         if (event.type === "error") setError(event.message);
@@ -83,6 +84,7 @@ export function ChatPage({ conversationId, navigate }: { conversationId?: string
             <div className="mx-auto max-w-3xl space-y-5">
               {detail.messages.map((message) => <div key={message.id} className={cn("flex", message.role === "user" && "justify-end")}>
                 <div className={cn("max-w-[90%] rounded-xl px-4 py-3", message.role === "user" ? "bg-primary text-primary-foreground" : "bg-muted")}>
+                  {message.activities.map((activity) => <div key={activity.id} className="mb-3 flex items-center gap-2 rounded-md border bg-background/70 px-3 py-2 text-xs text-muted-foreground"><Search className="size-3.5" aria-hidden="true" /><span className="font-medium text-foreground">{activity.label}</span></div>)}
                   {message.role === "assistant" ? <Markdown source={message.content || (message.status === "streaming" ? "…" : "")} /> : <p className="whitespace-pre-wrap text-sm">{message.content}</p>}
                   {message.sources.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{message.sources.map((source) => <a key={source.issue_id} href={`/issues/${source.issue_number}`} className="rounded-full border bg-background px-2 py-1 text-xs">#{source.issue_number} {source.title}</a>)}</div>}
                   {message.actions.map((action) => <ActionCard key={action.id} action={action} onUpdate={updateAction} />)}
