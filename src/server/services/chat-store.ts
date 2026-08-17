@@ -5,11 +5,16 @@ import type {
 } from "../../shared/contracts/chat";
 import { ConflictError, NotFoundError } from "../../domain/errors";
 import { encryptCredential } from "./chat-crypto";
+import { mapInChunks, retryD1Read } from "./d1-retry";
 
 export interface ChatConnectionSecret extends ChatConnectionDto { api_key_ciphertext: string; api_key_iv: string }
 
 type Row = Record<string, unknown>;
 const MESSAGE_HISTORY_LIMIT = 100;
+// Keeps the number of bind parameters in the IN (...) hydration queries well
+// under D1's statement/bind limits even when MESSAGE_HISTORY_LIMIT messages
+// are hydrated in one request.
+const CHUNK_SIZE = 50;
 const text = (value: unknown) => String(value ?? "");
 
 function connectionDto(row: Row): ChatConnectionDto {
@@ -64,12 +69,12 @@ function messageDto(row: Row, sources: ChatSourceDto[], actions: ChatActionDto[]
 }
 
 export async function listConnections(ctx: Ctx): Promise<ChatConnectionDto[]> {
-  const result = await ctx.env.DB.prepare("SELECT * FROM chat_connections ORDER BY name COLLATE NOCASE").all<Row>();
+  const result = await retryD1Read(() => ctx.env.DB.prepare("SELECT * FROM chat_connections ORDER BY name COLLATE NOCASE").all<Row>(), { label: "listConnections" });
   return result.results.map(connectionDto);
 }
 
 export async function getConnectionSecret(ctx: Ctx, id: string): Promise<ChatConnectionSecret> {
-  const row = await ctx.env.DB.prepare("SELECT * FROM chat_connections WHERE id = ?").bind(id).first<Row>();
+  const row = await retryD1Read(() => ctx.env.DB.prepare("SELECT * FROM chat_connections WHERE id = ?").bind(id).first<Row>(), { label: "getConnectionSecret" });
   if (!row) throw new NotFoundError("Chat connection not found");
   return { ...connectionDto(row), api_key_ciphertext: text(row.api_key_ciphertext), api_key_iv: text(row.api_key_iv) };
 }
@@ -122,13 +127,13 @@ const CONVERSATION_SELECT = `SELECT c.*, x.name AS connection_name, x.provider A
 
 export async function listConversations(ctx: Ctx): Promise<ChatConversationDto[]> {
   await recoverExpiredLeases(ctx);
-  const result = await ctx.env.DB.prepare(`${CONVERSATION_SELECT} ORDER BY c.archived, c.updated_at DESC`).all<Row>();
+  const result = await retryD1Read(() => ctx.env.DB.prepare(`${CONVERSATION_SELECT} ORDER BY c.archived, c.updated_at DESC`).all<Row>(), { label: "listConversations" });
   return result.results.map(conversationDto);
 }
 
 export async function getConversation(ctx: Ctx, id: string): Promise<ChatConversationDto> {
   await recoverExpiredLeases(ctx);
-  const row = await ctx.env.DB.prepare(`${CONVERSATION_SELECT} WHERE c.id = ?`).bind(id).first<Row>();
+  const row = await retryD1Read(() => ctx.env.DB.prepare(`${CONVERSATION_SELECT} WHERE c.id = ?`).bind(id).first<Row>(), { label: "getConversation" });
   if (!row) throw new NotFoundError("Conversation not found");
   return conversationDto(row);
 }
@@ -152,7 +157,7 @@ export async function updateConversation(ctx: Ctx, id: string, input: { title?: 
 export async function deleteConversation(ctx: Ctx, id: string): Promise<void> {
   const result = await ctx.env.DB.prepare("DELETE FROM chat_conversations WHERE id = ? AND generation_id IS NULL").bind(id).run();
   if (!result.meta.changes) {
-    const existing = await ctx.env.DB.prepare("SELECT generation_id FROM chat_conversations WHERE id = ?").bind(id).first<Row>();
+    const existing = await retryD1Read(() => ctx.env.DB.prepare("SELECT generation_id FROM chat_conversations WHERE id = ?").bind(id).first<Row>(), { label: "deleteConversation:check" });
     if (!existing) throw new NotFoundError("Conversation not found");
     throw new ConflictError("Stop the active response before deleting this conversation");
   }
@@ -167,23 +172,13 @@ export async function conversationDetail(ctx: Ctx, id: string): Promise<ChatConv
 export async function listMessages(ctx: Ctx, conversationId: string): Promise<ChatMessageDto[]> {
   // rowid reflects the append order. UUID ordering is random and can place an
   // assistant response before the user message when both share a timestamp.
-  const result = await ctx.env.DB.prepare(`SELECT * FROM (
+  const result = await retryD1Read(() => ctx.env.DB.prepare(`SELECT * FROM (
     SELECT rowid AS message_rowid, * FROM chat_messages WHERE conversation_id = ? ORDER BY rowid DESC LIMIT ?
-  ) ORDER BY message_rowid`).bind(conversationId, MESSAGE_HISTORY_LIMIT).all<Row>();
+  ) ORDER BY message_rowid`).bind(conversationId, MESSAGE_HISTORY_LIMIT).all<Row>(), { label: "listMessages:history" });
   if (result.results.length === 0) return [];
 
   const ids = result.results.map((row) => text(row.id));
-  const placeholders = ids.map(() => "?").join(", ");
-  const [sourceRows, actionRows, activityRows] = await Promise.all([
-    ctx.env.DB.prepare(`SELECT s.message_id, s.issue_id, i.number AS issue_number, i.title, s.rank
-      FROM chat_message_sources s JOIN issues i ON i.id = s.issue_id
-      WHERE s.message_id IN (${placeholders}) ORDER BY s.rank`).bind(...ids).all<Row>(),
-    ctx.env.DB.prepare(`SELECT * FROM chat_actions WHERE message_id IN (${placeholders}) ORDER BY rowid`).bind(...ids).all<Row>(),
-    ctx.env.DB.prepare(`SELECT * FROM chat_message_activities WHERE message_id IN (${placeholders}) ORDER BY rowid`).bind(...ids).all<Row>(),
-  ]);
-  const sources = groupByMessage(sourceRows.results, sourceDto);
-  const actions = groupByMessage(actionRows.results, actionDto);
-  const activities = groupByMessage(activityRows.results, activityDto);
+  const [sources, actions, activities] = await loadMessageResources(ctx, ids);
   return result.results.map((row) => messageDto(
     row,
     sources.get(text(row.id)) ?? [],
@@ -192,14 +187,52 @@ export async function listMessages(ctx: Ctx, conversationId: string): Promise<Ch
   ));
 }
 
+/**
+ * Batch-hydrates sources, actions, and activities for many message ids.
+ * Queries are split into bounded chunks and each chunk is retried on
+ * transient D1 failures, so a single conversation-detail load cannot trip
+ * D1's bind-variable/statement limits or fail on a storage-service hiccup.
+ * Rows are grouped by message id afterwards, so chunk ordering does not
+ * affect the assembled DTOs.
+ */
+async function loadMessageResources(ctx: Ctx, ids: string[]): Promise<[Map<string, ChatSourceDto[]>, Map<string, ChatActionDto[]>, Map<string, ChatActivityDto[]>]> {
+  const inClause = (slice: string[]) => slice.map(() => "?").join(", ");
+
+  const sourcesQuery = (slice: string[]) => retryD1Read(() => ctx.env.DB.prepare(
+    `SELECT s.message_id, s.issue_id, i.number AS issue_number, i.title, s.rank
+      FROM chat_message_sources s JOIN issues i ON i.id = s.issue_id
+      WHERE s.message_id IN (${inClause(slice)}) ORDER BY s.rank`).bind(...slice).all<Row>(),
+    { label: "listMessages:sources" },
+  );
+  const actionsQuery = (slice: string[]) => retryD1Read(() => ctx.env.DB.prepare(
+    `SELECT * FROM chat_actions WHERE message_id IN (${inClause(slice)}) ORDER BY rowid`).bind(...slice).all<Row>(),
+    { label: "listMessages:actions" },
+  );
+  const activitiesQuery = (slice: string[]) => retryD1Read(() => ctx.env.DB.prepare(
+    `SELECT * FROM chat_message_activities WHERE message_id IN (${inClause(slice)}) ORDER BY rowid`).bind(...slice).all<Row>(),
+    { label: "listMessages:activities" },
+  );
+
+  const [sourceRows, actionRows, activityRows] = await Promise.all([
+    mapInChunks(ids, CHUNK_SIZE, sourcesQuery).then((chunks) => chunks.flatMap((chunk) => chunk.results)),
+    mapInChunks(ids, CHUNK_SIZE, actionsQuery).then((chunks) => chunks.flatMap((chunk) => chunk.results)),
+    mapInChunks(ids, CHUNK_SIZE, activitiesQuery).then((chunks) => chunks.flatMap((chunk) => chunk.results)),
+  ]);
+  return [
+    groupByMessage(sourceRows, sourceDto),
+    groupByMessage(actionRows, actionDto),
+    groupByMessage(activityRows, activityDto),
+  ];
+}
+
 export async function hydrateMessage(ctx: Ctx, rowOrId: Row | string): Promise<ChatMessageDto> {
   const row = typeof rowOrId === "string" ? await ctx.env.DB.prepare("SELECT * FROM chat_messages WHERE id = ?").bind(rowOrId).first<Row>() : rowOrId;
   if (!row) throw new NotFoundError("Chat message not found");
   const [sources, actions, activities] = await Promise.all([
-    ctx.env.DB.prepare(`SELECT s.issue_id, i.number AS issue_number, i.title, s.rank FROM chat_message_sources s
-      JOIN issues i ON i.id = s.issue_id WHERE s.message_id = ? ORDER BY s.rank`).bind(text(row.id)).all<Row>(),
-    ctx.env.DB.prepare("SELECT * FROM chat_actions WHERE message_id = ? ORDER BY rowid").bind(text(row.id)).all<Row>(),
-    ctx.env.DB.prepare("SELECT * FROM chat_message_activities WHERE message_id = ? ORDER BY rowid").bind(text(row.id)).all<Row>(),
+    retryD1Read(() => ctx.env.DB.prepare(`SELECT s.issue_id, i.number AS issue_number, i.title, s.rank FROM chat_message_sources s
+      JOIN issues i ON i.id = s.issue_id WHERE s.message_id = ? ORDER BY s.rank`).bind(text(row.id)).all<Row>(), { label: "hydrateMessage:sources" }),
+    retryD1Read(() => ctx.env.DB.prepare("SELECT * FROM chat_actions WHERE message_id = ? ORDER BY rowid").bind(text(row.id)).all<Row>(), { label: "hydrateMessage:actions" }),
+    retryD1Read(() => ctx.env.DB.prepare("SELECT * FROM chat_message_activities WHERE message_id = ? ORDER BY rowid").bind(text(row.id)).all<Row>(), { label: "hydrateMessage:activities" }),
   ]);
   return messageDto(row, sources.results.map(sourceDto), actions.results.map(actionDto), activities.results.map(activityDto));
 }
@@ -304,10 +337,12 @@ export async function rejectAction(ctx: Ctx, id: string): Promise<ChatActionDto>
 
 async function recoverExpiredLeases(ctx: Ctx): Promise<void> {
   const cutoff = new Date(Date.now() - 6 * 60_000).toISOString();
-  await ctx.env.DB.batch([
+  // Idempotent maintenance updates: re-running converges to the same state,
+  // so a transient failure can be retried safely.
+  await retryD1Read(() => ctx.env.DB.batch([
     ctx.env.DB.prepare(`UPDATE chat_messages SET status = 'error', error_message = 'Generation lease expired', updated_at = ?
       WHERE status = 'streaming' AND conversation_id IN (SELECT id FROM chat_conversations WHERE generation_started_at < ?)`)
       .bind(new Date().toISOString(), cutoff),
     ctx.env.DB.prepare("UPDATE chat_conversations SET generation_id = NULL, generation_started_at = NULL WHERE generation_started_at < ?").bind(cutoff),
-  ]);
+  ]), { label: "recoverExpiredLeases" });
 }
