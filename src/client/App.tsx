@@ -72,7 +72,9 @@ export function App() {
   if (routePath === "/" || routePath === "/inbox") content = <InboxPage weekStartDay={weekStartDay} />;
   else if (routePath === "/today") content = <TodayPage />;
   else if (routePath === "/calendar" || routePath === "/upcoming") content = <CalendarPage defaultView={calendarDefaultView} weekStartDay={weekStartDay} />;
-  else if (routePath === "/issues") content = <IssuesPage defaultLimit={issuesDefaultLimit} />;
+  else if (routePath === "/issues") {
+    content = <IssuesPage defaultLimit={issuesDefaultLimit} selectedViewId={searchParams.get("view")} />;
+  }
   else if (matchPath("/issues/new", routePath)) content = <IssueDetailPage mode="create" weekStartDay={weekStartDay} />;
   else if (matchPath("/issues/:ref", routePath)) {
     const { ref } = matchPath("/issues/:ref", routePath)!;

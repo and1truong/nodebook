@@ -47,6 +47,14 @@ export interface LabelRecord {
   created_at: string;
 }
 
+export interface IssueViewRecord {
+  id: string;
+  name: string;
+  filters_json: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface CommentRecord {
   id: string;
   issue_id: string;
