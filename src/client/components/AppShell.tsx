@@ -70,6 +70,7 @@ export function AppShell({
     { to: "/issues", label: "Issues", icon: "🗂️" },
     { to: "/wiki", label: "Wiki", icon: "📖" },
     { to: "/search", label: "Search", icon: "🔍" },
+    { to: "/chat", label: "Chat", icon: "💬" },
   ];
 
   const submitQuick = async (e: React.FormEvent) => {
@@ -184,11 +185,13 @@ export function AppShell({
         </nav>
         <main
           className={cn(
-            "w-full min-w-0 px-4 pb-8 pt-5 md:px-7 md:pb-20 md:pt-6",
+            "w-full min-w-0",
+            path.startsWith("/chat") ? "p-0 md:pb-7" : "px-4 pb-8 pt-5 md:px-7 md:pb-20 md:pt-6",
             // The Wiki workspace owns its internal reading/tree columns, and
             // the Calendar workspace owns its grids, so let them use all
             // space left by the application navigation.
-            path === "/wiki" || (path !== "/wiki/new" && matchPath("/wiki/:ref", path) !== null) ||
+            path === "/chat" || matchPath("/chat/:conversationId", path) !== null ||
+              path === "/wiki" || (path !== "/wiki/new" && matchPath("/wiki/:ref", path) !== null) ||
               path === "/calendar" || path === "/upcoming"
               ? "max-w-none"
               : !matchPath("/issues/new", path) && matchPath("/issues/:ref", path) !== null

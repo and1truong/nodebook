@@ -22,6 +22,7 @@ import { notificationsRoutes } from "./server/routes/notifications";
 import { attachmentsRoutes } from "./server/routes/attachments";
 import { tokensRoutes } from "./server/routes/tokens";
 import { oauthRoutes } from "./server/routes/oauth";
+import { chatRoutes } from "./server/routes/chat";
 import { runScheduledReminders } from "./server/scheduled/reminders";
 import { runScheduledAttachmentGc } from "./server/scheduled/attachment-gc";
 import { resolveCalendarDefaultView, resolveIssuesDefaultLimit, resolveWeekStartDay } from "./shared/contracts/config";
@@ -45,6 +46,7 @@ app.route("/api/reminders", remindersRoutes);
 app.route("/api/notifications", notificationsRoutes);
 app.route("/api/attachments", attachmentsRoutes);
 app.route("/api/tokens", tokensRoutes);
+app.route("/api/chat", chatRoutes);
 
 // OAuth 2.1 authorization server: discovery, registration, authorize, token.
 app.route("/", oauthRoutes);

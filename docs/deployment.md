@@ -65,6 +65,15 @@ Set these variables (dashboard → Workers → nodebook → Settings → Variabl
 | `CALENDAR_DEFAULT_VIEW` | no | Initial calendar view: `day`, `week`, or `month` (missing/invalid values fall back to `week`) |
 | `WEEK_START_DAY` | no | First day of the calendar week: `sunday`–`saturday`, lowercase (missing/invalid values fall back to `sunday`). Rotates Calendar views, date pickers, and the Inbox/Calendar **Next week** shortcuts after a reload |
 | `ISSUES_DEFAULT_LIMIT` | no | Initial `/issues` page size: `20`, `50`, or `100` (missing/invalid values fall back to `20`); users can change it in the list footer |
+| `CHAT_CREDENTIAL_KEY` | **yes for Chat** | Stable base64-encoded 32-byte AES key used to encrypt provider API keys. Store as a Worker secret. Changing it makes existing chat connections unreadable. |
+
+Generate and store the chat credential key without printing or committing it:
+
+```bash
+openssl rand -base64 32 | npx wrangler secret put CHAT_CREDENTIAL_KEY --config wrangler.personal.jsonc
+```
+
+Provider API keys are configured later by the owner in **Chat → connections**. They are encrypted in D1 and are never returned by the API.
 
 ## 3. Cloudflare Access (web + API)
 
@@ -101,6 +110,7 @@ The Worker verifies each request's `Cf-Access-Jwt-Assertion` (RS256, JWKS fetche
 - [ ] MCP tokens created with the minimal scopes needed; expired or unused tokens revoked.
 - [ ] OAuth redirect URIs are exact HTTPS URLs (no wildcards, no fragments); consent is required per client, and connections are revoked when no longer used.
 - [ ] Attachment upload limits set to something reasonable for your plan (R2 egress is metered).
+- [ ] `CHAT_CREDENTIAL_KEY` is configured as a stable secret and backed up in the deployment's secret manager.
 
 ## 5. CI/CD
 

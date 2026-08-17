@@ -13,6 +13,7 @@ import { WikiPage } from "./pages/WikiPage";
 import { SearchPage } from "./pages/SearchPage";
 import { TokenSettingsPage } from "./pages/TokenSettingsPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { ChatPage } from "./pages/ChatPage";
 import type { AppConfigDto } from "../shared/contracts/config";
 import type { CalendarView, IssuePageLimit, WeekStartDay } from "../shared/contracts/config";
 import { DEFAULT_ISSUES_PAGE_LIMIT, DEFAULT_WEEK_START_DAY } from "../shared/contracts/config";
@@ -93,6 +94,11 @@ export function App() {
     const { ref } = matchPath("/wiki/:ref", routePath)!;
     content = <WikiPage selectedRef={ref} />;
   } else if (routePath === "/search") content = <SearchPage />;
+  else if (routePath === "/chat") content = <ChatPage navigate={navigate} />;
+  else if (matchPath("/chat/:conversationId", routePath)) {
+    const { conversationId } = matchPath("/chat/:conversationId", routePath)!;
+    content = <ChatPage conversationId={conversationId} navigate={navigate} />;
+  }
   else if (routePath === "/settings/tokens") content = <TokenSettingsPage />;
   else content = <NotFoundPage />;
 

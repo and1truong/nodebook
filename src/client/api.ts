@@ -21,6 +21,9 @@ import type {
   WikiNodeDto,
 } from "../shared/contracts/issues";
 import type { AppConfigDto } from "../shared/contracts/config";
+import type {
+  ChatActionDto, ChatConnectionDto, ChatConversationDetailDto, ChatConversationDto, ChatStreamEvent,
+} from "../shared/contracts/chat";
 
 export class ApiError extends Error {
   readonly status: number;
@@ -186,7 +189,51 @@ export const api = {
   oauthGrants: () => request<OauthGrantDto[]>("/api/tokens/oauth-grants"),
   revokeOauthGrant: (id: string) =>
     request<OauthGrantDto>(`/api/tokens/oauth-grants/${id}/revoke`, { method: "POST" }),
+
+  // Chat
+  chatConnections: () => request<ChatConnectionDto[]>("/api/chat/connections"),
+  createChatConnection: (input: { name: string; provider: "openai" | "anthropic"; base_url: string; api_key: string; default_model: string }) =>
+    request<ChatConnectionDto>("/api/chat/connections", { method: "POST", body: JSON.stringify(input) }),
+  updateChatConnection: (id: string, input: Record<string, unknown>) =>
+    request<ChatConnectionDto>(`/api/chat/connections/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  deleteChatConnection: (id: string) => request<void>(`/api/chat/connections/${id}`, { method: "DELETE" }),
+  chatConversations: () => request<ChatConversationDto[]>("/api/chat/conversations"),
+  createChatConversation: (connection_id: string, model?: string) =>
+    request<ChatConversationDto>("/api/chat/conversations", { method: "POST", body: JSON.stringify({ connection_id, model }) }),
+  chatConversation: (id: string) => request<ChatConversationDetailDto>(`/api/chat/conversations/${id}`),
+  updateChatConversation: (id: string, input: { title?: string; archived?: boolean }) =>
+    request<ChatConversationDto>(`/api/chat/conversations/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+  deleteChatConversation: (id: string) => request<void>(`/api/chat/conversations/${id}`, { method: "DELETE" }),
+  confirmChatAction: (id: string) => request<ChatActionDto>(`/api/chat/actions/${id}/confirm`, { method: "POST" }),
+  rejectChatAction: (id: string) => request<ChatActionDto>(`/api/chat/actions/${id}/reject`, { method: "POST" }),
 };
+
+export async function streamChatMessage(
+  conversationId: string,
+  content: string,
+  signal: AbortSignal,
+  onEvent: (event: ChatStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(`/api/chat/conversations/${conversationId}/messages`, {
+    method: "POST", signal, headers: { "Content-Type": "application/json", Accept: "text/event-stream" }, body: JSON.stringify({ content }),
+  });
+  if (!response.ok) {
+    let message = response.statusText;
+    try { message = ((await response.json()) as { error?: { message?: string } }).error?.message ?? message; } catch { /* non-JSON */ }
+    throw new ApiError(response.status, "chat_error", message);
+  }
+  if (!response.body) throw new Error("Chat stream unavailable");
+  const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read(); buffer += decoder.decode(value, { stream: !done });
+    const chunks = buffer.split(/\r?\n\r?\n/); buffer = chunks.pop() ?? "";
+    for (const chunk of chunks) {
+      const data = chunk.split(/\r?\n/).find((line) => line.startsWith("data:"));
+      if (data) onEvent(JSON.parse(data.slice(5).trim()) as ChatStreamEvent);
+    }
+    if (done) break;
+  }
+}
 
 export function formatInstant(iso: string | null | undefined): string {
   if (!iso) return "";

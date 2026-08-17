@@ -27,3 +27,8 @@ AUTH_DEV_EMAIL=owner@nodebook.local
 
 # Initial number of rows on the Issues page: 20, 50, or 100 (missing/invalid values fall back to 20).
 # ISSUES_DEFAULT_LIMIT=20
+
+# Required before saving AI provider connections. Generate once and keep stable:
+#   openssl rand -base64 32
+# Never commit the generated value or provider API keys.
+# CHAT_CREDENTIAL_KEY=<base64-encoded-32-byte-key>
