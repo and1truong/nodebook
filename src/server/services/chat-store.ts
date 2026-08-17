@@ -1,7 +1,7 @@
 import type { Ctx } from "../ctx";
 import type {
   ChatActionDto, ChatActionType, ChatActivityDto, ChatConnectionDto, ChatConversationDetailDto, ChatConversationDto,
-  ChatMessageDto, ChatProvider, ChatToolSupport,
+  ChatMessageDto, ChatProvider, ChatSourceDto, ChatToolSupport,
 } from "../../shared/contracts/chat";
 import { ConflictError, NotFoundError } from "../../domain/errors";
 import { encryptCredential } from "./chat-crypto";
@@ -9,6 +9,7 @@ import { encryptCredential } from "./chat-crypto";
 export interface ChatConnectionSecret extends ChatConnectionDto { api_key_ciphertext: string; api_key_iv: string }
 
 type Row = Record<string, unknown>;
+const MESSAGE_HISTORY_LIMIT = 100;
 const text = (value: unknown) => String(value ?? "");
 
 function connectionDto(row: Row): ChatConnectionDto {
@@ -41,6 +42,27 @@ function actionDto(row: Row): ChatActionDto {
   };
 }
 
+function activityDto(row: Row): ChatActivityDto {
+  return {
+    id: text(row.id), tool_name: text(row.tool_name), label: text(row.label),
+    input: row.input_json ? (parseJson(row.input_json) as Record<string, unknown>) : null,
+    status: text(row.status) as ChatActivityDto["status"], created_at: text(row.created_at),
+  };
+}
+
+function sourceDto(row: Row): ChatSourceDto {
+  return { issue_id: text(row.issue_id), issue_number: Number(row.issue_number), title: text(row.title), rank: Number(row.rank) };
+}
+
+function messageDto(row: Row, sources: ChatSourceDto[], actions: ChatActionDto[], activities: ChatActivityDto[]): ChatMessageDto {
+  return {
+    id: text(row.id), conversation_id: text(row.conversation_id), role: text(row.role) as "user" | "assistant",
+    content: text(row.content), status: text(row.status) as ChatMessageDto["status"],
+    error_message: row.error_message == null ? null : text(row.error_message), sources, activities, actions,
+    created_at: text(row.created_at), updated_at: text(row.updated_at),
+  };
+}
+
 export async function listConnections(ctx: Ctx): Promise<ChatConnectionDto[]> {
   const result = await ctx.env.DB.prepare("SELECT * FROM chat_connections ORDER BY name COLLATE NOCASE").all<Row>();
   return result.results.map(connectionDto);
@@ -69,11 +91,17 @@ export async function updateConnection(ctx: Ctx, id: string, input: Partial<{ na
   const existing = await getConnectionSecret(ctx, id);
   const encrypted = input.api_key === undefined ? { ciphertext: existing.api_key_ciphertext, iv: existing.api_key_iv } : await encryptCredential(ctx.env.CHAT_CREDENTIAL_KEY, id, input.api_key);
   const now = new Date().toISOString();
-  await ctx.env.DB.prepare(`UPDATE chat_connections SET name = ?, provider = ?, base_url = ?, api_key_ciphertext = ?, api_key_iv = ?,
-    default_model = ?, tool_support = CASE WHEN provider <> ? THEN 'unknown' ELSE tool_support END, updated_at = ? WHERE id = ?`).bind(
+  const changingProvider = input.provider !== undefined && input.provider !== existing.provider;
+  const result = await ctx.env.DB.prepare(`UPDATE chat_connections SET name = ?, provider = ?, base_url = ?, api_key_ciphertext = ?, api_key_iv = ?,
+    default_model = ?, tool_support = CASE WHEN provider <> ? THEN 'unknown' ELSE tool_support END, updated_at = ? WHERE id = ?
+    ${changingProvider ? "AND NOT EXISTS (SELECT 1 FROM chat_conversations WHERE connection_id = ?)" : ""}`).bind(
       input.name ?? existing.name, input.provider ?? existing.provider, (input.base_url ?? existing.base_url).replace(/\/+$/, ""),
       encrypted.ciphertext, encrypted.iv, input.default_model ?? existing.default_model, input.provider ?? existing.provider, now, id,
+      ...(changingProvider ? [id] : []),
     ).run();
+  if (changingProvider && !result.meta.changes) {
+    throw new ConflictError("Connection provider cannot change while conversations reference it");
+  }
   return connectionDto({ ...existing, ...input, api_key_ciphertext: encrypted.ciphertext, api_key_iv: encrypted.iv, updated_at: now });
 }
 
@@ -139,31 +167,52 @@ export async function conversationDetail(ctx: Ctx, id: string): Promise<ChatConv
 export async function listMessages(ctx: Ctx, conversationId: string): Promise<ChatMessageDto[]> {
   // rowid reflects the append order. UUID ordering is random and can place an
   // assistant response before the user message when both share a timestamp.
-  const result = await ctx.env.DB.prepare("SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY rowid").bind(conversationId).all<Row>();
-  const messages: ChatMessageDto[] = [];
-  for (const row of result.results) messages.push(await hydrateMessage(ctx, row));
-  return messages;
+  const result = await ctx.env.DB.prepare(`SELECT * FROM (
+    SELECT rowid AS message_rowid, * FROM chat_messages WHERE conversation_id = ? ORDER BY rowid DESC LIMIT ?
+  ) ORDER BY message_rowid`).bind(conversationId, MESSAGE_HISTORY_LIMIT).all<Row>();
+  if (result.results.length === 0) return [];
+
+  const ids = result.results.map((row) => text(row.id));
+  const placeholders = ids.map(() => "?").join(", ");
+  const [sourceRows, actionRows, activityRows] = await Promise.all([
+    ctx.env.DB.prepare(`SELECT s.message_id, s.issue_id, i.number AS issue_number, i.title, s.rank
+      FROM chat_message_sources s JOIN issues i ON i.id = s.issue_id
+      WHERE s.message_id IN (${placeholders}) ORDER BY s.rank`).bind(...ids).all<Row>(),
+    ctx.env.DB.prepare(`SELECT * FROM chat_actions WHERE message_id IN (${placeholders}) ORDER BY rowid`).bind(...ids).all<Row>(),
+    ctx.env.DB.prepare(`SELECT * FROM chat_message_activities WHERE message_id IN (${placeholders}) ORDER BY rowid`).bind(...ids).all<Row>(),
+  ]);
+  const sources = groupByMessage(sourceRows.results, sourceDto);
+  const actions = groupByMessage(actionRows.results, actionDto);
+  const activities = groupByMessage(activityRows.results, activityDto);
+  return result.results.map((row) => messageDto(
+    row,
+    sources.get(text(row.id)) ?? [],
+    actions.get(text(row.id)) ?? [],
+    activities.get(text(row.id)) ?? [],
+  ));
 }
 
 export async function hydrateMessage(ctx: Ctx, rowOrId: Row | string): Promise<ChatMessageDto> {
   const row = typeof rowOrId === "string" ? await ctx.env.DB.prepare("SELECT * FROM chat_messages WHERE id = ?").bind(rowOrId).first<Row>() : rowOrId;
   if (!row) throw new NotFoundError("Chat message not found");
-  const sources = await ctx.env.DB.prepare(`SELECT s.issue_id, i.number AS issue_number, i.title, s.rank FROM chat_message_sources s
-    JOIN issues i ON i.id = s.issue_id WHERE s.message_id = ? ORDER BY s.rank`).bind(text(row.id)).all<Row>();
-  const actions = await ctx.env.DB.prepare("SELECT * FROM chat_actions WHERE message_id = ? ORDER BY created_at").bind(text(row.id)).all<Row>();
-  const activities = await ctx.env.DB.prepare("SELECT * FROM chat_message_activities WHERE message_id = ? ORDER BY rowid").bind(text(row.id)).all<Row>();
-  return {
-    id: text(row.id), conversation_id: text(row.conversation_id), role: text(row.role) as "user" | "assistant",
-    content: text(row.content), status: text(row.status) as ChatMessageDto["status"],
-    error_message: row.error_message == null ? null : text(row.error_message),
-    sources: sources.results.map((source) => ({ issue_id: text(source.issue_id), issue_number: Number(source.issue_number), title: text(source.title), rank: Number(source.rank) })),
-    activities: activities.results.map((activity) => ({
-      id: text(activity.id), tool_name: text(activity.tool_name), label: text(activity.label),
-      input: activity.input_json ? (parseJson(activity.input_json) as Record<string, unknown>) : null,
-      status: text(activity.status) as ChatActivityDto["status"], created_at: text(activity.created_at),
-    })),
-    actions: actions.results.map(actionDto), created_at: text(row.created_at), updated_at: text(row.updated_at),
-  };
+  const [sources, actions, activities] = await Promise.all([
+    ctx.env.DB.prepare(`SELECT s.issue_id, i.number AS issue_number, i.title, s.rank FROM chat_message_sources s
+      JOIN issues i ON i.id = s.issue_id WHERE s.message_id = ? ORDER BY s.rank`).bind(text(row.id)).all<Row>(),
+    ctx.env.DB.prepare("SELECT * FROM chat_actions WHERE message_id = ? ORDER BY rowid").bind(text(row.id)).all<Row>(),
+    ctx.env.DB.prepare("SELECT * FROM chat_message_activities WHERE message_id = ? ORDER BY rowid").bind(text(row.id)).all<Row>(),
+  ]);
+  return messageDto(row, sources.results.map(sourceDto), actions.results.map(actionDto), activities.results.map(activityDto));
+}
+
+function groupByMessage<T>(rows: Row[], map: (row: Row) => T): Map<string, T[]> {
+  const grouped = new Map<string, T[]>();
+  for (const row of rows) {
+    const id = text(row.message_id);
+    const values = grouped.get(id) ?? [];
+    values.push(map(row));
+    grouped.set(id, values);
+  }
+  return grouped;
 }
 
 export async function acquireGeneration(ctx: Ctx, conversationId: string): Promise<{ generationId: string; userMessageId: string; assistantMessageId: string }> {

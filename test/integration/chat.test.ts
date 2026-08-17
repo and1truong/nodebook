@@ -23,6 +23,12 @@ describe("chat persistence", () => {
     const conversation = conversationResult.body as ChatConversationDto;
     expect(conversation).toMatchObject({ title: "New conversation", model: "gpt-test", connection_id: connection.id });
     expect((await api(`/api/chat/connections/${connection.id}`, { method: "DELETE" })).status).toBe(409);
+    expect((await patch(`/api/chat/connections/${connection.id}`, {
+      provider: "anthropic", base_url: "https://api.anthropic.com/v1",
+    })).status).toBe(409);
+    expect((await api(`/api/chat/conversations/${conversation.id}`)).body).toMatchObject({
+      conversation: { provider: "openai", model: "gpt-test" },
+    });
 
     expect((await patch(`/api/chat/conversations/${conversation.id}`, { title: "Renamed", archived: true })).body).toMatchObject({ title: "Renamed", archived: true });
     expect((await api(`/api/chat/conversations/${conversation.id}`, { method: "DELETE" })).status).toBe(204);
@@ -96,5 +102,35 @@ describe("chat persistence", () => {
     const ctx: Ctx = { env: testEnv(), actor: { type: "human", id: "owner@test.dev" }, requestId: crypto.randomUUID() };
     const messages = await listMessages(ctx, conversationId);
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+  });
+
+  it("bounds message history and batch-hydrates related records", async () => {
+    const issue = await createIssue({ title: "History source" });
+    const now = new Date().toISOString(); const connectionId = crypto.randomUUID(); const conversationId = crypto.randomUUID();
+    await testEnv().DB.prepare("INSERT INTO chat_connections (id, name, provider, base_url, api_key_ciphertext, api_key_iv, default_model, created_at, updated_at) VALUES (?, 'history', 'openai', 'https://example.com/v1', 'x', 'x', 'model', ?, ?)").bind(connectionId, now, now).run();
+    await testEnv().DB.prepare("INSERT INTO chat_conversations (id, connection_id, model, created_at, updated_at) VALUES (?, ?, 'model', ?, ?)").bind(conversationId, connectionId, now, now).run();
+    const messageIds = Array.from({ length: 105 }, () => crypto.randomUUID());
+    const inserts = messageIds.map((id, index) => testEnv().DB.prepare(
+      "INSERT INTO chat_messages (id, conversation_id, role, content, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'complete', ?, ?)",
+    ).bind(id, conversationId, index % 2 ? "assistant" : "user", `message ${index}`, now, now));
+    await testEnv().DB.batch(inserts.slice(0, 90));
+    await testEnv().DB.batch(inserts.slice(90));
+    const latestId = messageIds.at(-1)!;
+    await testEnv().DB.batch([
+      testEnv().DB.prepare("INSERT INTO chat_message_sources (message_id, issue_id, rank) VALUES (?, ?, 0)").bind(latestId, issue.id),
+      testEnv().DB.prepare("INSERT INTO chat_actions (id, message_id, action_type, payload_json, review_json, created_at, updated_at) VALUES (?, ?, 'issue.create', '{}', '{}', ?, ?)").bind(crypto.randomUUID(), latestId, now, now),
+      testEnv().DB.prepare("INSERT INTO chat_message_activities (id, message_id, tool_name, label, input_json, status, created_at) VALUES (?, ?, 'get_issues', 'Read issue', '{}', 'complete', ?)").bind(crypto.randomUUID(), latestId, now),
+    ]);
+
+    const ctx: Ctx = { env: testEnv(), actor: { type: "human", id: "owner@test.dev" }, requestId: crypto.randomUUID() };
+    const messages = await listMessages(ctx, conversationId);
+    expect(messages).toHaveLength(100);
+    expect(messages[0]!.content).toBe("message 5");
+    expect(messages.at(-1)).toMatchObject({
+      content: "message 104",
+      sources: [{ issue_id: issue.id, title: "History source", rank: 0 }],
+      activities: [{ tool_name: "get_issues", label: "Read issue" }],
+      actions: [{ action_type: "issue.create" }],
+    });
   });
 });
