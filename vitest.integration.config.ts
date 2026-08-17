@@ -41,6 +41,7 @@ export default defineWorkersConfig(async () => {
               CALENDAR_DEFAULT_VIEW: "week",
               WEEK_START_DAY: "sunday",
               ISSUES_DEFAULT_LIMIT: "20",
+              CHAT_CREDENTIAL_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
               __TEST_MIGRATIONS: migrations,
             },
           },

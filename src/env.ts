@@ -38,6 +38,8 @@ export interface Env {
   WEEK_START_DAY?: string;
   /** Initial number of rows on the Issues page: "20", "50", or "100" (default 20). */
   ISSUES_DEFAULT_LIMIT?: string;
+  /** Base64-encoded 32-byte AES key for encrypted chat provider credentials. */
+  CHAT_CREDENTIAL_KEY?: string;
 }
 
 export function uploadLimitBytes(env: Env): number {
