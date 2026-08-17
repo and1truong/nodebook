@@ -586,11 +586,15 @@ test.describe.serial("Calendar workspace", () => {
     });
     await page.goto("/calendar");
 
+    const persisted = page.waitForResponse((response) =>
+      response.request().method() === "PATCH" && new URL(response.url()).pathname === `/api/issues/${scheduled.number}`,
+    );
     await pointerDrag(
       page,
       page.locator(".calendar-entry", { hasText: "Drag scheduled entry" }),
       page.locator(`.calendar-week-col[data-date="${target}"]`),
     );
+    expect((await persisted).ok()).toBe(true);
 
     const targetCol = page.locator(`.calendar-week-col[data-date="${target}"]`);
     await expect(targetCol.getByRole("link", { name: /Drag scheduled entry/ })).toBeVisible();
