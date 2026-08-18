@@ -7,6 +7,48 @@ import { buildChatContext } from "../../src/server/services/chat-context";
 import type { Ctx } from "../../src/server/ctx";
 
 describe("chat persistence", () => {
+  it("organizes conversations in folders and returns them to Recents when a folder is deleted", async () => {
+    const connectionResult = await post("/api/chat/connections", {
+      name: "Folder provider", provider: "openai", base_url: "https://api.openai.com/v1", api_key: "secret", default_model: "gpt-test",
+    });
+    const connection = connectionResult.body as ChatConnectionDto;
+
+    expect((await post("/api/chat/folders", { name: "" })).status).toBe(400);
+    expect((await post("/api/chat/folders", { name: "x".repeat(81) })).status).toBe(400);
+    const projectsResult = await post("/api/chat/folders", { name: "  Projects  " });
+    expect(projectsResult.status).toBe(201);
+    expect(projectsResult.body).toMatchObject({ name: "Projects" });
+    const projects = projectsResult.body as { id: string; name: string };
+    expect((await post("/api/chat/folders", { name: "projects" })).status).toBe(409);
+
+    const alphaResult = await post("/api/chat/folders", { name: "Alpha" });
+    expect((await api("/api/chat/folders")).body).toMatchObject([{ name: "Alpha" }, { name: "Projects" }]);
+    expect((await patch(`/api/chat/folders/${projects.id}`, { name: "Work" })).body).toMatchObject({ name: "Work" });
+    expect((await patch(`/api/chat/folders/${projects.id}`, { name: "alpha" })).status).toBe(409);
+
+    const assignedResult = await post("/api/chat/conversations", { connection_id: connection.id, folder_id: projects.id });
+    expect(assignedResult.status).toBe(201);
+    const assigned = assignedResult.body as ChatConversationDto;
+    expect(assigned.folder_id).toBe(projects.id);
+    const unassigned = (await post("/api/chat/conversations", { connection_id: connection.id })).body as ChatConversationDto;
+    expect(unassigned.folder_id).toBeNull();
+
+    const missingFolderId = crypto.randomUUID();
+    expect((await post("/api/chat/conversations", { connection_id: connection.id, folder_id: missingFolderId })).status).toBe(404);
+    expect((await patch(`/api/chat/conversations/${unassigned.id}`, { folder_id: missingFolderId })).status).toBe(404);
+    expect((await patch(`/api/chat/conversations/${unassigned.id}`, { folder_id: projects.id })).body).toMatchObject({ folder_id: projects.id });
+    expect((await patch(`/api/chat/conversations/${unassigned.id}`, { folder_id: null })).body).toMatchObject({ folder_id: null });
+
+    const now = new Date().toISOString();
+    await testEnv().DB.prepare("INSERT INTO chat_messages (id, conversation_id, role, content, status, created_at, updated_at) VALUES (?, ?, 'user', 'preserved', 'complete', ?, ?)")
+      .bind(crypto.randomUUID(), assigned.id, now, now).run();
+    expect((await api(`/api/chat/folders/${projects.id}`, { method: "DELETE" })).status).toBe(204);
+    const detail = await api(`/api/chat/conversations/${assigned.id}`);
+    expect(detail.body).toMatchObject({ conversation: { folder_id: null }, messages: [{ content: "preserved" }] });
+    expect((await api(`/api/chat/folders/${(alphaResult.body as { id: string }).id}`, { method: "DELETE" })).status).toBe(204);
+    expect((await api(`/api/chat/folders/${crypto.randomUUID()}`, { method: "DELETE" })).status).toBe(404);
+  });
+
   it("redacts connection credentials and pins conversations", async () => {
     const created = await post("/api/chat/connections", {
       name: "OpenAI", provider: "openai", base_url: "https://api.openai.com/v1/", api_key: "sk-test-secret", default_model: "gpt-test",

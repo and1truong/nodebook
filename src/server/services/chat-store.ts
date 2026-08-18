@@ -1,7 +1,7 @@
 import type { Ctx } from "../ctx";
 import type {
   ChatActionDto, ChatActionType, ChatActivityDto, ChatConnectionDto, ChatConversationDetailDto, ChatConversationDto,
-  ChatMessageDto, ChatProvider, ChatSourceDto, ChatToolSupport,
+  ChatFolderDto, ChatMessageDto, ChatProvider, ChatSourceDto, ChatToolSupport,
 } from "../../shared/contracts/chat";
 import { ConflictError, NotFoundError } from "../../domain/errors";
 import { encryptCredential } from "./chat-crypto";
@@ -29,8 +29,13 @@ function conversationDto(row: Row): ChatConversationDto {
   return {
     id: text(row.id), title: text(row.title), connection_id: text(row.connection_id),
     connection_name: text(row.connection_name), provider: text(row.provider) as ChatProvider, model: text(row.model),
-    archived: Boolean(row.archived), generating: Boolean(row.generation_id), created_at: text(row.created_at), updated_at: text(row.updated_at),
+    folder_id: row.folder_id == null ? null : text(row.folder_id), archived: Boolean(row.archived),
+    generating: Boolean(row.generation_id), created_at: text(row.created_at), updated_at: text(row.updated_at),
   };
+}
+
+function folderDto(row: Row): ChatFolderDto {
+  return { id: text(row.id), name: text(row.name), created_at: text(row.created_at), updated_at: text(row.updated_at) };
 }
 
 function parseJson(value: unknown): unknown {
@@ -122,6 +127,48 @@ export async function setToolSupport(ctx: Ctx, id: string, value: ChatToolSuppor
     .bind(value, new Date().toISOString(), id).run();
 }
 
+export async function listFolders(ctx: Ctx): Promise<ChatFolderDto[]> {
+  const result = await retryD1Read(
+    () => ctx.env.DB.prepare("SELECT * FROM chat_folders ORDER BY name COLLATE NOCASE, id").all<Row>(),
+    { label: "listChatFolders" },
+  );
+  return result.results.map(folderDto);
+}
+
+export async function getFolder(ctx: Ctx, id: string): Promise<ChatFolderDto> {
+  const row = await retryD1Read(
+    () => ctx.env.DB.prepare("SELECT * FROM chat_folders WHERE id = ?").bind(id).first<Row>(),
+    { label: "getChatFolder" },
+  );
+  if (!row) throw new NotFoundError("Chat folder not found");
+  return folderDto(row);
+}
+
+export async function createFolder(ctx: Ctx, name: string): Promise<ChatFolderDto> {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const result = await ctx.env.DB.prepare(
+    "INSERT INTO chat_folders (id, name, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
+  ).bind(id, name, now, now).run();
+  if (!result.meta.changes) throw new ConflictError("A chat folder with that name already exists");
+  return folderDto({ id, name, created_at: now, updated_at: now });
+}
+
+export async function updateFolder(ctx: Ctx, id: string, name: string): Promise<ChatFolderDto> {
+  await getFolder(ctx, id);
+  const now = new Date().toISOString();
+  const result = await ctx.env.DB.prepare(`UPDATE chat_folders SET name = ?, updated_at = ? WHERE id = ?
+    AND NOT EXISTS (SELECT 1 FROM chat_folders WHERE name = ? COLLATE NOCASE AND id <> ?)`)
+    .bind(name, now, id, name, id).run();
+  if (!result.meta.changes) throw new ConflictError("A chat folder with that name already exists");
+  return getFolder(ctx, id);
+}
+
+export async function deleteFolder(ctx: Ctx, id: string): Promise<void> {
+  const result = await ctx.env.DB.prepare("DELETE FROM chat_folders WHERE id = ?").bind(id).run();
+  if (!result.meta.changes) throw new NotFoundError("Chat folder not found");
+}
+
 const CONVERSATION_SELECT = `SELECT c.*, x.name AS connection_name, x.provider AS provider
   FROM chat_conversations c JOIN chat_connections x ON x.id = c.connection_id`;
 
@@ -138,19 +185,27 @@ export async function getConversation(ctx: Ctx, id: string): Promise<ChatConvers
   return conversationDto(row);
 }
 
-export async function createConversation(ctx: Ctx, connectionId: string, model?: string): Promise<ChatConversationDto> {
+export async function createConversation(ctx: Ctx, connectionId: string, model?: string, folderId?: string | null): Promise<ChatConversationDto> {
   const connection = await getConnectionSecret(ctx, connectionId);
+  if (folderId) await getFolder(ctx, folderId);
   const now = new Date().toISOString();
   const id = crypto.randomUUID();
-  await ctx.env.DB.prepare(`INSERT INTO chat_conversations (id, connection_id, model, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`)
-    .bind(id, connectionId, model ?? connection.default_model, now, now).run();
+  await ctx.env.DB.prepare(`INSERT INTO chat_conversations (id, connection_id, model, folder_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`)
+    .bind(id, connectionId, model ?? connection.default_model, folderId ?? null, now, now).run();
   return getConversation(ctx, id);
 }
 
-export async function updateConversation(ctx: Ctx, id: string, input: { title?: string; archived?: boolean }): Promise<ChatConversationDto> {
-  await getConversation(ctx, id);
-  await ctx.env.DB.prepare("UPDATE chat_conversations SET title = COALESCE(?, title), archived = COALESCE(?, archived), updated_at = ? WHERE id = ?")
-    .bind(input.title ?? null, input.archived === undefined ? null : Number(input.archived), new Date().toISOString(), id).run();
+export async function updateConversation(ctx: Ctx, id: string, input: { title?: string; archived?: boolean; folder_id?: string | null }): Promise<ChatConversationDto> {
+  const existing = await getConversation(ctx, id);
+  if (input.folder_id) await getFolder(ctx, input.folder_id);
+  await ctx.env.DB.prepare("UPDATE chat_conversations SET title = ?, archived = ?, folder_id = ?, updated_at = ? WHERE id = ?")
+    .bind(
+      input.title ?? existing.title,
+      Number(input.archived ?? existing.archived),
+      input.folder_id === undefined ? existing.folder_id : input.folder_id,
+      new Date().toISOString(),
+      id,
+    ).run();
   return getConversation(ctx, id);
 }
 

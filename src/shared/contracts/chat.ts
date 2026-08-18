@@ -27,12 +27,20 @@ export const chatConnectionUpdateSchema = chatConnectionCreateSchema.partial().r
 export const chatConversationCreateSchema = z.object({
   connection_id: z.string().uuid(),
   model: z.string().trim().min(1).max(200).optional(),
+  folder_id: z.string().uuid().nullable().optional(),
 });
 
 export const chatConversationUpdateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   archived: z.boolean().optional(),
-}).refine((input) => input.title !== undefined || input.archived !== undefined, "At least one conversation field must be provided");
+  folder_id: z.string().uuid().nullable().optional(),
+}).refine(
+  (input) => input.title !== undefined || input.archived !== undefined || input.folder_id !== undefined,
+  "At least one conversation field must be provided",
+);
+
+export const chatFolderCreateSchema = z.object({ name: z.string().trim().min(1).max(80) });
+export const chatFolderUpdateSchema = chatFolderCreateSchema;
 
 export const chatMessageCreateSchema = z.object({ content: z.string().trim().min(1).max(50_000) });
 
@@ -53,9 +61,11 @@ export interface ChatConnectionDto {
   has_api_key: boolean; tool_support: ChatToolSupport; created_at: string; updated_at: string;
 }
 
+export interface ChatFolderDto { id: string; name: string; created_at: string; updated_at: string }
+
 export interface ChatConversationDto {
   id: string; title: string; connection_id: string; connection_name: string; provider: ChatProvider;
-  model: string; archived: boolean; generating: boolean; created_at: string; updated_at: string;
+  model: string; folder_id: string | null; archived: boolean; generating: boolean; created_at: string; updated_at: string;
 }
 
 export interface ChatSourceDto { issue_id: string; issue_number: number; title: string; rank: number }

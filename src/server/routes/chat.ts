@@ -3,7 +3,7 @@ import type { AppEnv } from "./helpers";
 import { ValidationError } from "../../domain/errors";
 import {
   chatConnectionCreateSchema, chatConnectionUpdateSchema, chatConversationCreateSchema,
-  chatConversationUpdateSchema, chatMessageCreateSchema,
+  chatConversationUpdateSchema, chatFolderCreateSchema, chatFolderUpdateSchema, chatMessageCreateSchema,
 } from "../../shared/contracts/chat";
 import type { ChatStreamEvent } from "../../shared/contracts/chat";
 import type { Ctx } from "../ctx";
@@ -28,10 +28,21 @@ chatRoutes.post("/connections", async (c) => c.json(await store.createConnection
 chatRoutes.patch("/connections/:id", async (c) => c.json(await store.updateConnection(context(c), c.req.param("id"), chatConnectionUpdateSchema.parse(await json(c)))));
 chatRoutes.delete("/connections/:id", async (c) => { await store.deleteConnection(context(c), c.req.param("id")); return c.body(null, 204); });
 
+chatRoutes.get("/folders", async (c) => c.json(await store.listFolders(context(c))));
+chatRoutes.post("/folders", async (c) => {
+  const input = chatFolderCreateSchema.parse(await json(c));
+  return c.json(await store.createFolder(context(c), input.name), 201);
+});
+chatRoutes.patch("/folders/:id", async (c) => {
+  const input = chatFolderUpdateSchema.parse(await json(c));
+  return c.json(await store.updateFolder(context(c), c.req.param("id"), input.name));
+});
+chatRoutes.delete("/folders/:id", async (c) => { await store.deleteFolder(context(c), c.req.param("id")); return c.body(null, 204); });
+
 chatRoutes.get("/conversations", async (c) => c.json(await store.listConversations(context(c))));
 chatRoutes.post("/conversations", async (c) => {
   const input = chatConversationCreateSchema.parse(await json(c));
-  return c.json(await store.createConversation(context(c), input.connection_id, input.model), 201);
+  return c.json(await store.createConversation(context(c), input.connection_id, input.model, input.folder_id), 201);
 });
 chatRoutes.get("/conversations/:id", async (c) => c.json(await store.conversationDetail(context(c), c.req.param("id"))));
 chatRoutes.patch("/conversations/:id", async (c) => c.json(await store.updateConversation(context(c), c.req.param("id"), chatConversationUpdateSchema.parse(await json(c)))));
