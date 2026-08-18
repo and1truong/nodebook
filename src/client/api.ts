@@ -22,7 +22,7 @@ import type {
 } from "../shared/contracts/issues";
 import type { AppConfigDto } from "../shared/contracts/config";
 import type {
-  ChatActionDto, ChatConnectionDto, ChatConversationDetailDto, ChatConversationDto, ChatStreamEvent,
+  ChatActionDto, ChatConnectionDto, ChatConversationDetailDto, ChatConversationDto, ChatFolderDto, ChatStreamEvent,
 } from "../shared/contracts/chat";
 
 export class ApiError extends Error {
@@ -197,11 +197,17 @@ export const api = {
   updateChatConnection: (id: string, input: Record<string, unknown>) =>
     request<ChatConnectionDto>(`/api/chat/connections/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   deleteChatConnection: (id: string) => request<void>(`/api/chat/connections/${id}`, { method: "DELETE" }),
+  chatFolders: () => request<ChatFolderDto[]>("/api/chat/folders"),
+  createChatFolder: (name: string) =>
+    request<ChatFolderDto>("/api/chat/folders", { method: "POST", body: JSON.stringify({ name }) }),
+  updateChatFolder: (id: string, name: string) =>
+    request<ChatFolderDto>(`/api/chat/folders/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  deleteChatFolder: (id: string) => request<void>(`/api/chat/folders/${id}`, { method: "DELETE" }),
   chatConversations: () => request<ChatConversationDto[]>("/api/chat/conversations"),
-  createChatConversation: (connection_id: string, model?: string) =>
-    request<ChatConversationDto>("/api/chat/conversations", { method: "POST", body: JSON.stringify({ connection_id, model }) }),
+  createChatConversation: (connection_id: string, model?: string, folder_id?: string | null) =>
+    request<ChatConversationDto>("/api/chat/conversations", { method: "POST", body: JSON.stringify({ connection_id, model, folder_id }) }),
   chatConversation: (id: string) => request<ChatConversationDetailDto>(`/api/chat/conversations/${id}`),
-  updateChatConversation: (id: string, input: { title?: string; archived?: boolean }) =>
+  updateChatConversation: (id: string, input: { title?: string; archived?: boolean; folder_id?: string | null }) =>
     request<ChatConversationDto>(`/api/chat/conversations/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
   deleteChatConversation: (id: string) => request<void>(`/api/chat/conversations/${id}`, { method: "DELETE" }),
   confirmChatAction: (id: string) => request<ChatActionDto>(`/api/chat/actions/${id}/confirm`, { method: "POST" }),
