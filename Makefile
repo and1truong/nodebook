@@ -22,21 +22,21 @@ free-ports:
 # browser.
 dev: free-ports db\:migrate
 	@trap 'kill 0' SIGINT SIGTERM EXIT; \
-	npm run dev:worker & \
-	npm run dev:web & \
+	bun run dev:worker & \
+	bun run dev:web & \
 	wait
 
 # Vite dev server only (hot reload on :5173).
 dev\:web: free-ports
-	npm run dev:web
+	bun run dev:web
 
 # Worker only (API + MCP + built UI on :8787).
 dev\:worker: free-ports
-	npm run dev:worker
+	bun run dev:worker
 
 # Apply D1 migrations to the local database.
 db\:migrate:
-	npm run db:migrate:local
+	bun run db:migrate:local
 
 # Capture a remote D1 Time Travel restore bookmark before a production change.
 # `d1 export` cannot back up NodeBook because its FTS5 virtual tables are not
@@ -45,21 +45,21 @@ backup:
 	@test -f wrangler.personal.jsonc || { echo "Missing wrangler.personal.jsonc" >&2; exit 1; }
 	@mkdir -p "$(BACKUP_DIR)"
 	@file="$(BACKUP_DIR)/nodebook-$$(date -u +%Y%m%dT%H%M%SZ).json"; \
-	npx wrangler d1 time-travel info nodebook --config wrangler.personal.jsonc --json > "$$file"; \
+	bunx wrangler d1 time-travel info nodebook --config wrangler.personal.jsonc --json > "$$file"; \
 	echo "D1 Time Travel bookmark saved to $$file"
 
 # Snapshot, show pending migrations, and apply them to remote D1. Wrangler
 # captures an additional D1 backup immediately before applying a migration.
 migrate: backup
-	npx wrangler d1 migrations list nodebook --remote --config wrangler.personal.jsonc
-	npx wrangler d1 migrations apply nodebook --remote --config wrangler.personal.jsonc
+	bunx wrangler d1 migrations list nodebook --remote --config wrangler.personal.jsonc
+	bunx wrangler d1 migrations apply nodebook --remote --config wrangler.personal.jsonc
 
 # Build and deploy using the machine-local production bindings, then verify the
 # health endpoint is reachable. Cloudflare Access returns 302 without a session.
 deploy:
 	@test -f wrangler.personal.jsonc || { echo "Missing wrangler.personal.jsonc" >&2; exit 1; }
-	npm run build
-	npx wrangler deploy --config wrangler.personal.jsonc
+	bun run build
+	bunx wrangler deploy --config wrangler.personal.jsonc
 	@status=$$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' --max-redirs 0 "$(DEPLOY_URL)/healthz"); \
 	case "$$status" in \
 		200|302) echo "Health check passed: $(DEPLOY_URL)/healthz ($$status)" ;; \
